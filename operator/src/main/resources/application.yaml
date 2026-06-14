@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: gateway-route-operator
+  main:
+    web-application-type: none
+    keep-alive: true
+
+operator:
+  namespace: platform
+  gateway:
+    reload-url: http://dynamic-gateway.platform.svc.cluster.local:8080/internal/routes/reload
+  reconcile:
+    debounce: 200ms
+  routes:
+    store:
+      type: configmap
+      configmap:
+        namespace: platform
+        config-map-name: gateway-routes
+        key: routes.yaml
+      s3:
+        bucket: ""
+        key: ""
+        region: ""
+
+logging:
+  level:
+    com.example.operator: INFO
+    io.fabric8.kubernetes.client: WARN

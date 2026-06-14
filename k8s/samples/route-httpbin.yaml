@@ -1,0 +1,13 @@
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: httpbin-route
+  namespace: platform
+spec:
+  path: /httpbin/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  methods:
+    - GET
+    - POST
+  enabled: true

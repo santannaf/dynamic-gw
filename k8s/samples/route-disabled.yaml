@@ -1,0 +1,10 @@
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: disabled-route
+  namespace: platform
+spec:
+  path: /disabled/**
+  targetUri: http://will-not-be-published.local
+  stripPrefix: 1
+  enabled: false

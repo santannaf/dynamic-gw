@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dynamic-gateway
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: dynamic-gateway
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dynamic-gateway
+                port:
+                  number: 8080

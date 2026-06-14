@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-httpbin
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: go-httpbin
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: go-httpbin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: go-httpbin
+    spec:
+      containers:
+        - name: httpbin
+          image: mccutchen/go-httpbin:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /status/200
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-httpbin
+  namespace: platform
+spec:
+  selector:
+    app.kubernetes.io/name: go-httpbin
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

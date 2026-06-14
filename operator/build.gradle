@@ -1,0 +1,52 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+    id 'org.graalvm.buildtools.native'
+}
+
+ext {
+    set('springBootVersion', '4.1.0')
+    set('fabric8Version', '7.7.0')
+    set('wiremockVersion', '3.13.2')
+}
+
+dependencies {
+    implementation project(':shared')
+
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation "io.fabric8:kubernetes-client:${fabric8Version}"
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "io.fabric8:kubernetes-server-mock:${fabric8Version}"
+    testImplementation "org.wiremock:wiremock-standalone:${wiremockVersion}"
+    testImplementation 'org.awaitility:awaitility:4.3.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
+        // Importar DEPOIS para sobrescrever a versão de Fabric8 que o Spring Boot fixa
+        // (4.1.0 trava em 7.4.1). Necessário porque kubernetes-client:7.7.0 referencia
+        // classes (V1DynamicresourceAllocationAPIGroupDSL etc.) que só existem em
+        // kubernetes-client-api:7.7.0.
+        mavenBom "io.fabric8:kubernetes-client-bom:${fabric8Version}"
+    }
+}
+
+graalvmNative {
+    binaries {
+        main {
+            imageName = 'dynamic-gateway-operator'
+            mainClass = 'com.example.operator.OperatorApplication'
+            buildArgs.addAll(
+                '--no-fallback',
+                '--enable-url-protocols=http,https',
+                '-H:+AddAllCharsets',                  // snakeyaml-engine (via Fabric8) precisa de UTF-32BE etc.
+                '-H:+ReportExceptionStackTraces'
+            )
+        }
+    }
+    metadataRepository { enabled = true }
+}

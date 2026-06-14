@@ -1,0 +1,18 @@
+.gradle/
+.idea/
+*.iml
+.git/
+openspec/
+README.md
+HELP.md
+docs/
+scripts/
+.claude/
+.ai-jail
+
+# Excluir todo build/ exceto os binários nativos que o Dockerfile precisa copiar
+**/build/
+!**/build/native/
+!**/build/native/nativeCompile/
+!**/build/native/nativeCompile/dynamic-gateway
+!**/build/native/nativeCompile/dynamic-gateway-operator

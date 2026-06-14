@@ -1,0 +1,5 @@
+rootProject.name = 'dynamic-gateway-control-plane'
+
+include 'shared'
+include 'gateway'
+include 'operator'

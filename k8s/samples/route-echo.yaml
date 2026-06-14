@@ -1,0 +1,12 @@
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: echo-route
+  namespace: platform
+spec:
+  path: /echo/**
+  targetUri: http://echo-service.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  methods:
+    - GET
+  enabled: true

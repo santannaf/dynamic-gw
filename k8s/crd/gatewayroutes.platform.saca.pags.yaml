@@ -1,0 +1,71 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gatewayroutes.platform.saca.pags
+spec:
+  group: platform.saca.pags
+  scope: Namespaced
+  names:
+    kind: GatewayRoute
+    listKind: GatewayRouteList
+    plural: gatewayroutes
+    singular: gatewayroute
+    shortNames:
+      - gwr
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - path
+                - targetUri
+              properties:
+                path:
+                  type: string
+                  minLength: 1
+                  description: Ant-style HTTP path predicate (e.g. /httpbin/**).
+                targetUri:
+                  type: string
+                  minLength: 1
+                  description: Absolute URI the route forwards to.
+                stripPrefix:
+                  type: integer
+                  minimum: 0
+                  default: 1
+                  description: Number of path segments stripped before forwarding.
+                methods:
+                  type: array
+                  description: Uppercase HTTP methods this route matches. Empty/absent means any method.
+                  items:
+                    type: string
+                    enum:
+                      - GET
+                      - POST
+                      - PUT
+                      - PATCH
+                      - DELETE
+                      - HEAD
+                      - OPTIONS
+                enabled:
+                  type: boolean
+                  default: true
+                  description: When false, the operator omits this route from the published snapshot.
+      additionalPrinterColumns:
+        - name: Path
+          type: string
+          jsonPath: .spec.path
+        - name: Target
+          type: string
+          jsonPath: .spec.targetUri
+        - name: Enabled
+          type: boolean
+          jsonPath: .spec.enabled
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

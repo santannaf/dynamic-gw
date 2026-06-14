@@ -1,0 +1,18 @@
+plugins {
+    id 'java-library'
+}
+
+ext {
+    set('jacksonVersion3', '3.1.4')
+    set('junitVersion', '5.11.4')
+}
+
+dependencies {
+    api "tools.jackson.core:jackson-databind:${jacksonVersion3}"
+    api "tools.jackson.dataformat:jackson-dataformat-yaml:${jacksonVersion3}"
+
+    testImplementation platform("org.junit:junit-bom:${junitVersion}")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.assertj:assertj-core:3.27.7'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}

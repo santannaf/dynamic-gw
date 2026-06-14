@@ -1,0 +1,12 @@
+# Intentionally violates spec validation: targetUri is empty.
+# Expect the operator to log a validation warning and skip this route.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: invalid-route
+  namespace: platform
+spec:
+  path: /invalid/**
+  targetUri: " "
+  stripPrefix: 1
+  enabled: true
