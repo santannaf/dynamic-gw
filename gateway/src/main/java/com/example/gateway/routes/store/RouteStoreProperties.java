@@ -66,7 +66,9 @@ public class RouteStoreProperties {
     public static class S3 {
         private String bucket;
         private String key;
-        private String region;
+        private String region = "us-east-1";
+        private String endpoint;
+        private boolean pathStyleAccess;
 
         public String getBucket() {
             return bucket;
@@ -90,6 +92,22 @@ public class RouteStoreProperties {
 
         public void setRegion(String region) {
             this.region = region;
+        }
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public void setEndpoint(String endpoint) {
+            this.endpoint = endpoint;
+        }
+
+        public boolean isPathStyleAccess() {
+            return pathStyleAccess;
+        }
+
+        public void setPathStyleAccess(boolean pathStyleAccess) {
+            this.pathStyleAccess = pathStyleAccess;
         }
     }
 }

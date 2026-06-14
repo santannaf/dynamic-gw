@@ -28,6 +28,10 @@ gateway:
         config-map-name: gateway-routes
         key: routes.yaml
       s3:
+        # Defaults vazios; em modo s3 estas três precisam vir das envs:
+        #   GATEWAY_ROUTES_STORE_S3_BUCKET, GATEWAY_ROUTES_STORE_S3_KEY
+        # A região tem default us-east-1 (RouteStoreProperties.S3#region) para
+        # que o S3Client possa ser construído mesmo em modo configmap.
         bucket: ""
         key: ""
-        region: ""
+        region: us-east-1

@@ -9,6 +9,8 @@ ext {
     set('springBootVersion', '4.1.0')
     set('springCloudVersion', '2025.1.2')
     set('fabric8Version', '7.7.0')
+    set('awsSdkVersion', '2.30.0')
+    set('mockitoVersion', '5.14.2')
 }
 
 dependencies {
@@ -18,10 +20,16 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation "io.fabric8:kubernetes-client:${fabric8Version}"
 
+    // S3 backend (default credential chain reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
+    implementation 'software.amazon.awssdk:s3'
+    implementation 'software.amazon.awssdk:url-connection-client'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webflux'
     testImplementation "io.fabric8:kubernetes-server-mock:${fabric8Version}"
     testImplementation 'io.projectreactor:reactor-test'
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
+    testImplementation "org.mockito:mockito-junit-jupiter:${mockitoVersion}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -30,6 +38,7 @@ dependencyManagement {
         mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
         mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
         mavenBom "io.fabric8:kubernetes-client-bom:${fabric8Version}"
+        mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
     }
 }
 

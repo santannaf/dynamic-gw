@@ -7,7 +7,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.ImportRuntimeHints;
 
 @SpringBootApplication
-@ImportRuntimeHints({OperatorRuntimeHints.class, Fabric8RuntimeHints.class, Fabric8ModelRuntimeHints.class})
+@ImportRuntimeHints({OperatorRuntimeHints.class, Fabric8RuntimeHints.class, Fabric8ModelRuntimeHints.class, AwsRuntimeHints.class})
 public class OperatorApplication {
 
     static void main(String[] args) {

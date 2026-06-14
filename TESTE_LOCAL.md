@@ -524,11 +524,137 @@ kubectl get deployment -n platform
 
 ---
 
+## Fase 11 — Trocar o backend para S3 (AWS, IAM User)
+
+Esta fase NÃO faz parte da demo de operator/CRD/gateway. Ela demonstra que a
+camada de armazenamento foi abstraída: trocando uma variável de ambiente, o
+mesmo binário passa a ler/escrever o snapshot em S3 ao invés de ConfigMap.
+
+> Pré-requisitos:
+> - Um bucket S3 já criado (ex.: `dynamic-gateway-routes-poc`).
+> - Um IAM User com acesso ao bucket. Policy mínima:
+>   ```json
+>   {
+>     "Version": "2012-10-17",
+>     "Statement": [
+>       {
+>         "Effect": "Allow",
+>         "Action": ["s3:GetObject", "s3:PutObject"],
+>         "Resource": "arn:aws:s3:::dynamic-gateway-routes-poc/snapshots/*"
+>       }
+>     ]
+>   }
+>   ```
+> - As credenciais do IAM User exportadas no shell antes de começar:
+>   ```bash
+>   export AWS_ACCESS_KEY_ID=AKIA...
+>   export AWS_SECRET_ACCESS_KEY=...
+>   export S3_BUCKET=dynamic-gateway-routes-poc
+>   export S3_REGION=us-east-1
+>   ```
+
+### 11.1 — Criar o Secret com as credenciais
+
+```bash
+kubectl create secret generic aws-credentials \
+  --from-literal=AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
+  --from-literal=AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
+  -n platform
+
+kubectl get secret aws-credentials -n platform
+```
+
+### 11.2 — Editar os manifests S3 com o nome do bucket
+
+Os arquivos em `k8s/s3/` trazem `REPLACE_WITH_BUCKET`. Substitua antes de
+aplicar (a região default é `us-east-1`; troque se for outra):
+
+```bash
+sed -i "s|REPLACE_WITH_BUCKET|$S3_BUCKET|g" k8s/s3/gateway-deployment.yaml
+sed -i "s|REPLACE_WITH_BUCKET|$S3_BUCKET|g" k8s/s3/operator-deployment.yaml
+```
+
+### 11.3 — Aplicar os Deployments do modo S3
+
+Os manifests do diretório `k8s/s3/` SUBSTITUEM os Deployments existentes
+(mesmo nome e namespace). O Kubernetes vai fazer rollout dos dois pods.
+
+```bash
+kubectl apply -f k8s/s3/gateway-deployment.yaml
+kubectl apply -f k8s/s3/operator-deployment.yaml
+
+kubectl rollout status deployment/dynamic-gateway -n platform
+kubectl rollout status deployment/gateway-route-operator -n platform
+```
+
+### 11.4 — Esperar o operator publicar o snapshot em S3
+
+A primeira reconciliação dispara o `PutObject` em
+`s3://$S3_BUCKET/snapshots/routes.yaml`. Verifique no log:
+
+```bash
+kubectl logs -n platform deployment/gateway-route-operator | grep "Published snapshot"
+# Esperado: Published snapshot to s3://<bucket>/snapshots/routes.yaml version=... routes=N
+```
+
+E no próprio S3:
+
+```bash
+aws s3 ls s3://$S3_BUCKET/snapshots/
+aws s3 cp s3://$S3_BUCKET/snapshots/routes.yaml -
+```
+
+### 11.5 — Verificar o gateway carregando do S3
+
+```bash
+kubectl logs -n platform deployment/dynamic-gateway | grep "Loaded route config snapshot from s3"
+# Esperado: Loaded route config snapshot from s3://<bucket>/snapshots/routes.yaml version=... routes=N
+```
+
+Roteie tráfego pra confirmar:
+
+```bash
+kubectl port-forward -n platform svc/dynamic-gateway 8090:8080 &
+curl -s http://localhost:8090/httpbin/get | python3 -m json.tool | head
+```
+
+### 11.6 — Alterar uma rota e ver o ciclo via S3
+
+Mesma operação da Fase 9, mas agora a fonte da verdade é o objeto no S3:
+
+```bash
+kubectl edit gatewayroute httpbin-route -n platform
+# (mude algo, salve)
+
+# Operator detecta, valida, escreve novo objeto em S3 e dispara HTTP signal
+# Gateway recebe signal, faz GetObject, atualiza in-memory routes
+```
+
+Confirme com:
+
+```bash
+aws s3api head-object --bucket $S3_BUCKET --key snapshots/routes.yaml \
+  --query 'LastModified' --output text
+# Deve mostrar timestamp recente
+```
+
+### 11.7 — Voltar pro modo ConfigMap (opcional)
+
+```bash
+kubectl apply -f k8s/gateway/deployment.yaml
+kubectl apply -f k8s/operator/deployment.yaml
+```
+
+A ConfigMap `gateway-routes` continua intacta — o operator volta a escrever
+nela na próxima reconciliação.
+
+---
+
 ## Encerramento
 
 Resumo de uma frase para fechar a apresentação:
 
-> **O operator é o controle. O ConfigMap é a memória. O gateway é stateless em relação ao operator, mas se ancora no snapshot.**
+> **O operator é o controle. O ConfigMap (ou S3) é a memória. O gateway é stateless em relação ao operator, mas se ancora no snapshot.**
 
 ---
 

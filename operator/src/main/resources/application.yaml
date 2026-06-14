@@ -21,7 +21,7 @@ operator:
       s3:
         bucket: ""
         key: ""
-        region: ""
+        region: us-east-1
 
 logging:
   level:
