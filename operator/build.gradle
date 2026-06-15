@@ -9,7 +9,7 @@ ext {
     set('springBootVersion', '4.1.0')
     set('fabric8Version', '7.7.0')
     set('wiremockVersion', '3.13.2')
-    set('awsSdkVersion', '2.30.0')
+    set('awsSdkVersion', '2.46.10')
     set('mockitoVersion', '5.14.2')
 }
 
@@ -57,5 +57,5 @@ graalvmNative {
             )
         }
     }
-    metadataRepository { enabled = true }
+
 }

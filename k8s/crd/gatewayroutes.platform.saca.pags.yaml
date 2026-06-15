@@ -1,50 +1,71 @@
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
+# =============================================================================
+# CABEÇALHO (FIXO pelo Kubernetes)
+# =============================================================================
+apiVersion: apiextensions.k8s.io/v1   # FIXO — toda CRD usa essa API
+kind: CustomResourceDefinition         # FIXO — você está criando uma CRD
 metadata:
+  # CONVENÇÃO obrigatória: formato <plural>.<group>
+  # tem que casar com spec.names.plural + "." + spec.group, senão o apply rejeita
   name: gatewayroutes.platform.saca.pags
+
+# =============================================================================
+# IDENTIDADE DA CRD
+# =============================================================================
 spec:
-  group: platform.saca.pags
-  scope: Namespaced
+  group: platform.saca.pags   # SEU — domínio reverso (ex.: "saca.pags")
+  scope: Namespaced           # ESCOLHA — "Namespaced" (por namespace) ou "Cluster" (global)
   names:
-    kind: GatewayRoute
-    listKind: GatewayRouteList
-    plural: gatewayroutes
-    singular: gatewayroute
-    shortNames:
+    kind: GatewayRoute          # SEU — PascalCase, é o "kind:" que o usuário escreve no YAML
+    listKind: GatewayRouteList  # CONVENÇÃO — sempre kind + "List"
+    plural: gatewayroutes       # SEU — lowercase, vira parte da URL REST
+    singular: gatewayroute      # SEU — lowercase
+    shortNames:                 # SEU/OPCIONAL — atalho do kubectl (kubectl get gwr)
       - gwr
+
+  # ===========================================================================
+  # VERSIONAMENTO DA API
+  # ===========================================================================
   versions:
-    - name: v1alpha1
-      served: true
-      storage: true
+    - name: v1alpha1   # SEU — convenção K8s: v1alpha1 → v1beta1 → v1
+      served: true     # FIXO opções (true/false) — se a API responde nessa versão
+      storage: true    # FIXO opções (true/false) — EXATAMENTE UMA versão pode ser storage:true
+
+      # =======================================================================
+      # SCHEMA — daqui para baixo é 100% SEU (contrato do seu recurso)
+      # =======================================================================
       schema:
-        openAPIV3Schema:
-          type: object
+        openAPIV3Schema:   # FIXO — chave do K8s
+          type: object     # FIXO — todo recurso é object
           properties:
-            spec:
+            spec:          # CONVENÇÃO — "spec" (desejado) e opcionalmente "status" (observado)
               type: object
-              required:
+              required:    # SEU — campos obrigatórios do spec
                 - path
                 - targetUri
-              properties:
+              properties:  # SEU — modelo de domínio
+                # --- path: predicado de rota ---
                 path:
-                  type: string
-                  minLength: 1
+                  type: string         # FIXO opções: string/integer/boolean/array/object/number
+                  minLength: 1         # SEU — validação
                   description: Ant-style HTTP path predicate (e.g. /httpbin/**).
+                # --- targetUri: para onde redireciona ---
                 targetUri:
                   type: string
                   minLength: 1
                   description: Absolute URI the route forwards to.
+                # --- stripPrefix: quantos segmentos remover antes de encaminhar ---
                 stripPrefix:
                   type: integer
-                  minimum: 0
-                  default: 1
+                  minimum: 0           # SEU — não aceita negativo
+                  default: 1           # SEU — se omitido, K8s aplica 1 automaticamente
                   description: Number of path segments stripped before forwarding.
+                # --- methods: HTTP verbs aceitos (vazio = todos) ---
                 methods:
                   type: array
                   description: Uppercase HTTP methods this route matches. Empty/absent means any method.
                   items:
                     type: string
-                    enum:
+                    enum:              # SEU — restringe valores aceitos (rejeita "FOO")
                       - GET
                       - POST
                       - PUT
@@ -52,14 +73,20 @@ spec:
                       - DELETE
                       - HEAD
                       - OPTIONS
+                # --- enabled: liga/desliga a rota sem deletar o CR ---
                 enabled:
                   type: boolean
-                  default: true
+                  default: true        # SEU — default true (se omitido)
                   description: When false, the operator omits this route from the published snapshot.
+
+      # =======================================================================
+      # COLUNAS do `kubectl get` — puramente cosmético, SEU
+      # Define o que aparece em: kubectl get gatewayroutes
+      # =======================================================================
       additionalPrinterColumns:
-        - name: Path
-          type: string
-          jsonPath: .spec.path
+        - name: Path                          # SEU — cabeçalho da coluna
+          type: string                        # FIXO opções: string/integer/boolean/date/number
+          jsonPath: .spec.path                # SEU — campo a extrair do objeto
         - name: Target
           type: string
           jsonPath: .spec.targetUri

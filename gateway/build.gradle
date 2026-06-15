@@ -9,7 +9,7 @@ ext {
     set('springBootVersion', '4.1.0')
     set('springCloudVersion', '2025.1.2')
     set('fabric8Version', '7.7.0')
-    set('awsSdkVersion', '2.30.0')
+    set('awsSdkVersion', '2.46.10')
     set('mockitoVersion', '5.14.2')
 }
 
@@ -55,5 +55,4 @@ graalvmNative {
             )
         }
     }
-    metadataRepository { enabled = true }
 }

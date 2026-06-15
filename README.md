@@ -29,6 +29,8 @@ dynamic-gateway (Spring Cloud Gateway, reactive)
 In-memory routes, ready to serve traffic
 ```
 
+Visual diagram (Excalidraw): https://excalidraw.com/#json=6kDnSH7P21tm-Wb_Tt0zS,xCs6nkUE7mbTF8o4Tp2m1g
+
 Three concerns are explicitly separated:
 
 | Concern                     | Implementation                                       |
