@@ -45,9 +45,8 @@ public class GatewayRouteInformerRunner implements SmartLifecycle {
 
     @Override
     public synchronized void start() {
-        if (running) {
-            return;
-        }
+        if (running) return;
+
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gw-reconcile");
             t.setDaemon(false);
@@ -56,7 +55,7 @@ public class GatewayRouteInformerRunner implements SmartLifecycle {
 
         informer = client.resources(GatewayRoute.class, GatewayRouteList.class)
                 .inNamespace(namespace)
-                .inform(new ResourceEventHandler<GatewayRoute>() {
+                .inform(new ResourceEventHandler<>() {
                     @Override
                     public void onAdd(GatewayRoute resource) {
                         log.info("GatewayRoute added name={}", nameOf(resource));

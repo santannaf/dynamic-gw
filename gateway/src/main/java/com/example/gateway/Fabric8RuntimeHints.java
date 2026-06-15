@@ -1,25 +1,10 @@
 package com.example.gateway;
 
+import org.jspecify.annotations.NonNull;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 
-/**
- * Reflection hints para Fabric8 Kubernetes Client (7.7.0).
- *
- * <p>O Fabric8 ainda <strong>não publica</strong> metadata native
- * (não há {@code META-INF/native-image/} no jar). Várias classes do
- * pacote {@code io.fabric8.kubernetes.client.impl.*} são carregadas via
- * {@code Class.forName} (notavelmente {@code KubernetesClientImpl}, que o
- * {@code KubernetesClientBuilder} resolve no construtor), e o native build
- * não as detecta automaticamente. Sem estes hints, o gateway falha no startup
- * nativo com {@code ClassNotFoundException: io.fabric8.kubernetes.client.impl.KubernetesClientImpl}.
- *
- * <p>A lista foi gerada a partir de {@code jar tf kubernetes-client-7.7.0.jar | grep impl}.
- * Quando o Fabric8 publicar metadata oficial (issue
- * <a href="https://github.com/fabric8io/kubernetes-client/issues/5803">#5803</a>),
- * esta classe pode ser removida.
- */
 public class Fabric8RuntimeHints implements RuntimeHintsRegistrar {
 
     private static final String[] FABRIC8_IMPL_CLASSES = {
@@ -89,11 +74,11 @@ public class Fabric8RuntimeHints implements RuntimeHintsRegistrar {
         "io.fabric8.kubernetes.client.impl.V1beta3FlowControlAPIGroupClient",
         "io.fabric8.kubernetes.client.impl.V2AutoscalingAPIGroupClient",
         "io.fabric8.kubernetes.client.impl.V2beta1AutoscalingAPIGroupClient",
-        "io.fabric8.kubernetes.client.impl.V2beta2AutoscalingAPIGroupClient",
+        "io.fabric8.kubernetes.client.impl.V2beta2AutoscalingAPIGroupClient"
     };
 
     @Override
-    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+    public void registerHints(@NonNull RuntimeHints hints, ClassLoader classLoader) {
         for (String className : FABRIC8_IMPL_CLASSES) {
             hints.reflection().registerTypeIfPresent(classLoader, className,
                     MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,

@@ -1,28 +1,10 @@
 package com.example.gateway;
 
+import org.jspecify.annotations.NonNull;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 
-/**
- * Reflection hints para o modelo Kubernetes (Fabric8 7.7.0): pacote
- * {@code io.fabric8.kubernetes.api.model.*}. Estas classes são desserializadas
- * pelo {@code KubernetesSerialization} (Jackson) quando o cliente recebe
- * respostas do API server (incluindo {@link io.fabric8.kubernetes.api.model.ObjectMeta},
- * {@link io.fabric8.kubernetes.api.model.ConfigMap}, {@link io.fabric8.kubernetes.api.model.Status}).
- *
- * <p>Sem estes hints, no nativo o informer falha com:
- * <pre>
- * Cannot construct instance of `io.fabric8.kubernetes.api.model.ObjectMeta`:
- *   cannot deserialize from Object value ... this appears to be a native image
- * </pre>
- *
- * <p>Lista gerada a partir de {@code jar tf kubernetes-model-*-7.7.0.jar},
- * filtrada para o pacote raiz ({@code io.fabric8.kubernetes.api.model.X} sem subpacotes,
- * sem {@code *Builder}/{@code *Fluent}/{@code *ApplyConfiguration}) — total 298 classes.
- * Subpacotes (apps, extensions, networking, etc.) podem ser adicionados depois se algum
- * recurso específico for usado pelo projeto.
- */
 public class Fabric8ModelRuntimeHints implements RuntimeHintsRegistrar {
 
     private static final String[] MODEL_CLASSES = {
@@ -323,11 +305,11 @@ public class Fabric8ModelRuntimeHints implements RuntimeHintsRegistrar {
         "io.fabric8.kubernetes.api.model.WatchEvent",
         "io.fabric8.kubernetes.api.model.WeightedPodAffinityTerm",
         "io.fabric8.kubernetes.api.model.WindowsSecurityContextOptions",
-        "io.fabric8.kubernetes.api.model.WorkloadReference",
+        "io.fabric8.kubernetes.api.model.WorkloadReference"
     };
 
     @Override
-    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+    public void registerHints(@NonNull RuntimeHints hints, ClassLoader classLoader) {
         for (String className : MODEL_CLASSES) {
             hints.reflection().registerTypeIfPresent(classLoader, className,
                     MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,

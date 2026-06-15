@@ -9,20 +9,7 @@ import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 
-/**
- * Reflection hints para GraalVM native image:
- *
- * <ul>
- *   <li>{@link RouteConfigSnapshot} / {@link RouteConfigEntry} — Jackson 3 desserializa
- *       o snapshot publicado no ConfigMap; sem hints, o native build perde os componentes
- *       dos records.</li>
- *   <li>{@link GatewayRoute} / {@link GatewayRouteSpec} / {@link GatewayRouteList} —
- *       Fabric8 desserializa o JSON do API server do Kubernetes para essas classes.
- *       Sem hints o informer não consegue materializar os recursos.</li>
- * </ul>
- */
 public class OperatorRuntimeHints implements RuntimeHintsRegistrar {
-
     @Override
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
         var reflection = hints.reflection();

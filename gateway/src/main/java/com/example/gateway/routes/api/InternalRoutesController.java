@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -68,9 +67,5 @@ public class InternalRoutesController {
                 .map(f -> f.getName() + "=" + String.join(",", f.getArgs().values()))
                 .collect(Collectors.toList()));
         return map;
-    }
-
-    static List<Map<String, Object>> renderAll(List<RouteDefinition> defs) {
-        return defs.stream().map(InternalRoutesController::view).toList();
     }
 }

@@ -6,12 +6,6 @@ import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 
-/**
- * Reflection hints para GraalVM native image: Jackson precisa acessar os componentes
- * dos records via reflexão para desserializar o snapshot lido do ConfigMap.
- * Sem estes hints, {@code ConfigMapRouteConfigProvider.load()} falha no nativo com
- * "Cannot construct instance of RouteConfigSnapshot, no Creators".
- */
 public class GatewayRuntimeHints implements RuntimeHintsRegistrar {
 
     @Override

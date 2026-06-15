@@ -14,21 +14,6 @@ import software.amazon.awssdk.services.s3.S3Configuration;
 
 import java.net.URI;
 
-/**
- * Wiring do backend de snapshot.
- *
- * Por que NÃO usamos {@code @ConditionalOnProperty} para alternar entre
- * ConfigMap e S3: o Spring AOT (processado em build-time do native image)
- * avalia condições com o environment do build (application.yaml apenas), o
- * que congela a decisão e elimina o ramo perdedor do binário. Para suportar
- * troca em runtime via env var em ambos os modos (JVM e native), os dois
- * clients são registrados de forma incondicional e a escolha é feita por
- * {@code if} no bean factory do publisher.
- *
- * Custo de registrar ambos os clients sem usar um: nulo. Tanto Fabric8 quanto
- * AWS SDK v2 só abrem conexão na primeira chamada de API; o {@code build()}
- * em si só monta o cliente em memória.
- */
 @Configuration
 @EnableConfigurationProperties(RouteStoreProperties.class)
 public class RouteConfigStoreConfiguration {

@@ -1,5 +1,6 @@
 package com.example.gateway.routes;
 
+import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -20,7 +21,7 @@ public class GatewayRoutesBootstrap implements ApplicationRunner {
     }
 
     @Override
-    public void run(ApplicationArguments args) {
+    public void run(@NonNull ApplicationArguments args) {
         try {
             List<String> active = reloadService.reloadFromStore();
             log.info("Gateway bootstrap completed activeRoutes={}", active.size());

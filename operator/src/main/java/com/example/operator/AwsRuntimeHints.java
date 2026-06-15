@@ -1,17 +1,12 @@
 package com.example.operator;
 
+import org.jspecify.annotations.NonNull;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 
 import java.util.List;
 
-/**
- * GraalVM hints for the AWS SDK v2 S3 client used by the operator when the
- * route config store backend is "s3". See gateway/AwsRuntimeHints for the
- * rationale; the lists are identical because both modules build the same
- * S3Client.
- */
 public class AwsRuntimeHints implements RuntimeHintsRegistrar {
 
     private static final List<String> REFLECTIVE_CLASSES = List.of(
@@ -34,7 +29,7 @@ public class AwsRuntimeHints implements RuntimeHintsRegistrar {
     );
 
     @Override
-    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+    public void registerHints(@NonNull RuntimeHints hints, ClassLoader classLoader) {
         REFLECTIVE_CLASSES.forEach(name -> hints.reflection().registerTypeIfPresent(
                 classLoader,
                 name,

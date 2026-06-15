@@ -1,5 +1,6 @@
 package com.example.gateway.routing;
 
+import org.jspecify.annotations.NonNull;
 import org.springframework.cloud.gateway.route.RouteDefinition;
 import org.springframework.cloud.gateway.route.RouteDefinitionRepository;
 import org.springframework.stereotype.Component;
@@ -16,16 +17,19 @@ public class InMemoryDynamicRouteDefinitionRepository implements RouteDefinition
     private volatile Map<String, RouteDefinition> routes = Map.of();
 
     @Override
+    @NonNull
     public Flux<RouteDefinition> getRouteDefinitions() {
         return Flux.fromIterable(routes.values());
     }
 
     @Override
+    @NonNull
     public Mono<Void> save(Mono<RouteDefinition> route) {
         return route.doOnNext(this::upsert).then();
     }
 
     @Override
+    @NonNull
     public Mono<Void> delete(Mono<String> routeId) {
         return routeId.doOnNext(this::removeById).then();
     }
