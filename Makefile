@@ -82,9 +82,11 @@ nginx-lb-up:
 	kubectl apply -f k8s/nginx-lb/
 	kubectl -n platform rollout status deployment/nginx-lb --timeout=60s
 
-# Abre port-forward foreground pro nginx-lb. Ctrl+C derruba o forward; os
-# manifests permanecem aplicados no cluster.
-nginx-lb-pf:
+# Abre port-forward foreground pro nginx-lb. Garante (via nginx-lb-up) que
+# os manifests estão aplicados antes — kubectl apply é idempotente, então
+# não atrapalha se já estiver de pé. Ctrl+C derruba só o forward; manifests
+# permanecem aplicados no cluster.
+nginx-lb-pf: nginx-lb-up
 	@echo "==> Port-forward svc/nginx-lb -> http://localhost:18000 (Ctrl+C para parar)"
 	kubectl -n platform port-forward svc/nginx-lb 18000:80
 

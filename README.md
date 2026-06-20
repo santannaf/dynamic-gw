@@ -17,13 +17,14 @@ O backend de persistência neste POC é um `ConfigMap` do Kubernetes (com gzip +
 7. [Recuperação após restart](#recuperação-após-restart)
 8. [Modo standalone (v1)](#modo-standalone-v1)
 9. [Logs e observabilidade](#logs-e-observabilidade)
-10. [Backend de armazenamento](#backend-de-armazenamento)
-11. [Operator por dentro](#operator-por-dentro)
-12. [Otimização: detectar snapshots iguais sem ocupar memória](#otimização-detectar-snapshots-iguais-sem-ocupar-memória)
-13. [Otimização: 60 mil rotas num `ConfigMap` de 1 MiB](#otimização-60-mil-rotas-num-configmap-de-1-mib)
-14. [Limitações conhecidas](#limitações-conhecidas)
-15. [Próximos passos](#próximos-passos)
-16. [Licença](#licença)
+10. [Stress tests](#stress-tests)
+11. [Backend de armazenamento](#backend-de-armazenamento)
+12. [Operator por dentro](#operator-por-dentro)
+13. [Otimização: detectar snapshots iguais sem ocupar memória](#otimização-detectar-snapshots-iguais-sem-ocupar-memória)
+14. [Otimização: 60 mil rotas num `ConfigMap` de 1 MiB](#otimização-60-mil-rotas-num-configmap-de-1-mib)
+15. [Limitações conhecidas](#limitações-conhecidas)
+16. [Próximos passos](#próximos-passos)
+17. [Licença](#licença)
 
 ---
 
@@ -31,17 +32,17 @@ O backend de persistência neste POC é um `ConfigMap` do Kubernetes (com gzip +
 
 Duas formas de rodar o gateway, decididas por uma única propriedade (`gateway.routes.store.type`):
 
-| Característica | **v1 standalone** | **v2 com operator** |
-|---|---|---|
-| Rotas declaradas em | `application.yaml` do gateway | CRDs `GatewayRoute` no cluster |
-| CRD instalado | ❌ | ✅ |
-| Operator deployado | ❌ | ✅ |
-| RBAC pra `ConfigMap`-watch | ❌ não precisa | ✅ |
-| Trocar rota sem restart | ❌ exige rollout | ✅ ~250 ms via watcher |
-| Multi-time (cada um aplicando CRDs) | ❌ | ✅ |
-| Manifests deployados | `k8s/gateway-standalone/` | `k8s/namespace.yaml` + `k8s/crd/` + `k8s/operator/` + `k8s/gateway/` |
-| Guia detalhado | [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md) | [`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md) |
-| Hot-reload via S3 | – | [`TESTE_S3.md`](TESTE_S3.md) (stub) |
+| Característica                      | **v1 standalone**                            | **v2 com operator**                                                  |
+|-------------------------------------|----------------------------------------------|----------------------------------------------------------------------|
+| Rotas declaradas em                 | `application.yaml` do gateway                | CRDs `GatewayRoute` no cluster                                       |
+| CRD instalado                       | ❌                                            | ✅                                                                    |
+| Operator deployado                  | ❌                                            | ✅                                                                    |
+| RBAC pra `ConfigMap`-watch          | ❌ não precisa                                | ✅                                                                    |
+| Trocar rota sem restart             | ❌ exige rollout                              | ✅ ~250 ms via watcher                                                |
+| Multi-time (cada um aplicando CRDs) | ❌                                            | ✅                                                                    |
+| Manifests deployados                | `k8s/gateway-standalone/`                    | `k8s/namespace.yaml` + `k8s/crd/` + `k8s/operator/` + `k8s/gateway/` |
+| Guia detalhado                      | [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md) | [`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md)                           |
+| Hot-reload via S3                   | –                                            | [`TESTE_S3.md`](TESTE_S3.md) (stub)                                  |
 
 Os dois modos compartilham 100% do pipeline downstream (`RouteConfigEntry` → `RouteDefinitionMapper` → `FastRouteCompiler` → `InMemoryDynamicRouteLocator`). Só a fonte do snapshot muda — `PropertiesRouteConfigProvider` vs `ConfigMapRouteConfigProvider` vs (futuramente) `S3RouteConfigProvider`.
 
@@ -76,12 +77,12 @@ Diagrama interativo (Excalidraw): https://excalidraw.com/#json=6kDnSH7P21tm-Wb_T
 
 Três responsabilidades explicitamente separadas:
 
-| Responsabilidade | Implementação |
-|---|---|
-| Fonte da verdade declarativa | CRDs `GatewayRoute` no namespace `platform` (v2) / `application.yaml` (v1) |
-| Estado materializado (hoje) | YAML gzipado em `ConfigMap platform/gateway-routes` (v2) / properties (v1) |
-| Estado materializado (futuro) | YAML em S3 — mesma interface, plug-in (`S3RouteConfigProvider`) |
-| Estado em runtime | Mapa de `Route`s na memória do pod do gateway |
+| Responsabilidade              | Implementação                                                              |
+|-------------------------------|----------------------------------------------------------------------------|
+| Fonte da verdade declarativa  | CRDs `GatewayRoute` no namespace `platform` (v2) / `application.yaml` (v1) |
+| Estado materializado (hoje)   | YAML gzipado em `ConfigMap platform/gateway-routes` (v2) / properties (v1) |
+| Estado materializado (futuro) | YAML em S3 — mesma interface, plug-in (`S3RouteConfigProvider`)            |
+| Estado em runtime             | Mapa de `Route`s na memória do pod do gateway                              |
 
 O sinal HTTP (`POST /internal/routes/reload`) é **best-effort**. Ele **não é** a fonte da verdade — o bootstrap runner do gateway lê o snapshot mais recente no startup do pod, então um sinal perdido se cura no próximo restart ou no próximo reconcile bem-sucedido.
 
@@ -274,6 +275,70 @@ kubectl logs -n platform deployment/gateway-route-operator --tail=200 -f
 
 ---
 
+## Stress tests
+
+Dois cenários, dependendo do modo em que o gateway está rodando. Ambos usam o mesmo script k6 (`scripts/k6/load-during-large-snapshot.js`) batendo 20k req/min nas rotas baseline `/httpbin/get` e `/anything/load-test` via o `nginx-lb`.
+
+### v2 com operator — cenário completo (carga + reloads pesados)
+
+Carga sustentada **mais** pushes de snapshot de 60k rotas via `ConfigMap` no meio, pra medir tudo de uma vez: throughput, latência, tempo de reload por pod, propagação. É o cenário pra validar a v2 em condições adversas.
+
+```bash
+# Pré-requisito: v2 no ar
+make bootstrap               # cluster + operator + gateway + nginx-lb
+
+# Terminal 1 — entry point
+make nginx-lb-pf
+
+# Terminal 2 — orquestrador (5min, 3 pushes de 60k rotas)
+make stress-test             # = TEAMS=3 ROUTES=20000 scripts/k6/run-load-scenario.sh
+```
+
+O orquestrador valida pre-flight, sobe o k6 em background, agenda 3 pushes de snapshot grande nos tempos `60 180 270`s, espera tudo terminar e gera **relatório markdown** em `/tmp/dyngw-load-scenario/report.md` com latências p95/p99, contagem de 5xx/4xx, tempo de reload por pod e veredito ✅/❌ por critério.
+
+Variações comuns (rodando o script direto em vez do alias `make stress-test`):
+
+```bash
+# 10min, 5 pushes
+DURATION=10m SCHEDULE="60 180 300 420 540" TEAMS=3 ROUTES=20000 \
+    scripts/k6/run-load-scenario.sh
+
+# 1 push só, pra observar um único reload pesado
+SCHEDULE="60" DURATION=3m TEAMS=3 ROUTES=20000 \
+    scripts/k6/run-load-scenario.sh
+```
+
+### v1 standalone — só carga sustentada
+
+Em standalone as rotas são estáticas (vivem no `application.yaml` da imagem), então **não tem snapshot pra empurrar**. O que vale medir é o baseline puro de throughput e latência das rotas embarcadas — útil pra comparar com a v2 ou pra confirmar que um rebuild não regrediu performance.
+
+```bash
+# Pré-requisito: v1 no ar
+make standalone-up           # cluster + gateway + nginx-lb
+
+# Terminal 1 — entry point
+make nginx-lb-pf
+
+# Terminal 2 — k6 sustentado direto, sem orquestrador
+DURATION=5m BASE_URL=http://localhost:18000 \
+    k6 run --summary-export=/tmp/k6-standalone.json \
+    scripts/k6/load-during-large-snapshot.js
+```
+
+O `setup()` do script já confere `/lb/health` + as 2 rotas baseline antes de começar — passa direto em standalone porque tudo já está em pé. Sumário sai no console + `/tmp/k6-standalone.json`.
+
+Cenário realista de v1 — k6 + rolling restart (simula deploy de nova imagem com cliente batendo):
+
+```bash
+# enquanto o k6 do bloco acima estiver rodando, em outro terminal:
+sleep 90 && kubectl -n platform rollout restart deployment/dynamic-gateway
+sleep 90 && kubectl -n platform rollout restart deployment/dynamic-gateway
+```
+
+`maxUnavailable: 0` no Deployment deveria manter `gateway_5xx=0` no sumário do k6. O `max` e o `p99` do `http_req_duration` mostram o custo do rollout pra requests em andamento.
+
+---
+
 ## Backend de armazenamento
 
 Persistência atrás de duas interfaces no módulo `shared`:
@@ -296,11 +361,11 @@ gateway.routes.store.type: configmap   # ou s3, ou properties
 operator.routes.store.type: configmap  # ou s3 (não suporta properties — modo standalone não tem operator)
 ```
 
-| Tipo | Quem | Estado |
-|---|---|---|
-| `configmap` | gateway + operator | ✅ default, produção |
-| `properties` | só gateway (v1 standalone) | ✅ produção |
-| `s3` | gateway + operator | 🚧 stub — `UnsupportedOperationException` |
+| Tipo         | Quem                       | Estado                                    |
+|--------------|----------------------------|-------------------------------------------|
+| `configmap`  | gateway + operator         | ✅ default, produção                       |
+| `properties` | só gateway (v1 standalone) | ✅ produção                                |
+| `s3`         | gateway + operator         | 🚧 stub — `UnsupportedOperationException` |
 
 Implementar S3 de verdade requer apenas:
 
@@ -433,11 +498,11 @@ Usamos **SHA-256**, que transforma qualquer conteúdo numa sequência fixa de **
 1. **Conteúdos idênticos sempre produzem a mesma impressão.**
 2. **É praticamente impossível** dois conteúdos diferentes acidentalmente produzirem a mesma impressão (probabilidade na ordem de 2⁻²⁵⁶ — pra fim prático, zero).
 
-| | Antes | Depois |
-|---|---|---|
-| O que guardamos pra comparar | a lista completa de 60 mil rotas | 64 caracteres |
-| Memória residente nesse campo | ~50 MiB | 128 bytes |
-| CPU por reload | comparar item por item | calcular um hash (poucos ms) |
+|                               | Antes                            | Depois                       |
+|-------------------------------|----------------------------------|------------------------------|
+| O que guardamos pra comparar  | a lista completa de 60 mil rotas | 64 caracteres                |
+| Memória residente nesse campo | ~50 MiB                          | 128 bytes                    |
+| CPU por reload                | comparar item por item           | calcular um hash (poucos ms) |
 
 **Custo**: poucos ms de CPU pra calcular o hash e ~12 MiB de alocação temporária (GC limpa logo depois). **Ganho**: ~50 MiB permanentemente alocados volta pro heap útil.
 
@@ -455,11 +520,11 @@ Uma rota nossa em YAML fica em torno de **180 bytes**. Pra 60 mil rotas: **~11 M
 
 A solução é **comprimir com gzip** antes de salvar no `ConfigMap` — o mesmo algoritmo que sites usam pra mandar HTML mais rápido. Em texto super repetitivo o ganho é gigante.
 
-| | Tamanho |
-|---|---|
-| YAML cru | ~11 MiB |
+|              | Tamanho      |
+|--------------|--------------|
+| YAML cru     | ~11 MiB      |
 | YAML gzipado | **~540 KiB** |
-| Compressão | **~20×** |
+| Compressão   | **~20×**     |
 
 Cabe folgado no limite de 1 MiB, com bastante sobra pra crescer.
 
