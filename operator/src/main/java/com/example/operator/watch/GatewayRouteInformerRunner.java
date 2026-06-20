@@ -98,9 +98,7 @@ public class GatewayRouteInformerRunner implements SmartLifecycle {
     }
 
     @Override
-    public boolean isRunning() {
-        return running;
-    }
+    public boolean isRunning() { return running; }
 
     void scheduleReconcile() {
         scheduleLock.lock();

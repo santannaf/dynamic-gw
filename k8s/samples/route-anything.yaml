@@ -1,0 +1,18 @@
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: anything-route
+  namespace: platform
+spec:
+  # /anything/** com stripPrefix: 0 deixa o path inteiro chegar no upstream
+  # (go-httpbin tem o endpoint /anything que ecoa qualquer coisa). Junto com
+  # /httpbin/**, forma o par de rotas baseline que o k6 stress test
+  # (scripts/k6/load-during-large-snapshot.js) bate em paralelo aos reloads.
+  path: /anything/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 0
+  methods:
+    - GET
+  enabled: true
+  team: platform-team
+  description: Baseline route used by the k6 stress scenario alongside /httpbin.

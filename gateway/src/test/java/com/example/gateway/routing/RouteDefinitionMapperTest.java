@@ -22,7 +22,9 @@ class RouteDefinitionMapperTest {
                 "http://upstream",
                 null,
                 null,
-                true
+                true,
+                null,
+                null
         );
 
         RouteDefinition rd = mapper.toDefinition(entry);
@@ -47,7 +49,9 @@ class RouteDefinitionMapperTest {
                 "http://upstream",
                 1,
                 List.of("GET", "POST"),
-                true
+                true,
+                null,
+                null
         );
 
         RouteDefinition rd = mapper.toDefinition(entry);
@@ -66,7 +70,9 @@ class RouteDefinitionMapperTest {
                 "http://upstream",
                 2,
                 null,
-                true
+                true,
+                null,
+                null
         );
 
         RouteDefinition rd = mapper.toDefinition(entry);
@@ -83,7 +89,9 @@ class RouteDefinitionMapperTest {
                 "http://upstream",
                 1,
                 List.of(),
-                true
+                true,
+                null,
+                null
         );
 
         RouteDefinition rd = mapper.toDefinition(entry);

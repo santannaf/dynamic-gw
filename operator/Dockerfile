@@ -1,24 +1,11 @@
-# =============================================================================
-# Dockerfile para o operator nativo.
-#
-# PRÉ-REQUISITO: rodar `./gradlew :operator:nativeCompile -x test` antes
-# (precisa de GraalVM 25 + zlib1g-dev + build-essential no host).
-#
-# O binário esperado vive em:
-#   operator/build/native/nativeCompile/dynamic-gateway-operator
-#
-# A imagem resultante é apenas o binário + libc + ca-certificates,
-# sem JVM nem JRE. Tamanho típico: ~100 MiB.
-# =============================================================================
-FROM debian:stable-slim
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --no-create-home --shell /usr/sbin/nologin app
+FROM eclipse-temurin:25-jre as runtime
 
 WORKDIR /app
-COPY operator/build/native/nativeCompile/dynamic-gateway-operator /app/dynamic-gateway-operator
+
+RUN useradd --no-create-home --shell /usr/sbin/nologin app
+
+COPY operator/build/libs/operator-0.0.1.jar /app/dynamic-gateway-operator.jar
 
 USER app
-ENTRYPOINT ["/app/dynamic-gateway-operator"]
+
+ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "/app/dynamic-gateway-operator.jar"]

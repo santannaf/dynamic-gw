@@ -1,15 +1,8 @@
-# =============================================================================
-# Dockerfile para o gateway nativo.
-#
-# PRÉ-REQUISITO: rodar `./gradlew :gateway:nativeCompile -x test` antes
-# (precisa de GraalVM 25 + zlib1g-dev + build-essential no host).
-#
-# O binário esperado vive em:
-#   gateway/build/native/nativeCompile/dynamic-gateway
-#
-# A imagem resultante é apenas o binário + libc + ca-certificates,
-# sem JVM nem JRE. Tamanho típico: ~165 MiB.
-# =============================================================================
+FROM ghcr.io/graalvm/native-image-community:25 as builder
+WORKDIR /workspace
+COPY . .
+RUN ./gradlew :gateway:nativeCompile -x test --no-daemon
+
 FROM debian:stable-slim
 
 RUN apt-get update \
@@ -18,8 +11,13 @@ RUN apt-get update \
     && useradd --no-create-home --shell /usr/sbin/nologin app
 
 WORKDIR /app
-COPY gateway/build/native/nativeCompile/dynamic-gateway /app/dynamic-gateway
+
+COPY --from=builder /workspace/gateway/build/native/nativeCompile/dynamic-gateway /app/dynamic-gateway
+#COPY gateway/build/native/nativeCompile/dynamic-gateway /app/dynamic-gateway
+RUN chmod +x /app/dynamic-gateway
 
 USER app
+
 EXPOSE 8080
+
 ENTRYPOINT ["/app/dynamic-gateway"]

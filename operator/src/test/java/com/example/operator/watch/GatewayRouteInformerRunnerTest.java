@@ -5,16 +5,11 @@ import com.example.operator.crd.GatewayRouteSpec;
 import com.example.operator.reconcile.GatewayRouteReconciler;
 import com.example.operator.reconcile.GatewayRouteValidator;
 import com.example.operator.reconcile.SnapshotBuilder;
-import com.example.operator.signal.GatewayReloadSignaler;
-import com.example.operator.store.ConfigMapRouteConfigPublisher;
-import com.example.operator.store.RouteStoreProperties;
-import com.example.shared.routes.SnapshotCodec;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.server.mock.EnableKubernetesMockClient;
 import io.fabric8.kubernetes.client.server.mock.KubernetesMockServer;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -38,10 +33,9 @@ class GatewayRouteInformerRunnerTest {
         AtomicReference<List<GatewayRoute>> lastList = new AtomicReference<>(List.of());
 
         SnapshotBuilder builder = new SnapshotBuilder(new GatewayRouteValidator());
-        GatewayReloadSignaler signaler = Mockito.mock(GatewayReloadSignaler.class);
 
         GatewayRouteReconciler reconciler = new GatewayRouteReconciler(
-                builder, snapshot -> {}, signaler, Clock.systemUTC()) {
+                builder, snapshot -> {}, Clock.systemUTC()) {
             @Override
             public void reconcile(List<GatewayRoute> currentRoutes) {
                 lastList.set(currentRoutes);
@@ -82,9 +76,7 @@ class GatewayRouteInformerRunnerTest {
         SnapshotBuilder builder = new SnapshotBuilder(new GatewayRouteValidator());
 
         GatewayRouteReconciler reconciler = new GatewayRouteReconciler(
-                builder, snapshot -> {},
-                Mockito.mock(GatewayReloadSignaler.class),
-                Clock.systemUTC()) {
+                builder, snapshot -> {}, Clock.systemUTC()) {
             @Override
             public void reconcile(List<GatewayRoute> currentRoutes) {
                 lastList.set(currentRoutes);

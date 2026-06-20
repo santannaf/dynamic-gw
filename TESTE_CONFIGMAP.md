@@ -1,8 +1,8 @@
-# Teste local — roteiro passo a passo
+# TESTE_CONFIGMAP.md — Validação localhost da v2 (operator + CRD + ConfigMap)
 
-Roteiro de demonstração da POC focado nos três componentes do projeto: **CRD `GatewayRoute`**, **operator** e **gateway**. Todo o resto (k3d, kubectl, namespace, backend de teste) é infraestrutura de apoio para subir esses três no Kubernetes.
+Roteiro de demonstração da v2 do POC, focado nos três componentes do projeto: **CRD `GatewayRoute`**, **operator** e **gateway**. O backend de armazenamento é um `ConfigMap` (gzipado em `binaryData`); pra rodar com S3 veja [`TESTE_S3.md`](TESTE_S3.md), pra a v1 sem operator veja [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md). Conceitos e arquitetura geral estão no [`README.md`](README.md).
 
-A ideia é fazer a demo do zero, sem nada no cluster, e ir mostrando o efeito de cada peça à medida que ela entra em cena. Cada fase abaixo é **executada na ordem**, e cada fase deixa o estado pronto para a próxima.
+A ideia é fazer a demo do zero, sem nada no cluster, e ir mostrando o efeito de cada peça à medida que ela entra em cena. Cada fase abaixo é **executada na ordem**, e cada fase deixa o estado pronto pra próxima.
 
 ## Pré-requisitos
 
@@ -27,7 +27,7 @@ cd ~/Projetos/dynamic-gateway-control-plane
 
 - **Terminal A** — onde você dirige a demo (apply, edit, delete).
 - **Terminal B** — observação contínua (`kubectl logs -f`). Comece vazio; vai abrir o tail quando o operator subir.
-- **Terminal C** — `kubectl port-forward` para acessar o gateway de fora do cluster. Comece vazio; vai abrir quando o gateway subir.
+- **Terminal C** — `make nginx-lb-pf` (port-forward pro nginx-lb, que é o único ponto exposto externamente). Comece vazio; vai abrir depois do gateway + nginx-lb subirem.
 
 ## Sobre o upstream da demo
 
@@ -261,7 +261,7 @@ kubectl rollout status deployment/dynamic-gateway -n platform --timeout=180s
 Em **Terminal C** abra o port-forward (deixe rodando o resto da demo):
 
 ```bash
-kubectl port-forward -n platform svc/dynamic-gateway 8080:8080
+make nginx-lb-pf
 ```
 
 > Atenção: se o pod do gateway for reiniciado (Fase 10), o port-forward morre e precisa ser reaberto.
@@ -269,8 +269,8 @@ kubectl port-forward -n platform svc/dynamic-gateway 8080:8080
 Em **Terminal A** verifique que o gateway está vivo, mas sem rotas:
 
 ```bash
-curl -s http://localhost:8080/actuator/health  | python3 -m json.tool
-curl -s http://localhost:8080/internal/routes  | python3 -m json.tool
+curl -s http://localhost:18000/actuator/health  | python3 -m json.tool
+curl -s http://localhost:18000/internal/routes  | python3 -m json.tool
 ```
 
 Mostre o log do bootstrap:
@@ -291,7 +291,7 @@ Gateway bootstrap completed activeRoutes=0
 Confirme que a rota ainda não funciona — **execute este curl ANTES de avançar para a Fase 6**, porque a partir do momento em que o operator subir, esse mesmo comando passa a retornar `HTTP 200`:
 
 ```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8080/httpbin/get
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:18000/httpbin/get
 # HTTP 404 — não tem rota carregada (gateway está sozinho, sem operator)
 ```
 
@@ -338,10 +338,10 @@ Em **Terminal A** verifique o efeito:
 kubectl get configmap gateway-routes -n platform -o jsonpath='{.data.routes\.yaml}'; echo
 
 # 2) Rotas em memória do gateway
-curl -s http://localhost:8080/internal/routes | python3 -m json.tool
+curl -s http://localhost:18000/internal/routes | python3 -m json.tool
 
 # 3) Atravessar o gateway até o go-httpbin (deve retornar 200 com JSON)
-curl -s http://localhost:8080/httpbin/get | python3 -m json.tool
+curl -s http://localhost:18000/httpbin/get | python3 -m json.tool
 ```
 
 No JSON de resposta do último curl, repare no campo `url`: **deveria mostrar `/get`, não `/httpbin/get`**. Esse é o `StripPrefix=1` em ação — o gateway tirou o primeiro segmento (`/httpbin`) antes de encaminhar.
@@ -384,10 +384,10 @@ Em **Terminal A**:
 ```bash
 kubectl get gatewayroutes -n platform
 kubectl get configmap gateway-routes -n platform -o jsonpath='{.data.routes\.yaml}'; echo
-curl -s http://localhost:8080/internal/routes | python3 -m json.tool
+curl -s http://localhost:18000/internal/routes | python3 -m json.tool
 
 # A segunda rota usa stripPrefix=0, então o path inteiro chega no upstream
-curl -s http://localhost:8080/anything/qualquer/coisa | python3 -m json.tool
+curl -s http://localhost:18000/anything/qualquer/coisa | python3 -m json.tool
 
 kubectl get pods -n platform
 ```
@@ -422,7 +422,7 @@ Updated ConfigMap ... routes=2
 kubectl get gatewayroutes -n platform
 # Lista 4 rotas (todas existem no etcd)
 
-curl -s http://localhost:8080/internal/routes | python3 -m json.tool
+curl -s http://localhost:18000/internal/routes | python3 -m json.tool
 # Mas o gateway só serve 2 — as duas válidas e habilitadas
 ```
 
@@ -438,14 +438,14 @@ Mude o `stripPrefix` do `httpbin-route` de `1` para `2`:
 kubectl patch gatewayroute httpbin-route -n platform \
     --type=merge -p '{"spec":{"stripPrefix":2}}'
 sleep 3
-curl -s http://localhost:8080/internal/routes | python3 -m json.tool
+curl -s http://localhost:18000/internal/routes | python3 -m json.tool
 # StripPrefix=2 agora
 ```
 
 Tente o curl: com `stripPrefix=2`, o gateway corta dois segmentos antes de encaminhar — `/httpbin/get` vira `/`, e o go-httpbin não atende `/`:
 
 ```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8080/httpbin/get
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:18000/httpbin/get
 # 404 do go-httpbin
 ```
 
@@ -455,7 +455,7 @@ Reverta:
 kubectl patch gatewayroute httpbin-route -n platform \
     --type=merge -p '{"spec":{"stripPrefix":1}}'
 sleep 3
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8080/httpbin/get
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:18000/httpbin/get
 # HTTP 200 de novo
 ```
 
@@ -482,7 +482,7 @@ kubectl rollout status  deployment/dynamic-gateway -n platform
 ⚠️ O `port-forward` no **Terminal C** morre com o pod antigo. Reabra:
 
 ```bash
-kubectl port-forward -n platform svc/dynamic-gateway 8080:8080
+make nginx-lb-pf
 ```
 
 Em **Terminal A**, mostre o log da startup do pod novo:
@@ -506,10 +506,10 @@ Gateway bootstrap completed activeRoutes=2
 E prove que tudo voltou a funcionar:
 
 ```bash
-curl -s http://localhost:8080/internal/routes | python3 -m json.tool
+curl -s http://localhost:18000/internal/routes | python3 -m json.tool
 # As 2 rotas válidas estão lá
 
-curl -s http://localhost:8080/httpbin/get | python3 -m json.tool
+curl -s http://localhost:18000/httpbin/get | python3 -m json.tool
 # HTTP 200 — gateway voltou a rotear
 ```
 
@@ -524,142 +524,18 @@ kubectl get deployment -n platform
 
 ---
 
-## Fase 11 — Trocar o backend para S3 (AWS, IAM User)
-
-Esta fase NÃO faz parte da demo de operator/CRD/gateway. Ela demonstra que a
-camada de armazenamento foi abstraída: trocando uma variável de ambiente, o
-mesmo binário passa a ler/escrever o snapshot em S3 ao invés de ConfigMap.
-
-> Pré-requisitos:
-> - Um bucket S3 já criado (ex.: `dynamic-gateway-routes-poc`).
-> - Um IAM User com acesso ao bucket. Policy mínima:
->   ```json
->   {
->     "Version": "2012-10-17",
->     "Statement": [
->       {
->         "Effect": "Allow",
->         "Action": ["s3:GetObject", "s3:PutObject"],
->         "Resource": "arn:aws:s3:::dynamic-gateway-routes-poc/snapshots/*"
->       }
->     ]
->   }
->   ```
-> - As credenciais do IAM User exportadas no shell antes de começar:
->   ```bash
->   export AWS_ACCESS_KEY_ID=AKIA...
->   export AWS_SECRET_ACCESS_KEY=...
->   export S3_BUCKET=dynamic-gateway-routes-poc
->   export S3_REGION=us-east-1
->   ```
-
-### 11.1 — Criar o Secret com as credenciais
-
-```bash
-kubectl create secret generic aws-credentials \
-  --from-literal=AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
-  --from-literal=AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
-  -n platform
-
-kubectl get secret aws-credentials -n platform
-```
-
-### 11.2 — Editar os manifests S3 com o nome do bucket
-
-Os arquivos em `k8s/s3/` trazem `REPLACE_WITH_BUCKET`. Substitua antes de
-aplicar (a região default é `us-east-1`; troque se for outra):
-
-```bash
-sed -i "s|REPLACE_WITH_BUCKET|$S3_BUCKET|g" k8s/s3/gateway-deployment.yaml
-sed -i "s|REPLACE_WITH_BUCKET|$S3_BUCKET|g" k8s/s3/operator-deployment.yaml
-```
-
-### 11.3 — Aplicar os Deployments do modo S3
-
-Os manifests do diretório `k8s/s3/` SUBSTITUEM os Deployments existentes
-(mesmo nome e namespace). O Kubernetes vai fazer rollout dos dois pods.
-
-```bash
-kubectl apply -f k8s/s3/gateway-deployment.yaml
-kubectl apply -f k8s/s3/operator-deployment.yaml
-
-kubectl rollout status deployment/dynamic-gateway -n platform
-kubectl rollout status deployment/gateway-route-operator -n platform
-```
-
-### 11.4 — Esperar o operator publicar o snapshot em S3
-
-A primeira reconciliação dispara o `PutObject` em
-`s3://$S3_BUCKET/snapshots/routes.yaml`. Verifique no log:
-
-```bash
-kubectl logs -n platform deployment/gateway-route-operator | grep "Published snapshot"
-# Esperado: Published snapshot to s3://<bucket>/snapshots/routes.yaml version=... routes=N
-```
-
-E no próprio S3:
-
-```bash
-aws s3 ls s3://$S3_BUCKET/snapshots/
-aws s3 cp s3://$S3_BUCKET/snapshots/routes.yaml -
-```
-
-### 11.5 — Verificar o gateway carregando do S3
-
-```bash
-kubectl logs -n platform deployment/dynamic-gateway | grep "Loaded route config snapshot from s3"
-# Esperado: Loaded route config snapshot from s3://<bucket>/snapshots/routes.yaml version=... routes=N
-```
-
-Roteie tráfego pra confirmar:
-
-```bash
-kubectl port-forward -n platform svc/dynamic-gateway 8090:8080 &
-curl -s http://localhost:8090/httpbin/get | python3 -m json.tool | head
-```
-
-### 11.6 — Alterar uma rota e ver o ciclo via S3
-
-Mesma operação da Fase 9, mas agora a fonte da verdade é o objeto no S3:
-
-```bash
-kubectl edit gatewayroute httpbin-route -n platform
-# (mude algo, salve)
-
-# Operator detecta, valida, escreve novo objeto em S3 e dispara HTTP signal
-# Gateway recebe signal, faz GetObject, atualiza in-memory routes
-```
-
-Confirme com:
-
-```bash
-aws s3api head-object --bucket $S3_BUCKET --key snapshots/routes.yaml \
-  --query 'LastModified' --output text
-# Deve mostrar timestamp recente
-```
-
-### 11.7 — Voltar pro modo ConfigMap (opcional)
-
-```bash
-kubectl apply -f k8s/gateway/deployment.yaml
-kubectl apply -f k8s/operator/deployment.yaml
-```
-
-A ConfigMap `gateway-routes` continua intacta — o operator volta a escrever
-nela na próxima reconciliação.
-
----
-
 ## Encerramento
 
-Resumo de uma frase para fechar a apresentação:
+Resumo de uma frase pra fechar a apresentação:
 
-> **O operator é o controle. O ConfigMap (ou S3) é a memória. O gateway é stateless em relação ao operator, mas se ancora no snapshot.**
+> **O operator é o controle. O ConfigMap é a memória. O gateway é stateless em relação ao operator, mas se ancora no snapshot.**
+
+Pra trocar o backend pra S3, siga [`TESTE_S3.md`](TESTE_S3.md) — a abstração `RouteConfigPublisher`/`RouteConfigProvider` deixa o swap acontecer só por configuração, sem mudança de código no reconciler ou no pipeline de reload.
 
 ---
 
 ## Cleanup (opcional)
 
 ```bash
-./scripts/delete-cluster.sh
+make down
 ```

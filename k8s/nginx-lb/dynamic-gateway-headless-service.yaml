@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamic-gateway-headless
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: dynamic-gateway-headless
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+    app.kubernetes.io/component: edge-lb
+spec:
+  # Headless: clusterIP None faz o kube-dns devolver UM A record por pod
+  # vivo do gateway, em vez de um único VIP. O nginx-lb usa isso pra fazer
+  # round-robin DNS por request e distribuir tráfego entre todas as réplicas
+  # do gateway (sem isso, keepalive + ClusterIP poderia grudar uma conexão
+  # num único pod e mascarar a propagação de rotas entre os outros).
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: dynamic-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

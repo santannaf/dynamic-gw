@@ -1,52 +1,52 @@
-# =============================================================================
+# ==================================================================
 # CABEÇALHO (FIXO pelo Kubernetes)
-# =============================================================================
-apiVersion: apiextensions.k8s.io/v1   # FIXO — toda CRD usa essa API
-kind: CustomResourceDefinition         # FIXO — você está criando uma CRD
+# ==================================================================
+apiVersion: apiextensions.k8s.io/v1   # FIXO - toda CRD usa essa API
+kind: CustomResourceDefinition        # FIXO - você está criando uma CRD
 metadata:
   # CONVENÇÃO obrigatória: formato <plural>.<group>
   # tem que casar com spec.names.plural + "." + spec.group, senão o apply rejeita
   name: gatewayroutes.platform.saca.pags
 
-# =============================================================================
+# ==================================================================
 # IDENTIDADE DA CRD
-# =============================================================================
+# ==================================================================
 spec:
-  group: platform.saca.pags   # SEU — domínio reverso (ex.: "saca.pags")
-  scope: Namespaced           # ESCOLHA — "Namespaced" (por namespace) ou "Cluster" (global)
+  group: platform.saca.pags    # SEU - domínio reverso (ex.: "saca.pags")
+  scope: Namespaced            # ESCOLHA - "Namespaced" (por namespace) ou "Cluster" (global)
   names:
-    kind: GatewayRoute          # SEU — PascalCase, é o "kind:" que o usuário escreve no YAML
-    listKind: GatewayRouteList  # CONVENÇÃO — sempre kind + "List"
-    plural: gatewayroutes       # SEU — lowercase, vira parte da URL REST
-    singular: gatewayroute      # SEU — lowercase
-    shortNames:                 # SEU/OPCIONAL — atalho do kubectl (kubectl get gwr)
+    kind: GatewayRoute         # SEU - PascalCase, é o "kind:" que o usuário escreve no YAML
+    listKind: GatewayRouteList # CONVENÇÃO - sempre kind + "List"
+    plural: gatewayroutes      # SEU - lowercase, vira parte da URL REST
+    singular: gatewayroute     # SEU - lowercase
+    shortNames:                # SEU/OPCIONAL - atalho do kubectl (kubectl get gwr)
       - gwr
 
-  # ===========================================================================
+  # ==================================================================
   # VERSIONAMENTO DA API
-  # ===========================================================================
+  # ==================================================================
   versions:
-    - name: v1alpha1   # SEU — convenção K8s: v1alpha1 → v1beta1 → v1
-      served: true     # FIXO opções (true/false) — se a API responde nessa versão
-      storage: true    # FIXO opções (true/false) — EXATAMENTE UMA versão pode ser storage:true
+    - name: v1alpha1     # SEU - convenção K8s: v1alpha1 → v1beta1 → v1
+      served: true       # FIXO opções (true/false) - se a API responde nessa versão
+      storage: true      # FIXO opções (true/false) - EXATAMENTE UMA versão pode ser storage:true
 
-      # =======================================================================
-      # SCHEMA — daqui para baixo é 100% SEU (contrato do seu recurso)
-      # =======================================================================
+      # ==================================================================
+      # SCHEMA - daqui para baixo é 100% SEU (contrato do seu recurso)
+      # ==================================================================
       schema:
-        openAPIV3Schema:   # FIXO — chave do K8s
-          type: object     # FIXO — todo recurso é object
+        openAPIV3Schema:    # FIXO - chave do K8s
+          type: object      # FIXO - todo recurso é object
           properties:
-            spec:          # CONVENÇÃO — "spec" (desejado) e opcionalmente "status" (observado)
+            spec:           # CONVENÇÃO - "spec" (desejado) e opcionalmente "status" (observado)
               type: object
-              required:    # SEU — campos obrigatórios do spec
+              required:     # SEU - campos obrigatórios do spec
                 - path
                 - targetUri
-              properties:  # SEU — modelo de domínio
+              properties:   # SEU - modelo de domínio
                 # --- path: predicado de rota ---
                 path:
-                  type: string         # FIXO opções: string/integer/boolean/array/object/number
-                  minLength: 1         # SEU — validação
+                  type: string          # FIXO opções: string/integer/boolean/array/object/number
+                  minLength: 1          # SEU - validação
                   description: Ant-style HTTP path predicate (e.g. /httpbin/**).
                 # --- targetUri: para onde redireciona ---
                 targetUri:
@@ -56,8 +56,8 @@ spec:
                 # --- stripPrefix: quantos segmentos remover antes de encaminhar ---
                 stripPrefix:
                   type: integer
-                  minimum: 0           # SEU — não aceita negativo
-                  default: 1           # SEU — se omitido, K8s aplica 1 automaticamente
+                  minimum: 0            # SEU - não aceita negativo
+                  default: 1            # SEU - se omitido, K8s aplica 1 automaticamente
                   description: Number of path segments stripped before forwarding.
                 # --- methods: HTTP verbs aceitos (vazio = todos) ---
                 methods:
@@ -65,7 +65,7 @@ spec:
                   description: Uppercase HTTP methods this route matches. Empty/absent means any method.
                   items:
                     type: string
-                    enum:              # SEU — restringe valores aceitos (rejeita "FOO")
+                    enum:                # SEU - restringe valores aceitos (rejeita "FOO")
                       - GET
                       - POST
                       - PUT
@@ -76,20 +76,33 @@ spec:
                 # --- enabled: liga/desliga a rota sem deletar o CR ---
                 enabled:
                   type: boolean
-                  default: true        # SEU — default true (se omitido)
+                  default: true        # SEU - default true (se omitido)
                   description: When false, the operator omits this route from the published snapshot.
+                # --- team: dono da rota (metadata; não afeta roteamento) ---
+                team:
+                  type: string
+                  maxLength: 64        # SEU - cap defensivo, evita string gigante via apply
+                  description: Owning team for this route (free-text identifier). Surfaced by /internal/routes; ignored by the matcher.
+                # --- description: breve resumo do que a rota faz ---
+                description:
+                  type: string
+                  maxLength: 512       # SEU - cap defensivo
+                  description: Short human-readable description of what this route does. Surfaced by /internal/routes; ignored by the matcher.
 
-      # =======================================================================
-      # COLUNAS do `kubectl get` — puramente cosmético, SEU
+      # ==================================================================
+      # COLUNAS do `kubectl get` - puramente cosmético, SEU
       # Define o que aparece em: kubectl get gatewayroutes
-      # =======================================================================
+      # ==================================================================
       additionalPrinterColumns:
-        - name: Path                          # SEU — cabeçalho da coluna
-          type: string                        # FIXO opções: string/integer/boolean/date/number
-          jsonPath: .spec.path                # SEU — campo a extrair do objeto
+        - name: Path                              # SEU - cabeçalho da coluna
+          type: string                            # FIXO opções: string/integer/boolean/date/number
+          jsonPath: .spec.path                    # SEU - campo a extrair do objeto
         - name: Target
           type: string
           jsonPath: .spec.targetUri
+        - name: Team                              # SEU - facilita `kubectl get gwr` filtrado por dono
+          type: string
+          jsonPath: .spec.team
         - name: Enabled
           type: boolean
           jsonPath: .spec.enabled

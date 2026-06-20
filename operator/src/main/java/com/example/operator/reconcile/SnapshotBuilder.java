@@ -18,9 +18,7 @@ public class SnapshotBuilder {
 
     private final GatewayRouteValidator validator;
 
-    public SnapshotBuilder(GatewayRouteValidator validator) {
-        this.validator = validator;
-    }
+    public SnapshotBuilder(GatewayRouteValidator validator) { this.validator = validator; }
 
     public Result build(List<GatewayRoute> all, Clock clock) {
         int total = all.size();
@@ -57,7 +55,9 @@ public class SnapshotBuilder {
                 spec.getTargetUri(),
                 spec.getStripPrefix(),
                 spec.getMethods(),
-                Boolean.TRUE
+                Boolean.TRUE,
+                spec.getTeam(),
+                spec.getDescription()
         );
     }
 

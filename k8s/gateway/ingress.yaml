@@ -6,6 +6,12 @@ metadata:
   labels:
     app.kubernetes.io/name: dynamic-gateway
     app.kubernetes.io/part-of: dynamic-gateway-control-plane
+# O Ingress NÃO aponta direto pro svc/dynamic-gateway. Em vez disso, ele cai
+# no nginx-lb (k8s/nginx-lb/), que faz round-robin entre os pods do gateway
+# via headless service. Isso garante que:
+#   - Pods do gateway nunca são expostos diretamente.
+#   - Quem se conecta de fora (k3d Traefik, port-forward, k6) sempre passa pelo
+#     mesmo ponto de entrada que produção teria.
 spec:
   rules:
     - http:
@@ -14,6 +20,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: dynamic-gateway
+                name: nginx-lb
                 port:
-                  number: 8080
+                  number: 80

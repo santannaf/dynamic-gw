@@ -52,7 +52,9 @@ class S3RouteConfigPublisherTest {
                 "http://upstream.local",
                 1,
                 List.of("GET"),
-                true);
+                true,
+                null,
+                null);
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot(
                 "v1", Instant.parse("2026-01-01T00:00:00Z"), List.of(entry));
 

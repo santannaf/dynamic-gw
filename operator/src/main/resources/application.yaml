@@ -4,11 +4,12 @@ spring:
   main:
     web-application-type: none
     keep-alive: true
+  threads:
+    virtual:
+      enabled: true
 
 operator:
   namespace: platform
-  gateway:
-    reload-url: http://dynamic-gateway.platform.svc.cluster.local:8080/internal/routes/reload
   reconcile:
     debounce: 200ms
   routes:

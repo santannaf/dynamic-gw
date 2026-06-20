@@ -11,7 +11,7 @@ scripts/
 .ai-jail
 
 # Excluir todo build/ exceto os binários nativos que o Dockerfile precisa copiar
-**/build/
+!**/build/
 !**/build/native/
 !**/build/native/nativeCompile/
 !**/build/native/nativeCompile/dynamic-gateway

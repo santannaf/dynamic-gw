@@ -8,7 +8,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 public class ConfigMapRouteConfigProvider implements RouteConfigProvider {
 
@@ -37,14 +39,34 @@ public class ConfigMapRouteConfigProvider implements RouteConfigProvider {
                     props.getNamespace(), props.getConfigMapName());
             return new RouteConfigSnapshot("empty", Instant.now(), List.of());
         }
-        String yaml = cm.getData() == null ? null : cm.getData().get(props.getKey());
+
+        Map<String, String> binaryData = cm.getBinaryData();
+        if (binaryData != null) {
+            String b64 = binaryData.get(props.getGzipKey());
+            if (b64 != null && !b64.isBlank()) {
+                byte[] gz = Base64.getDecoder().decode(b64);
+                RouteConfigSnapshot snapshot = codec.readYamlGz(gz);
+                log.info("Loaded gzipped route config snapshot from {}/{} binaryData[{}] gzippedBytes={} version={} routes={}",
+                        props.getNamespace(), props.getConfigMapName(),
+                        props.getGzipKey(), gz.length,
+                        snapshot.version(), snapshot.routes().size());
+                return snapshot;
+            }
+        }
+
+        Map<String, String> data = cm.getData();
+        String yaml = data == null ? null : data.get(props.getKey());
         if (yaml == null || yaml.isBlank()) {
-            log.warn("ConfigMap {}/{} has no data under key '{}'; returning empty snapshot",
-                    props.getNamespace(), props.getConfigMapName(), props.getKey());
+            log.warn("ConfigMap {}/{} has no data under key '{}' (and no binaryData under '{}'); returning empty snapshot",
+                    props.getNamespace(), props.getConfigMapName(),
+                    props.getKey(), props.getGzipKey());
             return new RouteConfigSnapshot("empty", Instant.now(), List.of());
         }
+
         RouteConfigSnapshot snapshot = codec.readYaml(yaml);
-        log.info("Loaded route config snapshot version={} routes={}",
+        log.info("Loaded plain-text route config snapshot from {}/{} data[{}] yamlBytes={} version={} routes={}",
+                props.getNamespace(), props.getConfigMapName(),
+                props.getKey(), yaml.length(),
                 snapshot.version(), snapshot.routes().size());
         return snapshot;
     }
