@@ -1,11 +1,8 @@
 # TESTE_S3.md — Validação localhost com backend S3 (AWS, IAM User)
 
-Guia self-contained para subir o POC em k3d com o snapshot de rotas vivendo
-em S3 ao invés de ConfigMap. Para a demo com ConfigMap, veja `TESTE_LOCAL.md`.
+Roteiro pra subir o POC com o snapshot de rotas vivendo em **S3** ao invés de `ConfigMap`. Mesma topologia da v2 ConfigMap ([`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md)) — três componentes (CRD, operator, gateway) — só muda a "memória" do plano de controle: ao invés de `ConfigMap`, é um objeto YAML em `s3://<bucket>/snapshots/routes.yaml`. Pra arquitetura geral veja [`README.md`](README.md).
 
-A topologia é idêntica à da demo ConfigMap — três componentes (CRD, operator,
-gateway) — só muda a "memória" do plano de controle: ao invés de uma
-ConfigMap dentro do cluster, é um objeto YAML em `s3://<bucket>/snapshots/routes.yaml`.
+> **⚠️ Estado atual:** as implementações `S3RouteConfigPublisher` e `S3RouteConfigProvider` são **stubs** que lançam `UnsupportedOperationException`. Este guia documenta o caminho pronto pra quando elas forem implementadas. Os manifests em `k8s/s3/`, o `scripts/create-s3-bucket.sh` e o overlay de env vars já existem; basta substituir o corpo dos dois publishers/providers.
 
 ---
 
@@ -120,7 +117,7 @@ Espere o `platform` ficar `Active`.
 
 ## Fase 2 — Build dos binários nativos e imagens Docker
 
-> Esta fase é idêntica à Fase 2 do TESTE_LOCAL.md. Se você acabou de fazer
+> Esta fase é idêntica à Fase 2 do TESTE_CONFIGMAP.md. Se você acabou de fazer
 > a demo ConfigMap e nenhum código mudou, **pode pular** — as imagens
 > `dynamic-gateway:local` e `dynamic-gateway-operator:local` ainda estão no
 > k3d. Recompile só se o código de S3 mudou.
@@ -308,7 +305,7 @@ curl -s http://localhost:8090/httpbin/get | python3 -m json.tool | head -20
 
 ## Fase 10 — Editar uma rota em runtime
 
-Mesma operação da Fase 9 do TESTE_LOCAL.md, mas agora a fonte da verdade é
+Mesma operação da Fase 9 do TESTE_CONFIGMAP.md, mas agora a fonte da verdade é
 o objeto S3. Usamos `kubectl patch` (não-interativo) ao invés de
 `kubectl edit` pra deixar a demo reprodutível.
 

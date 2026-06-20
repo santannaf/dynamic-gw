@@ -1,0 +1,40 @@
+# Profile "standalone": v1 do gateway, sem CRD, sem operator, sem
+# ConfigMap-watcher. As rotas vivem aqui mesmo, em properties. Mudar
+# rota = `kubectl rollout restart` do pod (ou rebuild da imagem se a
+# lista está embedded; ou `kubectl apply` no ConfigMap montado, se você
+# escolheu o caminho mountado em `k8s/gateway-standalone/`).
+#
+# Pra ativar: `--spring.profiles.active=standalone` na linha de comando
+# OU `SPRING_PROFILES_ACTIVE=standalone` na env do container.
+
+gateway:
+  routes:
+    store:
+      type: properties
+      properties:
+        # Versão do catálogo estático. Útil para correlacionar `kubectl logs`
+        # com qual release de configuração está rodando. Pode ser injetado
+        # via env tipo `GATEWAY_ROUTES_STORE_PROPERTIES_VERSION=v2026.06.20`.
+        version: "v1-sample"
+        routes:
+          - id: httpbin-route
+            path: /httpbin/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            methods:
+              - GET
+              - POST
+            enabled: true
+            # team e description são metadados opcionais (não afetam roteamento).
+            # Visíveis via GET /internal/routes e logados no startup do gateway.
+            team: platform-team
+            description: Echoes the request via httpbin for smoke testing.
+          - id: anything-route
+            path: /anything/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 0
+            methods:
+              - GET
+            enabled: true
+            team: platform-team
+            description: Baseline route used by the k6 stress scenario alongside /httpbin.

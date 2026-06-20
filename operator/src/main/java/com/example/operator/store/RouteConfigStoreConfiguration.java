@@ -19,14 +19,10 @@ import java.net.URI;
 public class RouteConfigStoreConfiguration {
 
     @Bean
-    public SnapshotCodec snapshotCodec() {
-        return new SnapshotCodec();
-    }
+    public SnapshotCodec snapshotCodec() { return new SnapshotCodec(); }
 
     @Bean(destroyMethod = "close")
-    public KubernetesClient kubernetesClient() {
-        return new KubernetesClientBuilder().build();
-    }
+    public KubernetesClient kubernetesClient() { return new KubernetesClientBuilder().build(); }
 
     @Bean(destroyMethod = "close")
     public S3Client s3Client(RouteStoreProperties properties) {

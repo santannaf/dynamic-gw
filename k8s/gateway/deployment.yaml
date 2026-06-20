@@ -7,7 +7,11 @@ metadata:
     app.kubernetes.io/name: dynamic-gateway
     app.kubernetes.io/part-of: dynamic-gateway-control-plane
 spec:
-  replicas: 1
+  # Duas réplicas por default para validar a propagação multi-instância:
+  # cada pod tem seu próprio RouteConfigChangeListener e converge sozinho
+  # quando o ConfigMap muda - sem depender de um sinal HTTP que só
+  # atingiria uma das réplicas.
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -31,6 +35,10 @@ spec:
             - name: http
               containerPort: 8080
           env:
+            # Faz o JVM (e timestamps de logback) usarem America/Sao_Paulo.
+            # debian:stable-slim já traz /usr/share/zoneinfo, então basta a env.
+            - name: TZ
+              value: America/Sao_Paulo
             - name: GATEWAY_ROUTES_STORE_TYPE
               value: configmap
             - name: GATEWAY_ROUTES_STORE_CONFIGMAP_NAMESPACE
@@ -58,5 +66,10 @@ spec:
               cpu: 100m
               memory: 384Mi
             limits:
-              cpu: 2000m
+              # 4 cores liberados pra que o ForkJoinPool.commonPool() do
+              # parallelStream no FastRouteCompiler tenha paralelismo > 1
+              # (parallelism = max(1, availableProcessors() - 1)).
+              # Como reload é evento ocasional, o pico de CPU é curto;
+              # o request path normal usa muito menos.
+              cpu: 8000m
               memory: 768Mi

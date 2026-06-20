@@ -28,9 +28,11 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-webflux'
     testImplementation "io.fabric8:kubernetes-server-mock:${fabric8Version}"
     testImplementation 'io.projectreactor:reactor-test'
+    testImplementation 'org.awaitility:awaitility:4.3.0'
     testImplementation "org.mockito:mockito-core:${mockitoVersion}"
     testImplementation "org.mockito:mockito-junit-jupiter:${mockitoVersion}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    aotTestCompileOnly 'org.apiguardian:apiguardian-api:1.1.2'
 }
 
 dependencyManagement {
@@ -42,16 +44,30 @@ dependencyManagement {
     }
 }
 
+List<String> quietMockJvmArgs = [
+        '-Dnet.bytebuddy.safe=true',
+        '-XX:+EnableDynamicAgentLoading'
+]
+
+tasks.named('test', Test).configure { Test t ->
+    t.jvmArgs(quietMockJvmArgs)
+}
+
+tasks.named('processTestAot', JavaExec).configure { JavaExec t ->
+    t.jvmArgs(quietMockJvmArgs)
+}
+
 graalvmNative {
     binaries {
         main {
             imageName = 'dynamic-gateway'
             mainClass = 'com.example.gateway.GatewayApplication'
             buildArgs.addAll(
-                '--no-fallback',
-                '--enable-url-protocols=http,https',
-                '-H:+AddAllCharsets',                  // snakeyaml-engine (via Fabric8) precisa de UTF-32BE etc.
-                '-H:+ReportExceptionStackTraces'
+                    '--no-fallback',
+                    '--enable-url-protocols=http,https',
+                    '--enable-native-access=ALL-UNNAMED',
+                    '-H:+AddAllCharsets',                  // snakeyaml-engine (via Fabric8) precisa de UTF-32BE etc.
+                    '-H:+ReportExceptionStackTraces'
             )
         }
     }

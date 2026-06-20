@@ -25,12 +25,14 @@ spec:
           image: dynamic-gateway-operator:local
           imagePullPolicy: IfNotPresent
           env:
+            # Faz o JVM (e timestamps de logback) usarem America/Sao_Paulo.
+            # eclipse-temurin:25-jre já traz tzdata, então basta a env.
+            - name: TZ
+              value: America/Sao_Paulo
             - name: SPRING_MAIN_WEB_APPLICATION_TYPE
               value: none
             - name: OPERATOR_NAMESPACE
               value: platform
-            - name: OPERATOR_GATEWAY_RELOAD_URL
-              value: http://dynamic-gateway.platform.svc.cluster.local:8080/internal/routes/reload
             - name: OPERATOR_ROUTES_STORE_TYPE
               value: configmap
             - name: OPERATOR_ROUTES_STORE_CONFIGMAP_NAMESPACE

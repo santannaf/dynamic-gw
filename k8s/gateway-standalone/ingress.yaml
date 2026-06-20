@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dynamic-gateway
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: dynamic-gateway
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+    app.kubernetes.io/component: standalone
+# Mesmo princípio da v2: o Ingress cai no nginx-lb, não direto nos pods do
+# gateway. O nginx-lb usa headless service + DNS round-robin pra distribuir
+# requests entre as réplicas. Sem isso, k3d Traefik mandaria tudo pra um pod
+# só por conexão (kube-proxy + keepalive).
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-lb
+                port:
+                  number: 80

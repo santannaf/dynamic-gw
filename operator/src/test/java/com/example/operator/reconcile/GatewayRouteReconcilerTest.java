@@ -1,10 +1,7 @@
 package com.example.operator.reconcile;
 
-import com.example.operator.crd.GatewayRoute;
-import com.example.operator.signal.GatewayReloadSignaler;
 import com.example.operator.store.RouteConfigPublisher;
 import com.example.shared.routes.RouteConfigSnapshot;
-import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -15,9 +12,9 @@ import java.util.List;
 
 import static com.example.operator.reconcile.GatewayRouteValidatorTest.route;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -27,10 +24,9 @@ class GatewayRouteReconcilerTest {
     private final SnapshotBuilder builder = new SnapshotBuilder(new GatewayRouteValidator());
 
     @Test
-    void happyPathPublishesThenSignals() {
+    void happyPathPublishesSnapshotInIdOrder() {
         RouteConfigPublisher publisher = mock(RouteConfigPublisher.class);
-        GatewayReloadSignaler signaler = mock(GatewayReloadSignaler.class);
-        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, signaler, clock);
+        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, clock);
 
         reconciler.reconcile(List.of(
                 route("a", "/a/**", "http://a", 1, null, true),
@@ -40,31 +36,58 @@ class GatewayRouteReconcilerTest {
         ArgumentCaptor<RouteConfigSnapshot> captor = ArgumentCaptor.forClass(RouteConfigSnapshot.class);
         verify(publisher, times(1)).publish(captor.capture());
         assertThat(captor.getValue().routes()).extracting(e -> e.id()).containsExactly("a", "b");
-        verify(signaler, times(1)).signal();
     }
 
     @Test
-    void publisherFailureSkipsSignal() {
+    void publisherFailureIsSwallowedAndDoesNotPropagate() {
         RouteConfigPublisher publisher = mock(RouteConfigPublisher.class);
-        doThrow(new RuntimeException("backend down")).when(publisher).publish(org.mockito.ArgumentMatchers.any());
-        GatewayReloadSignaler signaler = mock(GatewayReloadSignaler.class);
-        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, signaler, clock);
+        doThrow(new RuntimeException("backend down")).when(publisher).publish(any());
+        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, clock);
 
         reconciler.reconcile(List.of(route("a", "/a/**", "http://a", 1, null, true)));
 
-        verify(publisher).publish(org.mockito.ArgumentMatchers.any());
-        verify(signaler, never()).signal();
+        verify(publisher).publish(any());
     }
 
     @Test
-    void emptyInputStillSignalsToClearGatewayRoutes() {
+    void emptyInputStillPublishesEmptySnapshot() {
         RouteConfigPublisher publisher = mock(RouteConfigPublisher.class);
-        GatewayReloadSignaler signaler = mock(GatewayReloadSignaler.class);
-        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, signaler, clock);
+        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, clock);
 
         reconciler.reconcile(List.of());
 
-        verify(publisher, times(1)).publish(org.mockito.ArgumentMatchers.any());
-        verify(signaler, times(1)).signal();
+        ArgumentCaptor<RouteConfigSnapshot> captor = ArgumentCaptor.forClass(RouteConfigSnapshot.class);
+        verify(publisher, times(1)).publish(captor.capture());
+        assertThat(captor.getValue().routes()).isEmpty();
+    }
+
+    @Test
+    void invalidEntriesAreDroppedBeforePublish() {
+        RouteConfigPublisher publisher = mock(RouteConfigPublisher.class);
+        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, clock);
+
+        reconciler.reconcile(List.of(
+                route("ok", "/ok/**", "http://ok", 1, null, true),
+                route("bad", "/x/**", "", 1, null, true)
+        ));
+
+        ArgumentCaptor<RouteConfigSnapshot> captor = ArgumentCaptor.forClass(RouteConfigSnapshot.class);
+        verify(publisher).publish(captor.capture());
+        assertThat(captor.getValue().routes()).extracting(e -> e.id()).containsExactly("ok");
+    }
+
+    @Test
+    void disabledEntriesAreDroppedBeforePublish() {
+        RouteConfigPublisher publisher = mock(RouteConfigPublisher.class);
+        GatewayRouteReconciler reconciler = new GatewayRouteReconciler(builder, publisher, clock);
+
+        reconciler.reconcile(List.of(
+                route("ok", "/ok/**", "http://ok", 1, null, true),
+                route("off", "/off/**", "http://off", 1, null, false)
+        ));
+
+        ArgumentCaptor<RouteConfigSnapshot> captor = ArgumentCaptor.forClass(RouteConfigSnapshot.class);
+        verify(publisher).publish(captor.capture());
+        assertThat(captor.getValue().routes()).extracting(e -> e.id()).containsExactly("ok");
     }
 }

@@ -20,7 +20,9 @@ class SnapshotCodecTest {
                 "http://httpbin.org",
                 1,
                 List.of("GET", "POST"),
-                true
+                true,
+                "platform-team",
+                "Echoes the request via httpbin for smoke testing."
         );
         RouteConfigEntry echo = new RouteConfigEntry(
                 "echo-route",
@@ -28,7 +30,9 @@ class SnapshotCodecTest {
                 "http://echo.svc.cluster.local:8080",
                 null,
                 null,
-                true
+                true,
+                null,
+                null
         );
         RouteConfigSnapshot original = new RouteConfigSnapshot(
                 "2026-06-13T10:00:00Z",
@@ -63,6 +67,8 @@ class SnapshotCodecTest {
         assertThat(entry.stripPrefix()).isNull();
         assertThat(entry.methods()).isNull();
         assertThat(entry.enabled()).isNull();
+        assertThat(entry.team()).isNull();
+        assertThat(entry.description()).isNull();
     }
 
     @Test
@@ -85,18 +91,18 @@ class SnapshotCodecTest {
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot(
                 "v1",
                 Instant.now(),
-                List.of(new RouteConfigEntry("a", "/a", "http://a", 1, null, true))
+                List.of(new RouteConfigEntry("a", "/a", "http://a", 1, null, true, null, null))
         );
 
         assertThatThrownBy(() -> snapshot.routes().add(
-                new RouteConfigEntry("b", "/b", "http://b", 1, null, true)
+                new RouteConfigEntry("b", "/b", "http://b", 1, null, true, null, null)
         )).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
     void methodsListIsUnmodifiable() {
         RouteConfigEntry entry = new RouteConfigEntry(
-                "a", "/a", "http://a", 1, List.of("GET"), true
+                "a", "/a", "http://a", 1, List.of("GET"), true, null, null
         );
 
         assertThatThrownBy(() -> entry.methods().add("POST"))

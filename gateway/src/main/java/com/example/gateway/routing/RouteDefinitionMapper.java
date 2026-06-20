@@ -30,6 +30,17 @@ public class RouteDefinitionMapper {
         int strip = entry.stripPrefix() == null ? DEFAULT_STRIP_PREFIX : entry.stripPrefix();
         rd.setFilters(List.of(stripPrefixFilter(strip)));
 
+        // Stash ownership/description metadata on the RouteDefinition itself.
+        // Spring Cloud Gateway always allocates a metadata Map per Route, so
+        // piggy-backing on it adds zero extra fields to the locator. Only put
+        // non-null values to keep the JSON of /internal/routes lean.
+        if (entry.team() != null) {
+            rd.getMetadata().put("team", entry.team());
+        }
+        if (entry.description() != null) {
+            rd.getMetadata().put("description", entry.description());
+        }
+
         return rd;
     }
 

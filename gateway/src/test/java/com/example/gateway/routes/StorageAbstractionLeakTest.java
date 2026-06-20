@@ -1,6 +1,8 @@
 package com.example.gateway.routes;
 
 import com.example.gateway.routes.api.InternalRoutesController;
+import com.example.gateway.routes.store.PropertiesRouteConfigChangeListener;
+import com.example.gateway.routes.store.PropertiesRouteConfigProvider;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -16,6 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Reload pipeline classes must NOT import Kubernetes or AWS storage types directly.
  * They MUST depend only on the RouteConfigProvider abstraction.
+ *
+ * The {@link PropertiesRouteConfigProvider} + {@link PropertiesRouteConfigChangeListener}
+ * pair backs the v1 standalone deploy and must additionally stay free of any
+ * Kubernetes/AWS imports — the standalone deploy runs without apiserver access
+ * or AWS credentials, so an accidental import would crash the startup.
  */
 class StorageAbstractionLeakTest {
 
@@ -27,14 +34,24 @@ class StorageAbstractionLeakTest {
 
     @Test
     void reloadPipelineClassesDoNotImportStorageTypes() {
-        Path src = Path.of("src/main/java");
-        List<Class<?>> classesToCheck = List.of(
+        assertNoForbiddenImports(List.of(
                 GatewayRouteReloadService.class,
                 GatewayRoutesBootstrap.class,
                 InternalRoutesController.class
-        );
+        ));
+    }
 
-        for (Class<?> klass : classesToCheck) {
+    @Test
+    void propertiesBackendClassesDoNotImportKubernetesOrAwsTypes() {
+        assertNoForbiddenImports(List.of(
+                PropertiesRouteConfigProvider.class,
+                PropertiesRouteConfigChangeListener.class
+        ));
+    }
+
+    private static void assertNoForbiddenImports(List<Class<?>> classes) {
+        Path src = Path.of("src/main/java");
+        for (Class<?> klass : classes) {
             String relative = klass.getName().replace('.', '/') + ".java";
             Path file = src.resolve(relative);
             assertThat(file).as("source file for %s", klass.getName()).exists();

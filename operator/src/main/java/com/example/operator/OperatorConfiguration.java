@@ -3,7 +3,6 @@ package com.example.operator;
 import com.example.operator.reconcile.GatewayRouteReconciler;
 import com.example.operator.reconcile.GatewayRouteValidator;
 import com.example.operator.reconcile.SnapshotBuilder;
-import com.example.operator.signal.GatewayReloadSignaler;
 import com.example.operator.store.RouteConfigPublisher;
 import com.example.operator.watch.GatewayRouteInformerRunner;
 import io.fabric8.kubernetes.client.KubernetesClient;
@@ -18,37 +17,25 @@ import java.time.Clock;
 public class OperatorConfiguration {
 
     @Bean
-    public Clock systemClock() {
-        return Clock.systemUTC();
-    }
+    public Clock systemClock() { return Clock.systemUTC(); }
 
     @Bean
-    public GatewayRouteValidator gatewayRouteValidator() {
-        return new GatewayRouteValidator();
-    }
+    public GatewayRouteValidator gatewayRouteValidator() { return new GatewayRouteValidator(); }
 
     @Bean
-    public SnapshotBuilder snapshotBuilder(GatewayRouteValidator validator) {
-        return new SnapshotBuilder(validator);
-    }
-
-    @Bean
-    public GatewayReloadSignaler gatewayReloadSignaler(OperatorProperties properties) {
-        return new GatewayReloadSignaler(properties.getGateway().getReloadUrl());
-    }
+    public SnapshotBuilder snapshotBuilder(GatewayRouteValidator validator) { return new SnapshotBuilder(validator); }
 
     @Bean
     public GatewayRouteReconciler gatewayRouteReconciler(SnapshotBuilder builder,
-                                                          RouteConfigPublisher publisher,
-                                                          GatewayReloadSignaler signaler,
-                                                          Clock clock) {
-        return new GatewayRouteReconciler(builder, publisher, signaler, clock);
+                                                         RouteConfigPublisher publisher,
+                                                         Clock clock) {
+        return new GatewayRouteReconciler(builder, publisher, clock);
     }
 
     @Bean
     public GatewayRouteInformerRunner gatewayRouteInformerRunner(KubernetesClient client,
-                                                                  GatewayRouteReconciler reconciler,
-                                                                  OperatorProperties properties) {
+                                                                 GatewayRouteReconciler reconciler,
+                                                                 OperatorProperties properties) {
         return new GatewayRouteInformerRunner(
                 client,
                 reconciler,

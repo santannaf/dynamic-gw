@@ -11,3 +11,5 @@ spec:
     - GET
     - POST
   enabled: true
+  team: platform-team
+  description: Echoes the request via httpbin for smoke testing.

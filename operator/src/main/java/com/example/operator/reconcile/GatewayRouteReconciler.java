@@ -1,7 +1,6 @@
 package com.example.operator.reconcile;
 
 import com.example.operator.crd.GatewayRoute;
-import com.example.operator.signal.GatewayReloadSignaler;
 import com.example.operator.store.RouteConfigPublisher;
 import com.example.shared.routes.RouteConfigSnapshot;
 import org.slf4j.Logger;
@@ -17,17 +16,14 @@ public class GatewayRouteReconciler {
 
     private final SnapshotBuilder snapshotBuilder;
     private final RouteConfigPublisher publisher;
-    private final GatewayReloadSignaler signaler;
     private final Clock clock;
     private final AtomicLong reconcileCounter = new AtomicLong();
 
     public GatewayRouteReconciler(SnapshotBuilder snapshotBuilder,
                                   RouteConfigPublisher publisher,
-                                  GatewayReloadSignaler signaler,
                                   Clock clock) {
         this.snapshotBuilder = snapshotBuilder;
         this.publisher = publisher;
-        this.signaler = signaler;
         this.clock = clock;
     }
 
@@ -46,13 +42,10 @@ public class GatewayRouteReconciler {
         try {
             publisher.publish(snapshot);
         } catch (RuntimeException e) {
-            log.error("Reconcile id={} publish failed; gateway will not be signaled this cycle: {}",
-                    id, e.getMessage(), e);
+            log.error("Reconcile id={} publish failed: {}", id, e.getMessage(), e);
             return;
         }
-        log.info("Reconcile id={} snapshot published to backend", id);
-
-        signaler.signal();
-        log.info("Reconcile id={} reload signal sent", id);
+        log.info("Reconcile id={} snapshot published to backend version={}",
+                id, snapshot.version());
     }
 }
