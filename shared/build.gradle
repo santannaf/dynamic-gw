@@ -3,7 +3,7 @@ plugins {
 }
 
 ext {
-    set('jacksonVersion3', '3.1.7')
+    set('jacksonVersion3', '3.2.4')
     set('junitVersion', '6.0.3')
 }
 

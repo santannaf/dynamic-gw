@@ -8,7 +8,12 @@ plugins {
 ext {
     set('springBootVersion', '4.1.2')
     set('springCloudVersion', '2025.1.4')
-    set('fabric8Version', '7.9.0')
+    set('fabric8Version', '8.0.0')
+    // Fabric8 8 é feito sobre Jackson 3.2 (anotações 2.22) e o Boot 4.1.2 ainda
+    // gerencia 3.1.x/2.21: sobrescreve os dois BOMs até um Boot que traga 3.2.
+    // O BOM do Jackson 2 entra porque é ele que fixa a versão de jackson-annotations.
+    set('jackson-bom.version', '3.2.4')
+    set('jackson-2-bom.version', '2.22.4')
     set('awsSdkVersion', '2.57.4')
     set('mockitoVersion', '5.24.0')
 }

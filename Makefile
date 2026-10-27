@@ -26,7 +26,7 @@ images: jars
 # 	docker buildx build --platform linux/arm64 -f gateway/Dockerfile -t dynamic-gateway:local --load .
 	docker buildx build --pull --provenance=false --sbom=false --platform linux/amd64 -f gateway/Dockerfile -t dynamic-gateway:local --load .
 # 	docker buildx build --platform linux/arm64 -f operator/Dockerfile -t dynamic-gateway-operator:local --load .
-	docker buildx build --provenance=false --sbom=false --platform linux/amd64 -f operator/Dockerfile -t dynamic-gateway-operator:local --load .
+	docker buildx build --pull --provenance=false --sbom=false --platform linux/amd64 -f operator/Dockerfile -t dynamic-gateway-operator:local --load .
 
 load-images: images
 	k3d image import \
