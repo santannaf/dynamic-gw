@@ -11,21 +11,22 @@ O backend de persistência neste POC é um `ConfigMap` do Kubernetes (com gzip +
 1. [Modos de entrega: v1 standalone vs v2 com operator](#modos-de-entrega-v1-standalone-vs-v2-com-operator)
 2. [Arquitetura](#arquitetura)
 3. [Layout dos módulos](#layout-dos-módulos)
-4. [Pré-requisitos](#pré-requisitos)
-5. [Quick start](#quick-start)
-6. [Trabalhando com rotas (v2)](#trabalhando-com-rotas-v2)
-7. [Recuperação após restart](#recuperação-após-restart)
-8. [Modo standalone (v1)](#modo-standalone-v1)
-9. [Logs e observabilidade](#logs-e-observabilidade)
-10. [Stress tests](#stress-tests)
-11. [Backend de armazenamento](#backend-de-armazenamento)
-12. [Operator por dentro](#operator-por-dentro)
-13. [Otimização: detectar snapshots iguais sem ocupar memória](#otimização-detectar-snapshots-iguais-sem-ocupar-memória)
-14. [Otimização: 60 mil rotas num `ConfigMap` de 1 MiB](#otimização-60-mil-rotas-num-configmap-de-1-mib)
-15. [SSO, autorização por rota e auditoria](#sso-autorização-por-rota-e-auditoria)
-16. [Limitações conhecidas](#limitações-conhecidas)
-17. [Próximos passos](#próximos-passos)
-18. [Licença](#licença)
+4. [Stack e versões](#stack-e-versões)
+5. [Pré-requisitos](#pré-requisitos)
+6. [Quick start](#quick-start)
+7. [Trabalhando com rotas (v2)](#trabalhando-com-rotas-v2)
+8. [Recuperação após restart](#recuperação-após-restart)
+9. [Modo standalone (v1)](#modo-standalone-v1)
+10. [Logs e observabilidade](#logs-e-observabilidade)
+11. [Stress tests](#stress-tests)
+12. [Backend de armazenamento](#backend-de-armazenamento)
+13. [Operator por dentro](#operator-por-dentro)
+14. [Otimização: detectar snapshots iguais sem ocupar memória](#otimização-detectar-snapshots-iguais-sem-ocupar-memória)
+15. [Otimização: 60 mil rotas num `ConfigMap` de 1 MiB](#otimização-60-mil-rotas-num-configmap-de-1-mib)
+16. [SSO, autorização por rota e auditoria](#sso-autorização-por-rota-e-auditoria)
+17. [Limitações conhecidas](#limitações-conhecidas)
+18. [Próximos passos](#próximos-passos)
+19. [Licença](#licença)
 
 ---
 
@@ -104,9 +105,42 @@ O módulo `shared` propositadamente **não depende** de nada Kubernetes- ou AWS-
 
 ---
 
+## Stack e versões
+
+Versões declaradas nos `build.gradle` (out/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`.
+
+| Componente | Versão | Observação |
+|---|---|---|
+| Java | 25 | toolchain do Gradle |
+| Gradle | 9.5.1 | wrapper |
+| Spring Boot | 4.1.2 | plugin no `build.gradle` raiz e BOM nos módulos |
+| Spring Cloud | 2025.1.4 | Spring Cloud Gateway Server WebFlux 5.0.4 |
+| Spring Framework / Spring Security | 7.0.10 / 7.1.2 | pelo BOM do Boot |
+| Netty | 4.2.19 | pelo BOM do Boot; o binário nativo precisa de `-H:+SharedArenaSupport` |
+| Jackson | 3.2.4 (anotações 2.22) | sobrescreve o BOM do Boot (3.1) porque a Fabric8 8 exige 3.2 |
+| Fabric8 Kubernetes Client | 8.0.0 | gateway e operator; cliente HTTP Vert.x 5 |
+| AWS SDK v2 | 2.57.4 | S3 com `url-connection-client` |
+| UnboundID LDAP SDK | 7.0.5 | pelo BOM do Boot (provider `ldap`) |
+| GraalVM Native Build Tools | 1.1.17 | plugin Gradle |
+| Spring Dependency Management | 1.1.7 | plugin Gradle |
+| Testes | JUnit 6.0.3, Mockito 5.24.0, AssertJ 3.27.7, Awaitility 4.3.0 | JUnit e AssertJ pelo BOM do Boot; o `shared` fixa as mesmas |
+
+| Imagem | Versão | Uso |
+|---|---|---|
+| `ghcr.io/graalvm/native-image-community` | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway |
+| `debian:stable-slim` | 13 | runtime do gateway (build com `--pull`) |
+| `eclipse-temurin` | 25-jre (25.0.4) | runtime do operator (build com `--pull`) |
+| `quay.io/keycloak/keycloak` | 26.1 | IdP do lab (`k8s/sso/`) |
+| `osixia/openldap` | 1.5.0 | diretório do lab, no lugar do AD |
+| `bitnamilegacy/minio` | 2025.5.24 | S3 local do lab |
+| `nginx` | 1.27-alpine | nginx-lb, a borda |
+| `mccutchen/go-httpbin` | latest | backend de exemplo |
+
+---
+
 ## Pré-requisitos
 
-- JDK 25 (testado com GraalVM Community 25)
+- JDK 25 (testado com GraalVM Community 25.0.2)
 - Docker
 - `k3d` (cluster local de Kubernetes)
 - `kubectl`
@@ -380,7 +414,7 @@ Roteiro S3 (incluindo bucket creation): [`TESTE_S3.md`](TESTE_S3.md); com SSO e 
 
 > Este é o nível "qual classe faz o quê" pra quem precisa mexer no código do operator. Pra fluxo end-to-end, veja [`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md).
 
-O `operator/` é um operator Kubernetes (Spring Boot 4.1 + Fabric8 Client) que observa o CRD `GatewayRoute`, gera um snapshot canônico, publica num backend (`ConfigMap` ou S3) e dispara um *reload* HTTP no Gateway. Roda sem servlet (`WebApplicationType.NONE`) e é compilável como native image (GraalVM).
+O `operator/` é um operator Kubernetes (Spring Boot 4.1 + Fabric8 Client 8) que observa o CRD `GatewayRoute`, gera um snapshot canônico, publica num backend (`ConfigMap` ou S3) e dispara um *reload* HTTP no Gateway. Roda sem servlet (`WebApplicationType.NONE`) e é compilável como native image (GraalVM).
 
 ### Bootstrap
 
