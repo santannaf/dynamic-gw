@@ -135,7 +135,7 @@ check "bob's denial is audited" "yes" \
 check "no token or password in the audit" "0" \
     "$(grep -c -e 'eyJ' -e "${PASSWORD}" -e 'GW_SESSION=' "${WORK}/audit.jsonl")"
 check "Keycloak logged the logins" "yes" \
-    "$(kubectl -n "${NAMESPACE}" logs deployment/keycloak --since-time="${START}" | grep -q 'type="LOGIN"' && echo yes || echo no)"
+    "$([[ "$(kubectl -n "${NAMESPACE}" logs deployment/keycloak --since-time="${START}" | grep -c 'type="LOGIN"')" -gt 0 ]] && echo yes || echo no)"
 
 echo
 echo "passed=${pass} failed=${fail}"

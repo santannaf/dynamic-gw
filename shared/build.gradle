@@ -3,8 +3,8 @@ plugins {
 }
 
 ext {
-    set('jacksonVersion3', '3.1.4')
-    set('junitVersion', '5.11.4')
+    set('jacksonVersion3', '3.1.7')
+    set('junitVersion', '6.0.3')
 }
 
 dependencies {

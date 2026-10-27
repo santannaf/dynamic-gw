@@ -6,11 +6,11 @@ plugins {
 }
 
 ext {
-    set('springBootVersion', '4.1.0')
-    set('springCloudVersion', '2025.1.2')
-    set('fabric8Version', '7.7.0')
-    set('awsSdkVersion', '2.46.10')
-    set('mockitoVersion', '5.14.2')
+    set('springBootVersion', '4.1.2')
+    set('springCloudVersion', '2025.1.4')
+    set('fabric8Version', '7.9.0')
+    set('awsSdkVersion', '2.57.4')
+    set('mockitoVersion', '5.24.0')
 }
 
 dependencies {
@@ -74,6 +74,9 @@ graalvmNative {
                     '--no-fallback',
                     '--enable-url-protocols=http,https',
                     '--enable-native-access=ALL-UNNAMED',
+                    // Netty 4.2.19+ no Java 25 libera buffers diretos fechando um Arena.ofShared()
+                    // (CleanerJava25); sem isto o binário derruba a conexão com UnsupportedFeatureError.
+                    '-H:+SharedArenaSupport',
                     '-H:+AddAllCharsets',                  // snakeyaml-engine (via Fabric8) precisa de UTF-32BE etc.
                     '-H:+ReportExceptionStackTraces'
             )

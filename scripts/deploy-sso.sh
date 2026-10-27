@@ -80,6 +80,20 @@ wait_rollout() {
     kubectl -n "${NAMESPACE}" rollout status "deployment/$1" --timeout="${2:-300s}"
 }
 
+# Logo depois de uma troca, o cache de DNS (CoreDNS e o resolver do nginx-lb) ainda
+# aponta para pods que saíram e a borda devolve 502: espera 15 respostas seguidas
+# vindas de um gateway vivo (qualquer status abaixo de 500).
+wait_edge() {
+    local ok=0 code=""
+    for _ in $(seq 1 120); do
+        code="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${HOST_PORT}/_gateway/whoami" || true)"
+        if [[ "${code}" =~ ^[1-4][0-9][0-9]$ ]]; then ok=$((ok + 1)); else ok=0; fi
+        [[ "${ok}" -ge 15 ]] && return 0
+        sleep 1
+    done
+    echo "[sso] WARNING: the edge still answers ${code} through nginx-lb"
+}
+
 operator_exists() {
     kubectl -n "${NAMESPACE}" get deployment gateway-route-operator >/dev/null 2>&1
 }
@@ -243,6 +257,7 @@ kubectl apply -f k8s/nginx-lb/ >/dev/null
 kubectl -n "${NAMESPACE}" rollout restart deployment/nginx-lb >/dev/null
 wait_rollout nginx-lb 120s
 wait_rollout dynamic-gateway 300s
+wait_edge
 
 echo
 echo "[sso] Up with provider=${PROVIDER}, mode=${MODE} at http://localhost:${HOST_PORT}"
