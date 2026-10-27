@@ -1,0 +1,75 @@
+# Profile "ldap": o gateway faz o login direto no diretório (AD ou LDAP), sem
+# Keycloak, + auditoria. Combine com o profile do cenário de rotas:
+#
+#   CRDs (ConfigMap, v2) ...... SPRING_PROFILES_ACTIVE=ldap
+#   S3 (v2) ................... SPRING_PROFILES_ACTIVE=s3,ldap
+#   Properties (v1) ........... SPRING_PROFILES_ACTIVE=standalone-sso,ldap
+#
+# Os valores abaixo apontam para o OpenLDAP local (k8s/sso/openldap.yaml), que
+# imita o AD: uma OU por aplicação com os grupos de acesso. Em outro ambiente,
+# sobrescreva por variável de ambiente (GATEWAY_SECURITY_LDAP_URL, ...).
+#
+# Segredos NUNCA ficam neste arquivo (ele vai embarcado na imagem nativa):
+#   GATEWAY_SECURITY_LDAP_BIND_PASSWORD      senha da conta de serviço (somente leitura)
+#   GATEWAY_SECURITY_SESSION_KEYS_0_ID       id da chave do cookie de sessão (ex.: k1)
+#   GATEWAY_SECURITY_SESSION_KEYS_0_SECRET   base64 de 32 bytes (openssl rand -base64 32)
+#
+# AD de produção, para referência:
+#   url: ldaps://ad.corp.local:636            trusted-certificates: /etc/ssl/corp-ca.pem
+#   bind-dn: CN=svc-tools-gateway,OU=Services,DC=corp,DC=local
+#   user-search:  base OU=Users,DC=corp,DC=local        filter (sAMAccountName={0})
+#   username-attribute: sAMAccountName                  subject-attribute: objectGUID
+#   group-search: base OU=Tools,OU=Groups,DC=corp,DC=local
+#                 filter (member:1.2.840.113556.1.4.1941:={0})   (grupos aninhados)
+
+gateway:
+  security:
+    enabled: true
+    provider: ldap
+    # Rota sem bloco `access` exige login. Com "public", só as rotas com access protegem.
+    default-access: authenticated
+    # URL que o browser usa para chegar no gateway (redirect do login).
+    public-base-url: http://localhost:8080
+    internal:
+      # No LDAP só existem grupos: o admin de GET /internal/routes é um grupo.
+      any-of:
+        - group:tools-admins
+    identity-headers:
+      prefix: X-Auth-Request-
+      max-length: 4096
+    session:
+      cookie-name: GW_SESSION
+      # true fora do ambiente local; em http local: GATEWAY_SECURITY_SESSION_COOKIE_SECURE=false
+      cookie-secure: true
+      # Tempo máximo de uma sessão LDAP (não existe sessão central para encerrar).
+      max-age: 10h
+      cache-max-entries: 10000
+    ldap:
+      url: ldap://openldap.platform.svc.cluster.local:389
+      start-tls: false
+      connect-timeout: 5s
+      response-timeout: 5s
+      pool-size: 4
+      # Conta de serviço SOMENTE LEITURA usada para achar usuários e grupos.
+      bind-dn: cn=readonly,dc=tools,dc=local
+      user-search:
+        base: ou=people,dc=tools,dc=local
+        filter: "(uid={0})"
+      username-attribute: uid
+      email-attribute: mail
+      subject-attribute: entryUUID
+      group-search:
+        # A OU da aplicação: só grupos daqui viram autoridades group:<cn>.
+        base: ou=tools,dc=tools,dc=local
+        filter: "(member={0})"
+        name-attribute: cn
+      # De quanto em quanto tempo cada réplica relê o usuário no diretório
+      # (conta desabilitada ou removida do grupo perde o acesso nesse prazo).
+      revalidate-after: 5m
+      login-attempts:
+        max-failures: 5
+        max-failures-per-client: 20
+        window: 5m
+  audit:
+    enabled: true
+    include-query: false

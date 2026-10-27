@@ -1,5 +1,6 @@
 package com.example.operator.reconcile;
 
+import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import org.junit.jupiter.api.Test;
 
@@ -9,6 +10,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import static com.example.operator.reconcile.GatewayRouteValidatorTest.route;
+import static com.example.operator.reconcile.GatewayRouteValidatorTest.withAccess;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SnapshotBuilderTest {
@@ -62,6 +64,33 @@ class SnapshotBuilderTest {
 
         assertThat(result.snapshot().routes()).hasSize(1);
         assertThat(result.snapshot().routes().get(0).enabled()).isTrue();
+    }
+
+    @Test
+    void accessIsCopiedVerbatimAndAbsentStaysNull() {
+        SnapshotBuilder.Result result = builder.build(List.of(
+                withAccess(route("a", "/a/**", "http://a", 1, null, true),
+                        null, List.of("group:tools-httpbin"), true),
+                route("b", "/b/**", "http://b", 1, null, true)
+        ), fixedClock);
+
+        assertThat(result.snapshot().routes()).hasSize(2);
+        assertThat(result.snapshot().routes().get(0).access())
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), true));
+        assertThat(result.snapshot().routes().get(1).access()).isNull();
+    }
+
+    @Test
+    void invalidAccessDropsOnlyThatRoute() {
+        SnapshotBuilder.Result result = builder.build(List.of(
+                withAccess(route("x", "/x/**", "http://x", 1, null, true), null, List.of("admins"), null),
+                route("a", "/a/**", "http://a", 1, null, true)
+        ), fixedClock);
+
+        assertThat(result.snapshot().routes())
+                .extracting(RouteConfigEntry::id)
+                .containsExactly("a");
+        assertThat(result.invalid()).isEqualTo(1);
     }
 
     @Test

@@ -1,0 +1,24 @@
+# Profile "s3": o snapshot de rotas vive num objeto S3 (o operator publica,
+# o gateway lê e acompanha por polling). Mesmo modelo do overlay
+# k8s/s3/gateway-deployment.yaml. Combine com o provedor de SSO:
+#
+#   SPRING_PROFILES_ACTIVE=s3,keycloak   ou   s3,ldap
+#
+# Bucket e região variam por ambiente (GATEWAY_ROUTES_STORE_S3_BUCKET,
+# GATEWAY_ROUTES_STORE_S3_REGION). Credenciais pela cadeia padrão do AWS SDK:
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY do Secret aws-credentials. IRSA
+# (web identity) precisaria do módulo software.amazon.awssdk:sts, fora do build.
+
+gateway:
+  routes:
+    store:
+      type: s3
+      s3:
+        # Obrigatório: GATEWAY_ROUTES_STORE_S3_BUCKET
+        bucket: ""
+        key: snapshots/routes.yaml
+        region: us-east-1
+        poll-interval: 15s
+        # MinIO/LocalStack:
+        # endpoint: http://minio.platform.svc.cluster.local:9000
+        # path-style-access: true

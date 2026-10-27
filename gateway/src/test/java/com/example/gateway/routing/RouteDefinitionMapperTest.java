@@ -1,5 +1,6 @@
 package com.example.gateway.routing;
 
+import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.filter.FilterDefinition;
@@ -23,6 +24,7 @@ class RouteDefinitionMapperTest {
                 null,
                 null,
                 true,
+                null,
                 null,
                 null
         );
@@ -51,6 +53,7 @@ class RouteDefinitionMapperTest {
                 List.of("GET", "POST"),
                 true,
                 null,
+                null,
                 null
         );
 
@@ -72,6 +75,7 @@ class RouteDefinitionMapperTest {
                 null,
                 true,
                 null,
+                null,
                 null
         );
 
@@ -91,6 +95,7 @@ class RouteDefinitionMapperTest {
                 List.of(),
                 true,
                 null,
+                null,
                 null
         );
 
@@ -98,5 +103,23 @@ class RouteDefinitionMapperTest {
 
         assertThat(rd.getPredicates()).hasSize(1);
         assertThat(rd.getPredicates().get(0).getName()).isEqualTo("Path");
+    }
+
+    @Test
+    void accessTravelsAsMetadataOnly() {
+        RouteAccess access = new RouteAccess("authenticated", List.of("group:tools-httpbin"), null);
+        RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
+                "restricted", "/foo/**", "http://upstream", null, null, true, null, null, access));
+
+        assertThat(rd.getMetadata()).containsEntry(RouteDefinitionMapper.ACCESS_METADATA_KEY, access);
+        assertThat(rd.getFilters()).extracting(FilterDefinition::getName).containsExactly("StripPrefix");
+    }
+
+    @Test
+    void entryWithoutAccessHasNoAccessMetadata() {
+        RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
+                "open", "/foo/**", "http://upstream", null, null, true, null, null, null));
+
+        assertThat(rd.getMetadata()).doesNotContainKey(RouteDefinitionMapper.ACCESS_METADATA_KEY);
     }
 }

@@ -28,7 +28,7 @@ class ConfigMapRouteConfigPublisherTest {
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot(
                 "v1",
                 Instant.parse("2026-06-13T10:00:00Z"),
-                List.of(new RouteConfigEntry("httpbin-route", "/httpbin/**", "http://httpbin.org", 1, List.of("GET"), true, null, null))
+                List.of(new RouteConfigEntry("httpbin-route", "/httpbin/**", "http://httpbin.org", 1, List.of("GET"), true, null, null, null))
         );
 
         publisher.publish(snapshot);
@@ -56,11 +56,11 @@ class ConfigMapRouteConfigPublisherTest {
 
         publisher.publish(new RouteConfigSnapshot(
                 "v1", Instant.now(),
-                List.of(new RouteConfigEntry("first", "/first/**", "http://first", 1, null, true, null, null))
+                List.of(new RouteConfigEntry("first", "/first/**", "http://first", 1, null, true, null, null, null))
         ));
         publisher.publish(new RouteConfigSnapshot(
                 "v2", Instant.now(),
-                List.of(new RouteConfigEntry("second", "/second/**", "http://second", 1, null, true, null, null))
+                List.of(new RouteConfigEntry("second", "/second/**", "http://second", 1, null, true, null, null, null))
         ));
 
         ConfigMap cm = client.configMaps().inNamespace("platform").withName("gateway-routes").get();
@@ -80,7 +80,7 @@ class ConfigMapRouteConfigPublisherTest {
 
         publisher.publish(new RouteConfigSnapshot(
                 "v1", Instant.now(),
-                List.of(new RouteConfigEntry("plain", "/plain/**", "http://plain", 1, null, true, null, null))
+                List.of(new RouteConfigEntry("plain", "/plain/**", "http://plain", 1, null, true, null, null, null))
         ));
 
         ConfigMap cm = client.configMaps().inNamespace("platform").withName("gateway-routes").get();

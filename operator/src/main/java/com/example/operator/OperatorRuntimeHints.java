@@ -1,8 +1,10 @@
 package com.example.operator;
 
 import com.example.operator.crd.GatewayRoute;
+import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteList;
 import com.example.operator.crd.GatewayRouteSpec;
+import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
 import org.springframework.aot.hint.MemberCategory;
@@ -16,8 +18,10 @@ public class OperatorRuntimeHints implements RuntimeHintsRegistrar {
         for (Class<?> cls : new Class<?>[]{
                 RouteConfigSnapshot.class,
                 RouteConfigEntry.class,
+                RouteAccess.class,
                 GatewayRoute.class,
                 GatewayRouteSpec.class,
+                GatewayRouteAccess.class,
                 GatewayRouteList.class
         }) {
             reflection.registerType(cls,

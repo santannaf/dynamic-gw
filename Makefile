@@ -1,5 +1,8 @@
 .PHONY: cluster down clean-build jars images load-images bootstrap deploy \
         standalone-up standalone-down nginx-lb-up nginx-lb-down nginx-lb-pf \
+        sso-up sso-down sso-test ldap-up ldap-test \
+        standalone-sso-up standalone-sso-down standalone-sso-test \
+        s3-sso-up s3-sso-down s3-sso-test \
         test restart-test large-snapshot-test route-propagation-test \
         stress-test dump-snapshot clean
 
@@ -21,9 +24,9 @@ jars: clean-build
 
 images: jars
 # 	docker buildx build --platform linux/arm64 -f gateway/Dockerfile -t dynamic-gateway:local --load .
-	docker buildx build --platform linux/amd64 -f gateway/Dockerfile -t dynamic-gateway:local --load .
+	docker buildx build --provenance=false --sbom=false --platform linux/amd64 -f gateway/Dockerfile -t dynamic-gateway:local --load .
 # 	docker buildx build --platform linux/arm64 -f operator/Dockerfile -t dynamic-gateway-operator:local --load .
-	docker buildx build --platform linux/amd64 -f operator/Dockerfile -t dynamic-gateway-operator:local --load .
+	docker buildx build --provenance=false --sbom=false --platform linux/amd64 -f operator/Dockerfile -t dynamic-gateway-operator:local --load .
 
 load-images: images
 	k3d image import \
@@ -134,3 +137,51 @@ dump-snapshot:
 
 clean:
 	./gradlew clean
+
+# ──────────────────────────────────────────────────────────────────────────
+# SSO + auditoria (openspec/changes/add-keycloak-sso-audit)
+# ──────────────────────────────────────────────────────────────────────────
+# Pré-requisito: plataforma v2 no ar (make deploy). HOST_PORT tem que ser a
+# porta usada no `make cluster`: o issuer do Keycloak e o redirect do login
+# dependem dela.
+
+# Keycloak como ponte/IdP (provider=keycloak).
+sso-up:
+	PROVIDER=keycloak ./scripts/deploy-sso.sh
+
+# Gateway direto no diretório (provider=ldap, OpenLDAP no lugar do AD).
+ldap-up:
+	PROVIDER=ldap ./scripts/deploy-sso.sh
+
+# Volta o gateway sem SSO e remove Keycloak/OpenLDAP (mantém o Secret sso-secrets).
+sso-down:
+	./scripts/deploy-sso.sh down
+
+sso-test:
+	./scripts/test-sso.sh
+
+ldap-test:
+	./scripts/test-ldap.sh
+
+# v1 standalone com SSO (profile standalone-sso): rotas com `access` embarcadas
+# na imagem, sem operator/CRD. PROVIDER=ldap troca o Keycloak pelo diretório.
+standalone-sso-up:
+	MODE=standalone PROVIDER=$${PROVIDER:-keycloak} ./scripts/deploy-sso.sh
+
+standalone-sso-down:
+	MODE=standalone ./scripts/deploy-sso.sh down
+
+standalone-sso-test:
+	./scripts/test-standalone-sso.sh
+
+# Cenário S3 com SSO: CRD -> operator -> objeto S3. S3_BACKEND=minio (default,
+# MinIO no cluster) ou S3_BACKEND=aws S3_BUCKET=... (Secret aws-credentials).
+s3-sso-up:
+	MODE=s3 PROVIDER=$${PROVIDER:-keycloak} ./scripts/deploy-sso.sh
+
+s3-sso-down:
+	MODE=s3 ./scripts/deploy-sso.sh down
+
+s3-sso-test:
+	@if [ "$${PROVIDER:-keycloak}" = "ldap" ]; then ./scripts/test-ldap.sh; else ./scripts/test-sso.sh; fi
+

@@ -13,8 +13,8 @@ echo "[deploy] Building jars"
 ./gradlew :gateway:bootJar :operator:bootJar -x test
 
 echo "[deploy] Building images"
-docker build -f gateway/Dockerfile  -t "${GATEWAY_IMAGE}"  .
-docker build -f operator/Dockerfile -t "${OPERATOR_IMAGE}" .
+docker build --provenance=false --sbom=false -f gateway/Dockerfile  -t "${GATEWAY_IMAGE}"  .
+docker build --provenance=false --sbom=false -f operator/Dockerfile -t "${OPERATOR_IMAGE}" .
 
 echo "[deploy] Importing images into k3d cluster '${CLUSTER_NAME}'"
 k3d image import "${GATEWAY_IMAGE}" "${OPERATOR_IMAGE}" -c "${CLUSTER_NAME}"

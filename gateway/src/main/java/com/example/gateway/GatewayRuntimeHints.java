@@ -1,5 +1,6 @@
 package com.example.gateway;
 
+import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
 import org.springframework.aot.hint.MemberCategory;
@@ -16,6 +17,10 @@ public class GatewayRuntimeHints implements RuntimeHintsRegistrar {
                         MemberCategory.INVOKE_DECLARED_METHODS,
                         MemberCategory.ACCESS_DECLARED_FIELDS)
                 .registerType(RouteConfigEntry.class,
+                        MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
+                        MemberCategory.INVOKE_DECLARED_METHODS,
+                        MemberCategory.ACCESS_DECLARED_FIELDS)
+                .registerType(RouteAccess.class,
                         MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
                         MemberCategory.INVOKE_DECLARED_METHODS,
                         MemberCategory.ACCESS_DECLARED_FIELDS);

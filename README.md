@@ -22,9 +22,10 @@ O backend de persistência neste POC é um `ConfigMap` do Kubernetes (com gzip +
 12. [Operator por dentro](#operator-por-dentro)
 13. [Otimização: detectar snapshots iguais sem ocupar memória](#otimização-detectar-snapshots-iguais-sem-ocupar-memória)
 14. [Otimização: 60 mil rotas num `ConfigMap` de 1 MiB](#otimização-60-mil-rotas-num-configmap-de-1-mib)
-15. [Limitações conhecidas](#limitações-conhecidas)
-16. [Próximos passos](#próximos-passos)
-17. [Licença](#licença)
+15. [SSO, autorização por rota e auditoria](#sso-autorização-por-rota-e-auditoria)
+16. [Limitações conhecidas](#limitações-conhecidas)
+17. [Próximos passos](#próximos-passos)
+18. [Licença](#licença)
 
 ---
 
@@ -35,16 +36,16 @@ Duas formas de rodar o gateway, decididas por uma única propriedade (`gateway.r
 | Característica                      | **v1 standalone**                            | **v2 com operator**                                                  |
 |-------------------------------------|----------------------------------------------|----------------------------------------------------------------------|
 | Rotas declaradas em                 | `application.yaml` do gateway                | CRDs `GatewayRoute` no cluster                                       |
-| CRD instalado                       | ❌                                            | ✅                                                                    |
-| Operator deployado                  | ❌                                            | ✅                                                                    |
-| RBAC pra `ConfigMap`-watch          | ❌ não precisa                                | ✅                                                                    |
-| Trocar rota sem restart             | ❌ exige rollout                              | ✅ ~250 ms via watcher                                                |
-| Multi-time (cada um aplicando CRDs) | ❌                                            | ✅                                                                    |
+| CRD instalado                       | ❌                                           | ✅                                                                   |
+| Operator deployado                  | ❌                                           | ✅                                                                   |
+| RBAC pra `ConfigMap`-watch          | ❌ não precisa                               | ✅                                                                   |
+| Trocar rota sem restart             | ❌ exige rollout                             | ✅ ~250 ms via watcher                                               |
+| Multi-time (cada um aplicando CRDs) | ❌                                           | ✅                                                                   |
 | Manifests deployados                | `k8s/gateway-standalone/`                    | `k8s/namespace.yaml` + `k8s/crd/` + `k8s/operator/` + `k8s/gateway/` |
 | Guia detalhado                      | [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md) | [`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md)                           |
-| Hot-reload via S3                   | –                                            | [`TESTE_S3.md`](TESTE_S3.md) (stub)                                  |
+| Hot-reload via S3                   | –                                            | [`TESTE_S3.md`](TESTE_S3.md), [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) |
 
-Os dois modos compartilham 100% do pipeline downstream (`RouteConfigEntry` → `RouteDefinitionMapper` → `FastRouteCompiler` → `InMemoryDynamicRouteLocator`). Só a fonte do snapshot muda — `PropertiesRouteConfigProvider` vs `ConfigMapRouteConfigProvider` vs (futuramente) `S3RouteConfigProvider`.
+Os dois modos compartilham 100% do pipeline downstream (`RouteConfigEntry` → `RouteDefinitionMapper` → `FastRouteCompiler` → `InMemoryDynamicRouteLocator`). Só a fonte do snapshot muda — `PropertiesRouteConfigProvider` vs `ConfigMapRouteConfigProvider` vs `S3RouteConfigProvider`.
 
 ---
 
@@ -92,8 +93,8 @@ O sinal HTTP (`POST /internal/routes/reload`) é **best-effort**. Ele **não é*
 
 ```
 shared/    # modelo storage-agnostic: RouteConfigSnapshot, RouteConfigEntry, SnapshotCodec
-gateway/   # Spring Cloud Gateway + providers (ConfigMap / S3 stub / Properties)
-operator/  # Fabric8 informer + reconciler + publisher (ConfigMap / S3 stub)
+gateway/   # Spring Cloud Gateway + providers (ConfigMap / S3 / Properties)
+operator/  # Fabric8 informer + reconciler + publisher (ConfigMap / S3)
 k8s/       # namespace, CRD, RBAC, Deployments, Services, Ingress, samples
 scripts/   # cluster + bootstrap + deploy + carga + propagação + memória
 openspec/  # propostas de mudança e specs por capability
@@ -363,18 +364,15 @@ operator.routes.store.type: configmap  # ou s3 (não suporta properties — modo
 
 | Tipo         | Quem                       | Estado                                    |
 |--------------|----------------------------|-------------------------------------------|
-| `configmap`  | gateway + operator         | ✅ default, produção                       |
-| `properties` | só gateway (v1 standalone) | ✅ produção                                |
-| `s3`         | gateway + operator         | 🚧 stub — `UnsupportedOperationException` |
+| `configmap`  | gateway + operator         | ✅ default, produção                      |
+| `properties` | só gateway (v1 standalone) | ✅ produção                               |
+| `s3`         | gateway + operator         | ✅ validado no k3d com MinIO              |
 
-Implementar S3 de verdade requer apenas:
+O S3 usa `S3RouteConfigPublisher` (PutObject) e `S3RouteConfigProvider` (GetObject) sobre o `SnapshotCodec` compartilhado; o operator sinaliza o reload pelo Service (a réplica que recebe relê na hora) e cada réplica faz HEAD no objeto a cada `poll-interval` (15 s), relendo quando o ETag muda. Para ligar: profile `s3` (`application-s3.yaml`) mais bucket e região por ambiente; `endpoint` + `path-style-access` para S3 compatível (MinIO).
 
-1. Trocar `S3RouteConfigPublisher` (PutObject) e `S3RouteConfigProvider` (GetObject) pelo corpo real, contra o `SnapshotCodec` compartilhado.
-2. Configurar `gateway.routes.store.type=s3` + `gateway.routes.store.s3.*` (bucket/key/region).
+**Nenhuma mudança foi necessária** no CRD, no validator, no `SnapshotBuilder`, no reconciler, no `GatewayRouteReloadService`, no bootstrap runner, no `RouteDefinitionMapper`, no `InMemoryDynamicRouteLocator`, ou no endpoint `/internal/routes/reload`. `StorageAbstractionLeakTest` amarra esse contrato — assert que essas classes **não** importam tipos backend-específicos.
 
-**Nenhuma mudança requerida** no CRD, no validator, no `SnapshotBuilder`, no reconciler, no `GatewayRouteReloadService`, no bootstrap runner, no `RouteDefinitionMapper`, no `InMemoryDynamicRouteLocator`, ou no endpoint `/internal/routes/reload`. `StorageAbstractionLeakTest` amarra esse contrato — assert que essas classes **não** importam tipos backend-específicos.
-
-Roteiro experimental S3 (incluindo bucket creation): [`TESTE_S3.md`](TESTE_S3.md).
+Roteiro S3 (incluindo bucket creation): [`TESTE_S3.md`](TESTE_S3.md); com SSO e MinIO local: [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md).
 
 ---
 
@@ -437,9 +435,9 @@ Pipeline linear com ID monotônico pra correlação de log:
 
 Serializa snapshot em YAML, comprime com gzip, grava em `binaryData[routes.yaml.gz]` do `ConfigMap` (upsert). Loga `version` e contagem de rotas. Veja a seção sobre [gzip](#otimização-60-mil-rotas-num-configmap-de-1-mib) pra detalhes.
 
-#### S3 (`S3RouteConfigPublisher`) — stub
+#### S3 (`S3RouteConfigPublisher`)
 
-YAML → bytes → `s3.putObject`. Atualmente lança `UnsupportedOperationException`. Esqueleto pronto pra implementação real; usa `UrlConnectionHttpClient` (sem Netty) pra ficar leve no native.
+YAML → bytes → `s3.putObject` na key configurada. Usa `UrlConnectionHttpClient` (sem Netty) pra ficar leve no native.
 
 ### Sinalização ao Gateway (`signal/GatewayReloadSignaler.java`)
 
@@ -543,14 +541,138 @@ Cabe folgado no limite de 1 MiB, com bastante sobra pra crescer.
 
 ---
 
+## SSO, autorização por rota e auditoria
+
+Desligado por padrão (`gateway.security.enabled=false`): deploys, scripts e k6 continuam iguais. Conceitos e onde ver tudo no Keycloak: [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md); roteiro de teste: [`TESTE_SSO.md`](TESTE_SSO.md); um guia por cenário de rotas: [CRD](SSO_CENARIO_CRD.md), [S3](SSO_CENARIO_S3.md) e [Properties](SSO_CENARIO_PROPERTIES.md). Ligado, o gateway identifica quem chama, aplica a política de cada rota, entrega a identidade pronta ao backend e registra **quem fez o quê e quando**. Desenho completo e decisões em `openspec/changes/add-keycloak-sso-audit/`.
+
+### Dois provedores, um modelo de autorização
+
+A permissão vive em **grupos do AD** (uma OU por aplicação, grupos de leitura/escrita por ferramenta). O gateway não sabe de onde o grupo veio: normaliza tudo em autoridades `group:<nome>` / `role:<nome>`, e a rota declara quais aceita. Trocar de provedor não muda nenhuma `GatewayRoute`.
+
+| `gateway.security.provider` | `keycloak` (default)                                          | `ldap`                                     |
+|-----------------------------|---------------------------------------------------------------|--------------------------------------------|
+| Login                       | tela do Keycloak (OIDC code + PKCE)                           | tela do gateway em `/_gateway/login`       |
+| Papel do Keycloak           | ponte para o AD (LDAP federation + group mapper) e IdP        | não existe                                 |
+| Grupos vêm de               | claim `groups` do access token                                | busca direta no diretório                  |
+| APIs / contas de serviço    | bearer JWT (client credentials), validado local via JWKS      | não nesta versão                           |
+| Sessão                      | cookie JWE com o refresh token; Keycloak é a fonte da verdade | cookie JWE com o DN; revalida no diretório |
+
+Nos dois casos a sessão é um cookie `GW_SESSION` cifrado (JWE `dir`/`A256GCM`, chave em Secret, rotação por `kid`) mais um **cache em memória por réplica**. Não há Redis. Quando o cache de uma réplica não tem a sessão (ou ela expirou), a réplica revalida com o provedor: refresh no Keycloak ou nova busca no diretório. Conta desabilitada ou removida do grupo perde o acesso em até um ciclo (5 min por padrão). O Keycloak **não** é chamado a cada request.
+
+A escolha do provedor acontece no startup, não no build: o Spring AOT congela `@ConditionalOnProperty` ao gerar o native image, então um único `ActiveSecurity` monta o modo ativo e a mesma imagem serve desligado, `keycloak` e `ldap`.
+
+### Política por rota
+
+```yaml
+spec:
+  path: /kafka-ui/**
+  targetUri: http://kafka-ui.tools.svc.cluster.local:8080
+  access:
+    mode: authenticated          # public | authenticated; omitido = gateway.security.default-access
+    anyOf: [group:GG_KAFKAUI_READ, group:GG_KAFKAUI_WRITE]
+    forwardToken: false          # true repassa Authorization: Bearer <access token> (keycloak)
+```
+
+- Rota sem `access` segue `gateway.security.default-access` (default `authenticated`).
+- Browser sem sessão vai para o login; API recebe 401; sem o grupo, 403.
+- Leitura vs escrita: duas rotas com o mesmo `path` separadas por `methods` (exemplo em `k8s/samples/routes-sso.yaml`, `/sso/rw/**`).
+- A política viaja como metadata da rota, não como filtro: as 60k rotas continuam no caminho rápido do `FastRouteCompiler`.
+- O backend recebe `X-Auth-Request-User`, `-Email`, `-Subject`, `-Groups`, `-Roles` (e `-Client-Id` para contas de serviço). Headers com esse prefixo vindos de fora são sempre descartados, e o cookie de sessão do gateway nunca é repassado.
+- Endpoints do gateway ficam sob `/_gateway/` (`login`, `logout`, `whoami`, início/callback OIDC); o operator rejeita rotas nesse prefixo.
+- `GET /internal/routes` exige `gateway.security.internal.any-of` (default `role:gateway-admin`). `POST /internal/routes/reload` continua aberto in-cluster (o operator chama pelo Service) e o nginx-lb devolve 403 para quem vem de fora.
+
+### Auditoria
+
+`gateway.audit.enabled=true` escreve uma linha JSON por request no logger `AUDIT` (stdout, campos ECS, pronto para SIEM), separada dos logs operacionais (o formato de `Reload completed ...` não muda):
+
+```json
+{"@timestamp":"2026-10-27T17:03:12.345Z","event":{"action":"route.access","outcome":"success","reason":"allowed","duration":12345678},
+ "user":{"id":"8f1c…","name":"alice","email":"alice@tools.local"},
+ "gateway":{"auth":{"method":"session","sid":"4b2e…"},"route":{"id":"kafka-ui","team":"platform-team"},
+            "access":{"mode":"authenticated","required":["group:GG_KAFKAUI_READ"],"matched":"group:GG_KAFKAUI_READ"}},
+ "http":{"request":{"method":"GET"},"response":{"status_code":200}},"url":{"path":"/kafka-ui/topics"},"source":{"ip":"10.42.0.5"}}
+```
+
+Ações: `route.access`, `auth.login_start`, `auth.login`, `auth.logout`, `auth.whoami`, `internal.routes.list`, `internal.routes.reload`, `request.unmatched`. Nunca entram token, cookie, `Authorization`, senha ou query string (esta é opt-in com `gateway.audit.include-query`). O `sid` liga cada acesso ao evento de login do Keycloak, que o realm local também loga.
+
+Mudanças de rota ("quem criou/alterou a `GatewayRoute`") ficam com o audit log do kube-apiserver, que já registra o usuário. Exemplo de policy:
+
+```yaml
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+  - level: RequestResponse
+    resources:
+      - group: platform.saca.pags
+        resources: ["gatewayroutes"]
+    verbs: ["create", "update", "patch", "delete"]
+```
+
+### Rodando local (k3d)
+
+```bash
+HOST_PORT=18080 make cluster        # a porta precisa estar livre: é ela que entra no issuer e no redirect
+make load-images && make deploy     # plataforma v2
+HOST_PORT=18080 make sso-up         # Keycloak (realm tools) + gateway com provider=keycloak
+HOST_PORT=18080 make sso-test       # e2e: login, bearer, multi-réplica, logout, auditoria
+
+HOST_PORT=18080 make ldap-up        # OpenLDAP no lugar do AD + gateway com provider=ldap
+HOST_PORT=18080 make ldap-test
+
+make sso-down                       # volta o gateway sem SSO
+
+# snapshot num bucket S3 (MinIO no cluster; S3_BACKEND=aws S3_BUCKET=... para um bucket real)
+HOST_PORT=18080 make s3-sso-up              # PROVIDER=ldap para o diretório no lugar do Keycloak
+HOST_PORT=18080 make s3-sso-test
+make s3-sso-down                    # gateway e operator voltam para a ConfigMap, sem SSO
+
+# v1 standalone com SSO: profile standalone-sso (rotas com `access` embarcadas na imagem, sem CRD)
+HOST_PORT=18080 make standalone-sso-up      # PROVIDER=ldap para o diretório no lugar do Keycloak
+HOST_PORT=18080 make standalone-sso-test
+make standalone-sso-down            # volta o v1 sem SSO
+```
+
+A configuração já vem pronta em profiles embarcados na imagem e combináveis: um de provedor (`application-keycloak.yaml`, `application-ldap.yaml`) e, quando o store não é o default, um de cenário. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
+
+| Cenário de rotas | Rotas vêm de | Keycloak | LDAP | Guia |
+|---|---|---|---|---|
+| CRD (v2) | `GatewayRoute` → ConfigMap | `keycloak` | `ldap` | [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md) |
+| S3 (v2) | `GatewayRoute` → objeto S3 | `s3,keycloak` | `s3,ldap` | [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) |
+| Properties (v1) | `application-standalone-sso.yaml`, na imagem | `standalone-sso,keycloak` | `standalone-sso,ldap` | [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md) |
+
+Usuários locais: `alice` (tools-httpbin), `bob` (sem grupo), `carol` (tools-admins). A senha é gerada no Secret `sso-secrets` e impressa pelo `sso-up`. Detalhes manuais em [`TESTE_SSO.md`](TESTE_SSO.md).
+
+### Ligando no AD de verdade
+
+- **Via Keycloak** (`provider=keycloak`): no realm, *User federation → LDAP* apontando para o AD (com Kerberos/SPNEGO se quiser login transparente) e um mapper *group-ldap-mapper* restrito à OU da aplicação. Os grupos chegam no claim `groups`; nada muda no gateway.
+- **Direto** (`provider=ldap`):
+
+```yaml
+gateway:
+  security:
+    provider: ldap
+    ldap:
+      url: ldaps://ad.corp.local:636
+      trusted-certificates: /etc/ssl/corp-ca.pem
+      bind-dn: CN=svc-tools-gateway,OU=Services,DC=corp,DC=local   # somente leitura
+      user-search: { base: "OU=Users,DC=corp,DC=local", filter: "(sAMAccountName={0})" }
+      username-attribute: sAMAccountName
+      subject-attribute: objectGUID
+      group-search: { base: "OU=Tools,OU=Groups,DC=corp,DC=local", filter: "(member:1.2.840.113556.1.4.1941:={0})" }
+```
+
+O filtro `1.2.840.113556.1.4.1941` resolve grupos aninhados no AD. A base de grupos restrita à OU da aplicação limita as autoridades ao que o IDM mapeou. O limite de tentativas de login (`ldap.login-attempts`) é por réplica: com N réplicas, um usuário pode errar até N × `max-failures` vezes na janela antes do 429. A política de lockout do AD continua valendo por cima.
+
+---
+
 ## Limitações conhecidas
 
 Este POC **explicitamente não implementa**:
 
-- Auth por rota, rate limiting, circuit breakers, retries, timeouts por rota, TLS.
+- Rate limiting, circuit breakers, retries, timeouts por rota, TLS.
 - Suporte multi-namespace ou multi-gateway.
 - CRD `status.conditions` (`Accepted`, `Invalid`, `Published`, `FailedToReload`). Feedback de validação fica só nos logs do operator.
-- Rollback de snapshot, audit log, assinatura/checksum.
+- Rollback de snapshot, assinatura/checksum.
 - Backend S3 implementado de verdade — só o stub.
 - Health checks de targets.
 
@@ -562,7 +684,7 @@ O operator roda como **réplica única**. Com mais de uma, vale last-writer-wins
 
 1. CRD `status.conditions` pra `kubectl describe gatewayroute` refletir validação + publish state.
 2. Per-route timeout, retries, rate limit no CRD e no snapshot.
-3. Auth / scopes por rota.
+3. Back-channel logout (revogação imediata) e bearer/basic para contas de serviço no modo `ldap`.
 4. Backend S3 real + versionamento de snapshot.
 5. Detecção de conflito de path entre rotas durante reconcile.
 6. Trocar o sinal HTTP por watch direto do `ConfigMap` no gateway (ou polling do S3) pra self-detect snapshot novo sem precisar do POST.

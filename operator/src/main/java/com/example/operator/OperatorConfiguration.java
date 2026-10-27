@@ -3,6 +3,7 @@ package com.example.operator;
 import com.example.operator.reconcile.GatewayRouteReconciler;
 import com.example.operator.reconcile.GatewayRouteValidator;
 import com.example.operator.reconcile.SnapshotBuilder;
+import com.example.operator.signal.GatewayReloadSignaler;
 import com.example.operator.store.RouteConfigPublisher;
 import com.example.operator.watch.GatewayRouteInformerRunner;
 import io.fabric8.kubernetes.client.KubernetesClient;
@@ -26,10 +27,16 @@ public class OperatorConfiguration {
     public SnapshotBuilder snapshotBuilder(GatewayRouteValidator validator) { return new SnapshotBuilder(validator); }
 
     @Bean
+    public GatewayReloadSignaler gatewayReloadSignaler(OperatorProperties properties) {
+        return new GatewayReloadSignaler(properties.getGateway().getReloadUrl());
+    }
+
+    @Bean
     public GatewayRouteReconciler gatewayRouteReconciler(SnapshotBuilder builder,
                                                          RouteConfigPublisher publisher,
+                                                         GatewayReloadSignaler signaler,
                                                          Clock clock) {
-        return new GatewayRouteReconciler(builder, publisher, clock);
+        return new GatewayRouteReconciler(builder, publisher, signaler, clock);
     }
 
     @Bean

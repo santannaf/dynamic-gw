@@ -1,0 +1,95 @@
+# OpenLDAP fazendo o papel do AD para o provedor `ldap` do gateway.
+# Mesma forma que o IDM descreveu: uma OU por aplicação (ou=tools) com os
+# grupos de acesso; usuários em ou=people. O seed (LDIF com as senhas) vem do
+# Secret `openldap-seed`, gerado por scripts/deploy-sso.sh.
+#
+# O gateway lê com a conta somente-leitura cn=readonly (LDAP_READONLY_USER),
+# nunca com o admin. Em produção, troca-se a URL por ldaps:// do AD e o filtro
+# de usuário por (sAMAccountName={0}).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openldap
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: openldap
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openldap
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openldap
+        app.kubernetes.io/part-of: dynamic-gateway-control-plane
+      annotations:
+        # O seed só é aplicado no primeiro boot: o pod é recriado quando ele muda.
+        platform.saca.pags/seed-checksum: "__SEED_CHECKSUM__"
+    spec:
+      containers:
+        - name: openldap
+          image: osixia/openldap:1.5.0
+          imagePullPolicy: IfNotPresent
+          # --copy-service: o seed é montado read-only; a imagem copia antes de usar.
+          args: ["--copy-service", "--loglevel", "info"]
+          ports:
+            - name: ldap
+              containerPort: 389
+          env:
+            - name: LDAP_ORGANISATION
+              value: tools
+            - name: LDAP_DOMAIN
+              value: tools.local
+            - name: LDAP_TLS
+              value: "false"
+            - name: LDAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: sso-secrets, key: ldap-admin-password}
+            - name: LDAP_READONLY_USER
+              value: "true"
+            - name: LDAP_READONLY_USER_USERNAME
+              value: readonly
+            - name: LDAP_READONLY_USER_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: sso-secrets, key: ldap-readonly-password}
+          readinessProbe:
+            tcpSocket:
+              port: ldap
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            # subPath: sem ele o volume do Secret traz o diretório ..data e a
+            # imagem importa o mesmo LDIF duas vezes (erro 68, entry already exists).
+            - name: seed
+              mountPath: /container/service/slapd/assets/config/bootstrap/ldif/custom/50-tools.ldif
+              subPath: 50-tools.ldif
+              readOnly: true
+      volumes:
+        - name: seed
+          secret:
+            secretName: openldap-seed
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openldap
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: openldap
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  selector:
+    app.kubernetes.io/name: openldap
+  ports:
+    - name: ldap
+      port: 389
+      targetPort: ldap

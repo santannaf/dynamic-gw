@@ -2,6 +2,8 @@ package com.example.gateway.routes.api;
 
 import com.example.gateway.routes.GatewayRouteReloadService;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
+import com.example.gateway.routing.RouteDefinitionMapper;
+import com.example.shared.routes.RouteAccess;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.route.RouteDefinition;
@@ -79,6 +81,23 @@ public class InternalRoutesController {
         Object description = rd.getMetadata().get("description");
         if (description != null) {
             map.put("description", description);
+        }
+        if (rd.getMetadata().get(RouteDefinitionMapper.ACCESS_METADATA_KEY) instanceof RouteAccess access) {
+            map.put("access", accessView(access));
+        }
+        return map;
+    }
+
+    private static Map<String, Object> accessView(RouteAccess access) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        if (access.mode() != null) {
+            map.put("mode", access.mode());
+        }
+        if (access.anyOf() != null) {
+            map.put("anyOf", access.anyOf());
+        }
+        if (access.forwardToken() != null) {
+            map.put("forwardToken", access.forwardToken());
         }
         return map;
     }

@@ -1,0 +1,54 @@
+# Seed do OpenLDAP local. __DEMO_PASSWORD__ é trocado por scripts/deploy-sso.sh
+# (a senha gerada vai para o Secret openldap-seed; este arquivo não tem segredo).
+dn: ou=people,dc=tools,dc=local
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=tools,dc=tools,dc=local
+objectClass: organizationalUnit
+ou: tools
+
+dn: ou=other,dc=tools,dc=local
+objectClass: organizationalUnit
+ou: other
+
+dn: uid=alice,ou=people,dc=tools,dc=local
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Tools
+sn: Tools
+mail: alice@tools.local
+userPassword: __DEMO_PASSWORD__
+
+dn: uid=bob,ou=people,dc=tools,dc=local
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Tools
+sn: Tools
+mail: bob@tools.local
+userPassword: __DEMO_PASSWORD__
+
+dn: uid=carol,ou=people,dc=tools,dc=local
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol Tools
+sn: Tools
+mail: carol@tools.local
+userPassword: __DEMO_PASSWORD__
+
+dn: cn=tools-httpbin,ou=tools,dc=tools,dc=local
+objectClass: groupOfNames
+cn: tools-httpbin
+member: uid=alice,ou=people,dc=tools,dc=local
+member: uid=carol,ou=people,dc=tools,dc=local
+
+dn: cn=tools-admins,ou=tools,dc=tools,dc=local
+objectClass: groupOfNames
+cn: tools-admins
+member: uid=carol,ou=people,dc=tools,dc=local
+
+# Grupo fora da OU da aplicação: não pode virar autoridade no gateway.
+dn: cn=finance,ou=other,dc=tools,dc=local
+objectClass: groupOfNames
+cn: finance
+member: uid=alice,ou=people,dc=tools,dc=local

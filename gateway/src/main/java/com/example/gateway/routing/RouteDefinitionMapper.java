@@ -13,6 +13,9 @@ import java.util.List;
 @Component
 public class RouteDefinitionMapper {
 
+    /** Metadata key holding the route's {@link com.example.shared.routes.RouteAccess}, when declared. */
+    public static final String ACCESS_METADATA_KEY = "access";
+
     private static final int DEFAULT_STRIP_PREFIX = 1;
 
     public RouteDefinition toDefinition(RouteConfigEntry entry) {
@@ -39,6 +42,12 @@ public class RouteDefinitionMapper {
         }
         if (entry.description() != null) {
             rd.getMetadata().put("description", entry.description());
+        }
+        // The access policy travels as metadata, never as a filter: a filter
+        // other than StripPrefix would push the route off FastRouteCompiler's
+        // fast path. RouteAccessFilter (a GlobalFilter) reads it per request.
+        if (entry.access() != null) {
+            rd.getMetadata().put(ACCESS_METADATA_KEY, entry.access());
         }
 
         return rd;

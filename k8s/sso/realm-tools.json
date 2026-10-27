@@ -1,0 +1,140 @@
+{
+  "realm": "tools",
+  "enabled": true,
+  "displayName": "tools (local)",
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": false,
+  "loginWithEmailAllowed": false,
+  "eventsEnabled": true,
+  "eventsExpiration": 86400,
+  "eventsListeners": ["jboss-logging"],
+  "enabledEventTypes": [
+    "LOGIN", "LOGIN_ERROR", "LOGOUT", "LOGOUT_ERROR",
+    "CODE_TO_TOKEN", "CODE_TO_TOKEN_ERROR",
+    "REFRESH_TOKEN", "REFRESH_TOKEN_ERROR",
+    "CLIENT_LOGIN", "CLIENT_LOGIN_ERROR"
+  ],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "roles": {
+    "realm": [
+      { "name": "gateway-admin", "description": "Reads /internal/routes on the gateway" }
+    ]
+  },
+  "groups": [
+    { "name": "tools-httpbin", "path": "/tools-httpbin" },
+    { "name": "tools-admins", "path": "/tools-admins", "realmRoles": ["gateway-admin"] }
+  ],
+  "clients": [
+    {
+      "clientId": "tools-gateway",
+      "name": "dynamic-gateway (SSO for tools)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${TOOLS_GATEWAY_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["${GATEWAY_PUBLIC_BASE_URL}/_gateway/login/oauth2/code/keycloak"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${GATEWAY_PUBLIC_BASE_URL}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience: tools-gateway",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "tools-gateway",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "tools-cli",
+      "name": "automation calling tools through the gateway",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${TOOLS_CLI_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "audience: tools-gateway",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "tools-gateway",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@tools.local",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Tools",
+      "credentials": [{ "type": "password", "value": "${TOOLS_DEMO_PASSWORD}", "temporary": false }],
+      "groups": ["/tools-httpbin"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@tools.local",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Tools",
+      "credentials": [{ "type": "password", "value": "${TOOLS_DEMO_PASSWORD}", "temporary": false }]
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "email": "carol@tools.local",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Tools",
+      "credentials": [{ "type": "password", "value": "${TOOLS_DEMO_PASSWORD}", "temporary": false }],
+      "groups": ["/tools-admins", "/tools-httpbin"]
+    },
+    {
+      "username": "service-account-tools-cli",
+      "enabled": true,
+      "serviceAccountClientId": "tools-cli",
+      "realmRoles": ["gateway-admin"]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 Roteiro pra subir o POC com o snapshot de rotas vivendo em **S3** ao invés de `ConfigMap`. Mesma topologia da v2 ConfigMap ([`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md)) — três componentes (CRD, operator, gateway) — só muda a "memória" do plano de controle: ao invés de `ConfigMap`, é um objeto YAML em `s3://<bucket>/snapshots/routes.yaml`. Pra arquitetura geral veja [`README.md`](README.md).
 
-> **⚠️ Estado atual:** as implementações `S3RouteConfigPublisher` e `S3RouteConfigProvider` são **stubs** que lançam `UnsupportedOperationException`. Este guia documenta o caminho pronto pra quando elas forem implementadas. Os manifests em `k8s/s3/`, o `scripts/create-s3-bucket.sh` e o overlay de env vars já existem; basta substituir o corpo dos dois publishers/providers.
+> **Estado atual:** `S3RouteConfigPublisher` e `S3RouteConfigProvider` estão implementados. O fluxo operator → bucket → gateway, com as imagens nativas, foi validado no k3d contra um MinIO local ([`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md), que também liga o SSO). O caminho com AWS deste guia não foi reexecutado depois disso.
 
 ---
 

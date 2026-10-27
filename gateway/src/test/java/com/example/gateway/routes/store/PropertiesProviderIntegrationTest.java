@@ -1,12 +1,15 @@
 package com.example.gateway.routes.store;
 
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
+import com.example.shared.routes.RouteAccess;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import software.amazon.awssdk.services.s3.S3Client;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,12 +33,15 @@ import static org.assertj.core.api.Assertions.assertThat;
         "gateway.routes.store.properties.routes[1].target-uri=http://anything.example.com:8080",
         "gateway.routes.store.properties.routes[1].strip-prefix=0",
         "gateway.routes.store.properties.routes[1].methods[0]=GET",
-        "gateway.routes.store.properties.routes[1].enabled=true"
+        "gateway.routes.store.properties.routes[1].enabled=true",
+        "gateway.routes.store.properties.routes[1].access.mode=authenticated",
+        "gateway.routes.store.properties.routes[1].access.any-of[0]=group:tools-httpbin",
+        "gateway.routes.store.properties.routes[1].access.forward-token=true"
 })
 class PropertiesProviderIntegrationTest {
 
     @Autowired
-    ApplicationContext context;
+    ConfigurableApplicationContext context;
 
     @Autowired
     RouteConfigProvider provider;
@@ -46,7 +52,9 @@ class PropertiesProviderIntegrationTest {
     @Test
     void contextStartsWithoutKubernetesOrS3Clients() {
         assertThat(context.getBeansOfType(KubernetesClient.class)).isEmpty();
-        assertThat(context.getBeansOfType(S3Client.class)).isEmpty();
+        // getBeansOfType would create the lazy S3Client; it must just never be created here.
+        assertThat(context.getBeanNamesForType(S3Client.class)).allSatisfy(name ->
+                assertThat(context.getBeanFactory().containsSingleton(name)).isFalse());
     }
 
     @Test
@@ -66,5 +74,12 @@ class PropertiesProviderIntegrationTest {
         assertThat(routeLocator.currentRoutes())
                 .extracting(r -> r.getId())
                 .containsExactlyInAnyOrder("httpbin-route", "anything-route");
+    }
+
+    @Test
+    void accessBindsFromKebabCaseAndAbsentStaysNull() {
+        assertThat(provider.load().routes().get(0).access()).isNull();
+        assertThat(provider.load().routes().get(1).access())
+                .isEqualTo(new RouteAccess("authenticated", List.of("group:tools-httpbin"), true));
     }
 }

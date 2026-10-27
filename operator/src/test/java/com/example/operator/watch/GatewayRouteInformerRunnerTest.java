@@ -5,6 +5,7 @@ import com.example.operator.crd.GatewayRouteSpec;
 import com.example.operator.reconcile.GatewayRouteReconciler;
 import com.example.operator.reconcile.GatewayRouteValidator;
 import com.example.operator.reconcile.SnapshotBuilder;
+import com.example.operator.signal.GatewayReloadSignaler;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.server.mock.EnableKubernetesMockClient;
@@ -20,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.mock;
 
 @EnableKubernetesMockClient(crud = true)
 class GatewayRouteInformerRunnerTest {
@@ -35,7 +37,7 @@ class GatewayRouteInformerRunnerTest {
         SnapshotBuilder builder = new SnapshotBuilder(new GatewayRouteValidator());
 
         GatewayRouteReconciler reconciler = new GatewayRouteReconciler(
-                builder, snapshot -> {}, Clock.systemUTC()) {
+                builder, snapshot -> {}, mock(GatewayReloadSignaler.class), Clock.systemUTC()) {
             @Override
             public void reconcile(List<GatewayRoute> currentRoutes) {
                 lastList.set(currentRoutes);
@@ -76,7 +78,7 @@ class GatewayRouteInformerRunnerTest {
         SnapshotBuilder builder = new SnapshotBuilder(new GatewayRouteValidator());
 
         GatewayRouteReconciler reconciler = new GatewayRouteReconciler(
-                builder, snapshot -> {}, Clock.systemUTC()) {
+                builder, snapshot -> {}, mock(GatewayReloadSignaler.class), Clock.systemUTC()) {
             @Override
             public void reconcile(List<GatewayRoute> currentRoutes) {
                 lastList.set(currentRoutes);

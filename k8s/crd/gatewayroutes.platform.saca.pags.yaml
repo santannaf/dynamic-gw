@@ -88,6 +88,32 @@ spec:
                   type: string
                   maxLength: 512       # SEU - cap defensivo
                   description: Short human-readable description of what this route does. Surfaced by /internal/routes; ignored by the matcher.
+                # --- access: quem pode usar a rota (aplicado pelo gateway com gateway.security.enabled=true) ---
+                access:
+                  type: object
+                  description: Access policy enforced by the gateway. Absent means the gateway's default access (gateway.security.default-access).
+                  properties:
+                    mode:
+                      type: string
+                      enum:            # SEU - public = sem login; authenticated = exige identidade
+                        - public
+                        - authenticated
+                      description: public allows anonymous callers; authenticated requires a session or a bearer token. Absent with anyOf means authenticated.
+                    anyOf:
+                      type: array
+                      maxItems: 32     # SEU - cap defensivo
+                      description: The caller needs at least one of these authorities. group:<name> comes from the token's groups claim (AD groups when Keycloak federates AD); role:<name> from realm/client roles.
+                      items:
+                        type: string
+                        maxLength: 256
+                        pattern: '^(group|role):.+$'
+                    forwardToken:
+                      type: boolean
+                      description: When true the gateway forwards the caller's access token upstream as Authorization Bearer.
+                  # SEU - regra entre campos (CEL): rota pública não pode exigir autoridade.
+                  x-kubernetes-validations:
+                    - rule: "!(has(self.mode) && self.mode == 'public' && has(self.anyOf) && size(self.anyOf) > 0)"
+                      message: access.mode=public cannot be combined with a non-empty access.anyOf
 
       # ==================================================================
       # COLUNAS do `kubectl get` - puramente cosmético, SEU
@@ -106,6 +132,13 @@ spec:
         - name: Enabled
           type: boolean
           jsonPath: .spec.enabled
+        - name: Access                            # vazio = default do gateway (ou só anyOf, ver -o wide)
+          type: string
+          jsonPath: .spec.access.mode
+        - name: AnyOf
+          type: string
+          jsonPath: .spec.access.anyOf
+          priority: 1                             # só aparece com `kubectl get gwr -o wide`
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp

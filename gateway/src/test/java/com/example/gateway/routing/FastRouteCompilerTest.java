@@ -1,5 +1,7 @@
 package com.example.gateway.routing;
 
+import com.example.shared.routes.RouteAccess;
+import com.example.shared.routes.RouteConfigEntry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.webflux.autoconfigure.WebFluxProperties;
@@ -218,5 +220,30 @@ class FastRouteCompilerTest {
         filter.addArg("_genkey_0", "1");
         rd.setFilters(List.of(filter));
         return rd;
+    }
+
+    @Test
+    void routesWithAccessStayOnFastPath() {
+        RouteDefinitionMapper mapper = new RouteDefinitionMapper();
+        List<RouteDefinition> definitions = List.of(
+                mapper.toDefinition(new RouteConfigEntry("a", "/a/**", "http://a", 1, List.of("GET"), true,
+                        null, null, new RouteAccess("authenticated", List.of("group:tools-a"), true))),
+                mapper.toDefinition(new RouteConfigEntry("b", "/b/**", "http://b", null, null, true,
+                        null, null, new RouteAccess("public", null, null))));
+        AtomicReference<List<RouteDefinition>> fallbackInput = new AtomicReference<>();
+        RouteCompiler fallback = defs -> {
+            fallbackInput.set(defs);
+            return List.of();
+        };
+        FastRouteCompiler compiler = new FastRouteCompiler(
+                predicateFactories, filterFactories, gatewayProperties, webFluxProperties, fallback);
+
+        List<Route> compiled = compiler.compile(definitions);
+
+        assertThat(fallbackInput.get()).as("access must not push routes to the fallback compiler").isNull();
+        assertThat(compiled).extracting(Route::getId).containsExactly("a", "b");
+        assertThat(compiled.getFirst().getMetadata())
+                .containsEntry(RouteDefinitionMapper.ACCESS_METADATA_KEY,
+                        new RouteAccess("authenticated", List.of("group:tools-a"), true));
     }
 }

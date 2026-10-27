@@ -23,6 +23,13 @@ data:
         # entram no rodízio rápido e pods removidos saem.
         resolver kube-dns.kube-system.svc.cluster.local valid=5s ipv6=off;
 
+        # Atrás de um LB com TLS o proto original chega em X-Forwarded-Proto;
+        # sem ele (k3d/Traefik em http), vale o scheme desta conexão.
+        map $http_x_forwarded_proto $forwarded_proto {
+            default $http_x_forwarded_proto;
+            ""      $scheme;
+        }
+
         # IMPORTANTE: o upstream NAO é declarado num bloco `upstream {}`
         # estático porque o nginx resolveria o DNS uma vez na inicializacao
         # e ficaria preso ao snapshot inicial dos pods. Em vez disso, usamos
@@ -41,6 +48,10 @@ data:
                 proxy_http_version 1.1;
                 proxy_set_header Connection "";
                 proxy_set_header Host $host;
+                # Cadeia de clientes para a auditoria do gateway (gateway.client.forwarded_for).
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $forwarded_proto;
+                proxy_set_header X-Forwarded-Host $http_host;
 
                 # Devolve o IP:porta do pod do gateway que atendeu cada request.
                 # Permite validar a distribuição entre réplicas sem mexer em log:
@@ -57,6 +68,12 @@ data:
                 proxy_next_upstream         error timeout;
                 proxy_next_upstream_tries   2;
                 proxy_next_upstream_timeout 5s;
+            }
+
+            # O reload relê o store inteiro (~1 s de CPU com 60k rotas): só o
+            # operator, de dentro do cluster (Service dynamic-gateway), pode chamar.
+            location = /internal/routes/reload {
+                return 403;
             }
 
             location = /lb/health {

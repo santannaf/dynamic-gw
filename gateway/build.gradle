@@ -20,11 +20,19 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation "io.fabric8:kubernetes-client:${fabric8Version}"
 
+    // SSO/auditoria (gateway.security.*): OIDC com Keycloak, bearer JWT e
+    // JWE do cookie de sessão (Nimbus, que vem com o oauth2-jose); LDAP direto
+    // via UnboundID (sem JNDI; o servidor em memória dele roda nos testes).
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+    implementation 'com.unboundid:unboundid-ldapsdk'
+
     // S3 backend (default credential chain reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
     implementation 'software.amazon.awssdk:s3'
     implementation 'software.amazon.awssdk:url-connection-client'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webflux'
     testImplementation "io.fabric8:kubernetes-server-mock:${fabric8Version}"
     testImplementation 'io.projectreactor:reactor-test'

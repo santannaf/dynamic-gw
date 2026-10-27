@@ -13,6 +13,9 @@ public class GatewayRouteSpec {
     // snapshot so the gateway can surface it via /internal/routes.
     private String team;
     private String description;
+    // Optional access policy, copied verbatim into the snapshot. Defaults
+    // (route without access) are resolved by the gateway, not here.
+    private GatewayRouteAccess access;
 
     public String getPath() { return path; }
 
@@ -41,4 +44,8 @@ public class GatewayRouteSpec {
     public String getDescription() { return description; }
 
     public void setDescription(String description) { this.description = description; }
+
+    public GatewayRouteAccess getAccess() { return access; }
+
+    public void setAccess(GatewayRouteAccess access) { this.access = access; }
 }

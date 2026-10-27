@@ -4,6 +4,7 @@ import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteCompiler;
 import com.example.gateway.routing.RouteDefinitionMapper;
 import com.example.gateway.routes.store.RouteConfigProvider;
+import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
 import org.slf4j.Logger;
@@ -50,7 +51,9 @@ public class GatewayRouteReloadService {
         this.events = events;
     }
 
-    public List<String> reloadFromStore() {
+    // Serialized: the store watcher and the operator's reload signal can arrive together, and
+    // an interleaved older reload would replace newer routes and desync lastLoadedHash.
+    public synchronized List<String> reloadFromStore() {
         long startNs = System.nanoTime();
         log.info("Loading routes from route config store");
 
@@ -154,6 +157,9 @@ public class GatewayRouteReloadService {
                 // /internal/routes. Por isso entram no hash.
                 updateUtf8(md, e.team());
                 updateUtf8(md, e.description());
+                // access muda a postura de segurança da rota: alterar só ela
+                // precisa disparar reload. Ver hashAccess pro layout.
+                hashAccess(md, e.access());
                 md.update((byte) '\n');
             }
             return HexFormat.of().formatHex(md.digest());
@@ -161,6 +167,31 @@ public class GatewayRouteReloadService {
             // SHA-256 é obrigatório em qualquer JVM/SubstrateVM compatível com a spec.
             throw new IllegalStateException("SHA-256 not available", ex);
         }
+    }
+
+    /**
+     * Layout: marcador de presença (-1 ausente, 1 presente); mode; marcador
+     * de presença de anyOf seguido de cada autoridade em ordem e um 0x00
+     * terminador; byte de forwardToken (-1 nulo, 0, 1). Os marcadores
+     * mantêm access nulo e anyOf nulo distinguíveis de vazio.
+     */
+    private static void hashAccess(MessageDigest md, RouteAccess access) {
+        if (access == null) {
+            md.update((byte) -1);
+            return;
+        }
+        md.update((byte) 1);
+        updateUtf8(md, access.mode());
+        if (access.anyOf() == null) {
+            md.update((byte) -1);
+        } else {
+            md.update((byte) 1);
+            for (String authority : access.anyOf()) {
+                updateUtf8(md, authority);
+            }
+        }
+        md.update((byte) 0);
+        md.update((byte) (access.forwardToken() == null ? -1 : access.forwardToken() ? 1 : 0));
     }
 
     private static void updateUtf8(MessageDigest md, String s) {

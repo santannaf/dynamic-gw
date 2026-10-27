@@ -4,6 +4,7 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration;
+import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import software.amazon.awssdk.services.s3.S3Client;
 
@@ -25,7 +26,7 @@ class RouteConfigStoreConfigurationTest {
             assertThat(ctx.getBean(RouteConfigChangeListener.class))
                     .isInstanceOf(ConfigMapRouteConfigChangeListener.class);
             assertThat(ctx).hasSingleBean(KubernetesClient.class);
-            assertThat(ctx).doesNotHaveBean(S3Client.class);
+            assertThat(s3ClientCreated(ctx)).isFalse();
         });
     }
 
@@ -43,7 +44,7 @@ class RouteConfigStoreConfigurationTest {
                     assertThat(ctx).hasSingleBean(RouteConfigChangeListener.class);
                     assertThat(ctx.getBean(RouteConfigChangeListener.class))
                             .isInstanceOf(S3RouteConfigChangeListener.class);
-                    assertThat(ctx).hasSingleBean(S3Client.class);
+                    assertThat(s3ClientCreated(ctx)).isTrue();
                     assertThat(ctx).doesNotHaveBean(KubernetesClient.class);
                 });
     }
@@ -56,7 +57,7 @@ class RouteConfigStoreConfigurationTest {
             assertThat(ctx.getBean(RouteConfigChangeListener.class))
                     .isInstanceOf(ConfigMapRouteConfigChangeListener.class);
             assertThat(ctx).hasSingleBean(KubernetesClient.class);
-            assertThat(ctx).doesNotHaveBean(S3Client.class);
+            assertThat(s3ClientCreated(ctx)).isFalse();
         });
     }
 
@@ -70,7 +71,21 @@ class RouteConfigStoreConfigurationTest {
             assertThat(ctx.getBean(RouteConfigChangeListener.class))
                     .isInstanceOf(PropertiesRouteConfigChangeListener.class);
             assertThat(ctx).doesNotHaveBean(KubernetesClient.class);
-            assertThat(ctx).doesNotHaveBean(S3Client.class);
+            assertThat(s3ClientCreated(ctx)).isFalse();
         });
+    }
+
+    // The native image is built with the default store (configmap): a conditional
+    // S3Client would be left out of the binary and type=s3 could never start.
+    @Test
+    void s3ClientIsDefinedLazilyWhateverTheStoreTypeAtBuildTime() {
+        runner.run(ctx -> {
+            assertThat(ctx.getBeanFactory().containsBeanDefinition("s3Client")).isTrue();
+            assertThat(ctx.getBeanFactory().getBeanDefinition("s3Client").isLazyInit()).isTrue();
+        });
+    }
+
+    private static boolean s3ClientCreated(AssertableApplicationContext ctx) {
+        return ctx.getBeanFactory().containsSingleton("s3Client");
     }
 }

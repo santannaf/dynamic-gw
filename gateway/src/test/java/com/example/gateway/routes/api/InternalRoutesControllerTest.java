@@ -3,6 +3,7 @@ package com.example.gateway.routes.api;
 import com.example.gateway.routes.GatewayRouteReloadService;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteDefinitionMapper;
+import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,7 +71,7 @@ class InternalRoutesControllerTest {
     void getListsCurrentRoutesAndDoesNotReload() {
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
                 "httpbin-route", "/httpbin/**", "http://httpbin.org", 1, List.of("GET", "POST"), true,
-                "platform-team", "Smoke-test route via httpbin."));
+                "platform-team", "Smoke-test route via httpbin.", null));
         routeLocator.replaceAll(
                 List.of(Route.async(rd).asyncPredicate(e -> Mono.just(true)).build()),
                 List.of(rd));
@@ -112,5 +113,30 @@ class InternalRoutesControllerTest {
 
         assertThat(calls).hasValue(0);
         verify(service, never()).reloadFromStore();
+    }
+
+    @Test
+    void getExposesAccessPolicyWhenDeclared() {
+        RouteDefinition restricted = mapper.toDefinition(new RouteConfigEntry(
+                "restricted", "/r/**", "http://r", 1, null, true, null, null,
+                new RouteAccess(null, List.of("group:tools-httpbin"), true)));
+        RouteDefinition open = mapper.toDefinition(new RouteConfigEntry(
+                "open", "/o/**", "http://o", 1, null, true, null, null, null));
+        routeLocator.replaceAll(
+                List.of(Route.async(restricted).asyncPredicate(e -> Mono.just(true)).build(),
+                        Route.async(open).asyncPredicate(e -> Mono.just(true)).build()),
+                List.of(restricted, open));
+        InternalRoutesController controller = new InternalRoutesController(
+                mock(GatewayRouteReloadService.class), routeLocator);
+
+        WebTestClient.bindToController(controller).build()
+                .get().uri("/internal/routes")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes[0].access.anyOf[0]").isEqualTo("group:tools-httpbin")
+                .jsonPath("$.routes[0].access.forwardToken").isEqualTo(true)
+                .jsonPath("$.routes[0].access.mode").doesNotExist()
+                .jsonPath("$.routes[1].access").doesNotExist();
     }
 }

@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -27,8 +28,11 @@ public class RouteConfigStoreConfiguration {
     @ConditionalOnProperty(name = "gateway.routes.store.type", havingValue = "configmap", matchIfMissing = true)
     public KubernetesClient kubernetesClient() { return new KubernetesClientBuilder().build(); }
 
+    // Lazy instead of @ConditionalOnProperty: Spring AOT evaluates conditions when the
+    // native image is built (store type configmap), so a conditional S3Client would never
+    // exist in the binary and type=s3 would fail at startup.
     @Bean(destroyMethod = "close")
-    @ConditionalOnProperty(name = "gateway.routes.store.type", havingValue = "s3")
+    @Lazy
     public S3Client s3Client(RouteStoreProperties properties) {
         RouteStoreProperties.S3 s3 = properties.getS3();
         S3ClientBuilder builder = S3Client.builder()

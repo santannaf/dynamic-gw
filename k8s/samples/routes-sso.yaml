@@ -1,0 +1,117 @@
+# Rotas de exemplo do SSO (add-keycloak-sso-audit). Todas apontam pro
+# go-httpbin, que devolve os headers recebidos: dá pra ver a identidade que o
+# gateway injeta (X-Auth-Request-*). Valem para os dois provedores (keycloak
+# e ldap): a rota só fala em grupos/roles, nunca no provedor.
+#
+#   /sso/public/**  qualquer um, sem login
+#   /sso/auth/**    qualquer usuário autenticado (rota sem access = default do gateway)
+#   /sso/group/**   precisa do grupo tools-httpbin
+#   /sso/admin/**   precisa do role gateway-admin (Keycloak) ou do grupo tools-admins (LDAP)
+#   /sso/token/**   como /sso/group, e repassa o access token ao backend
+#   /sso/rw/**      leitura (GET/HEAD) para tools-httpbin ou tools-admins; escrita só tools-admins
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-public
+  namespace: platform
+spec:
+  path: /sso/public/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Public route; identity headers are still stripped.
+  access:
+    mode: public
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-auth
+  namespace: platform
+spec:
+  path: /sso/auth/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Any authenticated user (no access block, gateway default applies).
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-group
+  namespace: platform
+spec:
+  path: /sso/group/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Members of tools-httpbin only.
+  access:
+    anyOf:
+      - group:tools-httpbin
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-admin
+  namespace: platform
+spec:
+  path: /sso/admin/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Admins, whether they come as a Keycloak role or as a directory group.
+  access:
+    mode: authenticated
+    anyOf:
+      - role:gateway-admin
+      - group:tools-admins
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-token
+  namespace: platform
+spec:
+  path: /sso/token/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Like sso-group, and the backend also receives the access token (Keycloak only).
+  access:
+    anyOf:
+      - group:tools-httpbin
+    forwardToken: true
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-rw-read
+  namespace: platform
+spec:
+  path: /sso/rw/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  methods: [GET, HEAD]
+  team: platform-team
+  description: Read side of a tool; read and write groups may read.
+  access:
+    anyOf:
+      - group:tools-httpbin
+      - group:tools-admins
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-rw-write
+  namespace: platform
+spec:
+  path: /sso/rw/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  methods: [POST, PUT, PATCH, DELETE]
+  team: platform-team
+  description: Write side of the same tool; only the write group.
+  access:
+    anyOf:
+      - group:tools-admins

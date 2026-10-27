@@ -1,6 +1,7 @@
 package com.example.operator.reconcile;
 
 import com.example.operator.crd.GatewayRoute;
+import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteSpec;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import org.junit.jupiter.api.Test;
@@ -74,6 +75,64 @@ class GatewayRouteValidatorTest {
         assertThat(validator.validate(r))
                 .map(s -> s.contains("spec"))
                 .contains(true);
+    }
+
+    @Test
+    void reservedGatewayPathFails() {
+        GatewayRoute r = route("bad", "/_gateway/**", "http://x", 1, null, true);
+        assertThat(validator.validate(r))
+                .map(s -> s.contains("reserved prefix"))
+                .contains(true);
+    }
+
+    @Test
+    void validAccessPasses() {
+        GatewayRoute r = withAccess(route("ok", "/api/**", "http://x", 1, null, true),
+                "authenticated", List.of("group:tools-httpbin", "role:gateway-admin"), true);
+        assertThat(validator.validate(r)).isEmpty();
+    }
+
+    @Test
+    void accessWithOnlyAnyOfPasses() {
+        GatewayRoute r = withAccess(route("ok", "/api/**", "http://x", 1, null, true),
+                null, List.of("group:tools-httpbin"), null);
+        assertThat(validator.validate(r)).isEmpty();
+    }
+
+    @Test
+    void unknownAccessModeFails() {
+        GatewayRoute r = withAccess(route("bad", "/api/**", "http://x", 1, null, true),
+                "everyone", null, null);
+        assertThat(validator.validate(r))
+                .map(s -> s.contains("spec.access.mode"))
+                .contains(true);
+    }
+
+    @Test
+    void authorityWithoutPrefixFails() {
+        GatewayRoute r = withAccess(route("bad", "/api/**", "http://x", 1, null, true),
+                null, List.of("admins"), null);
+        assertThat(validator.validate(r))
+                .map(s -> s.contains("'admins'"))
+                .contains(true);
+    }
+
+    @Test
+    void publicWithAnyOfFails() {
+        GatewayRoute r = withAccess(route("bad", "/api/**", "http://x", 1, null, true),
+                "public", List.of("group:tools-httpbin"), null);
+        assertThat(validator.validate(r))
+                .map(s -> s.contains("mode=public"))
+                .contains(true);
+    }
+
+    static GatewayRoute withAccess(GatewayRoute route, String mode, List<String> anyOf, Boolean forwardToken) {
+        GatewayRouteAccess access = new GatewayRouteAccess();
+        access.setMode(mode);
+        access.setAnyOf(anyOf);
+        access.setForwardToken(forwardToken);
+        route.getSpec().setAccess(access);
+        return route;
     }
 
     static GatewayRoute route(String name, String path, String targetUri,

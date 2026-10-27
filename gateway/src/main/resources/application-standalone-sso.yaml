@@ -1,0 +1,71 @@
+# Profile "standalone-sso": o v1 (rotas em properties, sem operator/CRD) com
+# uma política de acesso por rota. O provedor de SSO vem do outro profile:
+#
+#   SPRING_PROFILES_ACTIVE=standalone-sso,keycloak   (Keycloak, ver application-keycloak.yaml)
+#   SPRING_PROFILES_ACTIVE=standalone-sso,ldap       (direto no diretório, ver application-ldap.yaml)
+#
+# Este arquivo vai embarcado na imagem nativa: mudar rota ou `access` = rebuild
+# da imagem + rollout, como no v1 puro. Quem está em cada grupo continua
+# dinâmico, porque isso é do AD/Keycloak.
+
+gateway:
+  # Com a segurança desligada o gateway ignora o `access` e serviria as rotas
+  # abaixo sem login. Ligada aqui, sem o profile do provedor o gateway não sobe.
+  security:
+    enabled: true
+    default-access: authenticated
+  audit:
+    enabled: true
+  routes:
+    store:
+      type: properties
+      properties:
+        version: "v1-sso-sample"
+        routes:
+          # Só membros do grupo tools-httpbin.
+          - id: httpbin-route
+            path: /httpbin/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            methods:
+              - GET
+              - POST
+            enabled: true
+            team: platform-team
+            description: Echoes the request via httpbin; tools-httpbin members only.
+            access:
+              any-of:
+                - group:tools-httpbin
+          # Continua aberta (baseline do k6 standalone).
+          - id: anything-route
+            path: /anything/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 0
+            methods:
+              - GET
+            enabled: true
+            team: platform-team
+            description: Public route; identity headers are still stripped.
+            access:
+              mode: public
+          # Sem bloco access: vale o default-access (qualquer autenticado).
+          - id: me-route
+            path: /me/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            enabled: true
+            team: platform-team
+            description: Any authenticated user (gateway default access).
+          # Admin: role do Keycloak ou grupo do diretório, e o backend recebe o access token.
+          - id: admin-route
+            path: /admin/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            enabled: true
+            team: platform-team
+            description: Admins only; the backend also receives the access token (keycloak).
+            access:
+              any-of:
+                - role:gateway-admin
+                - group:tools-admins
+              forward-token: true

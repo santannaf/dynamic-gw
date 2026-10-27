@@ -1,0 +1,63 @@
+# Profile "keycloak": SSO pelo Keycloak (OIDC code + PKCE, bearer JWT para
+# APIs) + auditoria. Combine com o profile do cenário de rotas:
+#
+#   CRDs (ConfigMap, v2) ...... SPRING_PROFILES_ACTIVE=keycloak
+#   S3 (v2) ................... SPRING_PROFILES_ACTIVE=s3,keycloak
+#   Properties (v1) ........... SPRING_PROFILES_ACTIVE=standalone-sso,keycloak
+#
+# Os valores abaixo apontam para o ambiente local (k3d + k8s/sso/keycloak.yaml).
+# Em outro ambiente, sobrescreva por variável de ambiente (relaxed binding:
+# gateway.security.public-base-url -> GATEWAY_SECURITY_PUBLIC_BASE_URL).
+#
+# Segredos NUNCA ficam neste arquivo (ele vai embarcado na imagem nativa):
+#   GATEWAY_SECURITY_OIDC_CLIENT_SECRET      client secret do client tools-gateway
+#   GATEWAY_SECURITY_SESSION_KEYS_0_ID       id da chave do cookie de sessão (ex.: k1)
+#   GATEWAY_SECURITY_SESSION_KEYS_0_SECRET   base64 de 32 bytes (openssl rand -base64 32)
+
+gateway:
+  security:
+    enabled: true
+    provider: keycloak
+    # Rota sem bloco `access` exige login. Com "public", só as rotas com access protegem.
+    default-access: authenticated
+    # URL que o browser usa para chegar no gateway (redirect do login e do logout).
+    public-base-url: http://localhost:8080
+    oidc:
+      registration-id: keycloak
+      # Issuer público: tem que ser igual ao `iss` dos tokens (KC_HOSTNAME do Keycloak).
+      issuer: ${gateway.security.public-base-url}/auth/realms/tools
+      # Mesmo realm visto de dentro do cluster (token, JWKS, logout back-channel).
+      internal-issuer: http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools
+      client-id: tools-gateway
+      # O access token precisa trazer este aud (audience mapper no client).
+      audience: tools-gateway
+      # Claim `typ` do Keycloak: impede usar ID token como bearer.
+      required-token-type: Bearer
+      scopes:
+        - openid
+        - profile
+        - email
+    authorities:
+      # Grupos do Keycloak ou do AD federado pelo Keycloak -> group:<nome>
+      group-claims:
+        - groups
+      # Roles do realm e do client -> role:<nome>
+      role-claims:
+        - realm_access.roles
+        - "resource_access.{client-id}.roles"
+    internal:
+      # Quem pode ler GET /internal/routes.
+      any-of:
+        - role:gateway-admin
+    identity-headers:
+      prefix: X-Auth-Request-
+      max-length: 4096
+    session:
+      cookie-name: GW_SESSION
+      authz-cookie-name: GW_AUTHZ
+      # true fora do ambiente local; em http local: GATEWAY_SECURITY_SESSION_COOKIE_SECURE=false
+      cookie-secure: true
+      cache-max-entries: 10000
+  audit:
+    enabled: true
+    include-query: false

@@ -19,7 +19,7 @@ class PropertiesRouteConfigProviderTest {
         cfg.setRoutes(List.of(
                 new RouteConfigEntry("httpbin-route", "/httpbin/**",
                         "http://httpbin.example.com:8080", 1, List.of("GET", "POST"), true,
-                        "platform-team", "Echoes the request via httpbin for smoke testing.")
+                        "platform-team", "Echoes the request via httpbin for smoke testing.", null)
         ));
 
         PropertiesRouteConfigProvider provider = new PropertiesRouteConfigProvider(props);
@@ -73,7 +73,7 @@ class PropertiesRouteConfigProviderTest {
     void successiveLoadsReturnTheSameSnapshotInstance() {
         RouteStoreProperties props = new RouteStoreProperties();
         props.getProperties().setRoutes(List.of(
-                new RouteConfigEntry("a", "/a/**", "http://a", 1, List.of("GET"), true, null, null)
+                new RouteConfigEntry("a", "/a/**", "http://a", 1, List.of("GET"), true, null, null, null)
         ));
 
         PropertiesRouteConfigProvider provider = new PropertiesRouteConfigProvider(props);

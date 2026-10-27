@@ -13,6 +13,9 @@ import java.util.List;
  *   does not affect matching. Surfaced by {@code /internal/routes} and
  *   included in the snapshot hash so changes to ownership still trigger
  *   a reload.
+ * - {@code access}: who may use the route. {@code null} means "not declared"
+ *   (the gateway applies its default access). Enforced by the gateway, never
+ *   by the matcher, and part of the snapshot hash.
  */
 public record RouteConfigEntry(
         String id,
@@ -22,7 +25,8 @@ public record RouteConfigEntry(
         List<String> methods,
         Boolean enabled,
         String team,
-        String description
+        String description,
+        RouteAccess access
 ) {
     public RouteConfigEntry {
         methods = methods == null ? null : List.copyOf(methods);
