@@ -5,6 +5,8 @@ import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteSpec;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Optional;
@@ -114,6 +116,23 @@ class GatewayRouteValidatorTest {
                 null, List.of("admins"), null);
         assertThat(validator.validate(r))
                 .map(s -> s.contains("'admins'"))
+                .contains(true);
+    }
+
+    @Test
+    void authorityOfAnyTypePasses() {
+        GatewayRoute r = withAccess(route("ok", "/api/**", "http://x", 1, null, true),
+                null, List.of("scope:pagamentos.read", "permission:conta-ler", "saca:extrato", "tipo-2:x"), null);
+        assertThat(validator.validate(r)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {":semtipo", "scope:", "Scope:x", "2fa:x", "tipo_a:x"})
+    void malformedAuthorityFails(String authority) {
+        GatewayRoute r = withAccess(route("bad", "/api/**", "http://x", 1, null, true),
+                null, List.of(authority), null);
+        assertThat(validator.validate(r))
+                .map(s -> s.contains("'" + authority + "'") && s.contains("<type>:<name>"))
                 .contains(true);
     }
 

@@ -1,0 +1,50 @@
+# Rotas de exemplo do canal OAuth (API pública). Todas apontam pro go-httpbin,
+# que devolve os headers recebidos: dá pra ver a identidade que o gateway injeta.
+#
+#   /oauth/public/**   qualquer um, sem token
+#   /oauth/orders/**   precisa do scope orders.read
+#   /oauth/forward/**  como /oauth/orders, e repassa o access token ao backend
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: oauth-public
+  namespace: platform
+spec:
+  path: /oauth/public/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Public route of the OAuth channel.
+  access:
+    mode: public
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: oauth-orders
+  namespace: platform
+spec:
+  path: /oauth/orders/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Needs the OAuth scope orders.read.
+  access:
+    anyOf:
+      - scope:orders.read
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: oauth-forward
+  namespace: platform
+spec:
+  path: /oauth/forward/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Needs the OAuth scope orders.read and forwards the token.
+  access:
+    anyOf:
+      - scope:orders.read
+    forwardToken: true

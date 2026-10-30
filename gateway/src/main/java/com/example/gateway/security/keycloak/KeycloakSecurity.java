@@ -1,18 +1,17 @@
 package com.example.gateway.security.keycloak;
 
-import com.example.gateway.access.AccessAttributes;
-import com.example.gateway.access.AccessProblem;
-import com.example.gateway.access.GatewayIdentity;
-import com.example.gateway.security.GatewayAuthenticationToken;
+import com.example.gateway.access.UnauthenticatedHandler;
+import com.example.gateway.security.BearerChallengeHandler;
+import com.example.gateway.security.BrowserLoginHandler;
 import com.example.gateway.security.GatewaySecurityProperties;
+import com.example.gateway.security.IdentityChannel;
 import com.example.gateway.security.LoginOutcomeHandlers;
 import com.example.gateway.security.SecurityChains;
+import com.example.gateway.security.session.BrowserSession;
 import com.example.gateway.security.session.GatewaySessionManager;
-import com.example.gateway.security.session.SessionCookieCodec;
-import com.example.gateway.security.session.SessionCookies;
 import com.example.gateway.security.session.SessionSecurityContextRepository;
-import org.springframework.core.convert.converter.Converter;
-import org.springframework.security.authentication.AbstractAuthenticationToken;
+import com.example.gateway.security.token.AccessTokens;
+import com.example.gateway.security.token.TokenIdentities;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.InMemoryReactiveClientRegistrationRepository;
@@ -21,27 +20,14 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequest
 import org.springframework.security.oauth2.client.web.server.DefaultServerOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2TokenValidator;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtClaimNames;
-import org.springframework.security.oauth2.jwt.JwtClaimValidator;
-import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
-import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
-import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.server.BearerTokenServerAuthenticationEntryPoint;
-import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
 import org.springframework.security.web.server.savedrequest.ServerRequestCache;
 import org.springframework.security.web.server.util.matcher.PathPatternParserServerWebExchangeMatcher;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 import java.time.Clock;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import java.util.Set;
 
 /**
  * Provider {@code keycloak}: OIDC login (authorization code + PKCE) with the
@@ -50,88 +36,92 @@ import java.util.List;
  * discovery endpoint, so the gateway starts while Keycloak is down: browsers
  * use the public issuer URL, the pods use the internal one.
  *
- * Plain factory rather than a {@code @Configuration}: the provider is picked
- * at startup, and the native image evaluates {@code @Conditional} at build time.
  */
-public final class KeycloakSecurity {
+public final class KeycloakSecurity implements IdentityChannel {
 
     private static final String AUTHORIZATION_PATH = "/_gateway/oauth2/authorization/{registrationId}";
 
     private final GatewaySecurityProperties properties;
-    private final SessionCookieCodec codec;
-    private final SessionCookies cookies;
+    private final BrowserSession session;
     private final ReactiveClientRegistrationRepository registrations;
     private final ReactiveJwtDecoder accessTokenDecoder;
-    private final KeycloakIdentities identities;
+    private final TokenIdentities identities;
     private final KeycloakSessionManager sessionManager;
+    private final BrowserLoginHandler browserLogin;
 
-    private KeycloakSecurity(GatewaySecurityProperties properties, SessionCookieCodec codec, SessionCookies cookies,
-                             Clock clock) {
+    private KeycloakSecurity(GatewaySecurityProperties properties, BrowserSession session, Clock clock) {
         this.properties = properties;
-        this.codec = codec;
-        this.cookies = cookies;
+        this.session = session;
         this.registrations = clientRegistrations(properties);
         this.accessTokenDecoder = accessTokenDecoder(properties.getOidc());
-        GatewaySecurityProperties.Authorities authorities = properties.getAuthorities();
-        this.identities = new KeycloakIdentities(new ClaimAuthorities(
-                authorities.getGroupClaims(), authorities.getRoleClaims(), properties.getOidc().getClientId()));
-        this.sessionManager = new KeycloakSessionManager(codec, cookies, accessTokenDecoder, tokenClient(properties.getOidc()),
-                identities, properties, clock);
+        this.identities = TokenIdentities.from(properties.getAuthorities(), properties.getOidc().getClientId());
+        this.sessionManager = new KeycloakSessionManager(session.codec(), session.cookies(), accessTokenDecoder,
+                tokenClient(properties.getOidc()), identities, properties, clock);
+        this.browserLogin = new BrowserLoginHandler(session, loginPath(), new BearerChallengeHandler());
     }
 
-    public static KeycloakSecurity create(GatewaySecurityProperties properties, SessionCookieCodec codec,
-                                          SessionCookies cookies, Clock clock) {
+    public static KeycloakSecurity create(GatewaySecurityProperties properties, Clock clock) {
+        BrowserSession session = BrowserSession.from(properties);
         GatewaySecurityProperties.Oidc oidc = properties.getOidc();
         SecurityChains.requireText(oidc.getIssuer(), "gateway.security.oidc.issuer");
         SecurityChains.requireText(oidc.getClientId(), "gateway.security.oidc.client-id");
         SecurityChains.requireText(oidc.getClientSecret(), "gateway.security.oidc.client-secret");
         SecurityChains.requireText(oidc.getAudience(), "gateway.security.oidc.audience");
-        return new KeycloakSecurity(properties, codec, cookies, clock);
+        return new KeycloakSecurity(properties, session, clock);
     }
 
+    @Override
     public GatewaySessionManager sessionManager() {
         return sessionManager;
     }
 
-    public ServerHttpSecurity configure(ServerHttpSecurity http, SessionSecurityContextRepository contextRepository,
-                                        ServerRequestCache requestCache) {
+    @Override
+    public Set<String> gatewayCookieNames() {
+        return session.cookieNames();
+    }
+
+    @Override
+    public UnauthenticatedHandler unauthenticatedHandler() {
+        return browserLogin;
+    }
+
+    @Override
+    public BrowserLoginHandler browserLogin() {
+        return browserLogin;
+    }
+
+    @Override
+    public ServerHttpSecurity configure(ServerHttpSecurity http) {
+        ServerRequestCache requestCache = session.requestCache();
+        SessionSecurityContextRepository contextRepository = new SessionSecurityContextRepository(sessionManager);
         DefaultServerOAuth2AuthorizationRequestResolver resolver = new DefaultServerOAuth2AuthorizationRequestResolver(
                 registrations, new PathPatternParserServerWebExchangeMatcher(AUTHORIZATION_PATH));
         resolver.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
 
-        Converter<Jwt, Mono<AbstractAuthenticationToken>> bearerIdentity = jwt -> Mono.just(new GatewayAuthenticationToken(
-                identities.identity(jwt, jwt.getClaimAsString("sid"), GatewayIdentity.AuthMethod.BEARER)));
-
-        return SecurityChains.common(http, properties, contextRepository, requestCache,
-                        new BearerTokenServerAuthenticationEntryPoint())
+        return SecurityChains.common(http, properties, SecurityChains.browserLoginEntryPoint(
+                        loginPath(), requestCache, new BearerTokenServerAuthenticationEntryPoint()))
+                .securityContextRepository(contextRepository)
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .oauth2Login(login -> login
                         .clientRegistrationRepository(registrations)
                         .authorizationRequestResolver(resolver)
                         .authorizationRequestRepository(new CookieAuthorizationRequestRepository(
-                                codec, cookies, properties.getSession().getAuthzCookieName()))
+                                session.codec(), session.cookies(), properties.getSession().getAuthzCookieName()))
                         .authenticationMatcher(new PathPatternParserServerWebExchangeMatcher(
                                 CookieAuthorizationRequestRepository.CALLBACK_PATH + "/{registrationId}"))
                         .authorizedClientRepository(new KeycloakAuthorizedClientRepository(sessionManager))
                         .securityContextRepository(contextRepository)
-                        .authenticationSuccessHandler(LoginOutcomeHandlers.success(requestCache))
+                        .authenticationSuccessHandler(LoginOutcomeHandlers.success(session))
                         .authenticationFailureHandler(LoginOutcomeHandlers.oidcFailure())
-                        .loginPage(SecurityChains.loginPath(properties)))
+                        .loginPage(loginPath()))
                 .oauth2ResourceServer(resourceServer -> resourceServer
-                        .jwt(jwt -> jwt.jwtDecoder(accessTokenDecoder).jwtAuthenticationConverter(bearerIdentity))
-                        .authenticationFailureHandler(lenientBearerFailure()));
+                        .jwt(jwt -> jwt.jwtDecoder(accessTokenDecoder)
+                                .jwtAuthenticationConverter(identities.bearerAuthentication()))
+                        .authenticationFailureHandler(AccessTokens.lenientBearerFailure()));
     }
 
-    /**
-     * An invalid bearer token does not end the request here: public routes may
-     * receive tokens meant for the backend. The route filter decides, using
-     * the {@link AccessProblem#INVALID_TOKEN} marker.
-     */
-    static ServerAuthenticationFailureHandler lenientBearerFailure() {
-        return (webFilterExchange, exception) -> {
-            webFilterExchange.getExchange().getAttributes().put(AccessAttributes.PROBLEM, AccessProblem.INVALID_TOKEN);
-            return webFilterExchange.getChain().filter(webFilterExchange.getExchange());
-        };
+    private String loginPath() {
+        return "/_gateway/oauth2/authorization/" + properties.getOidc().getRegistrationId();
     }
 
     private static ReactiveClientRegistrationRepository clientRegistrations(GatewaySecurityProperties properties) {
@@ -156,19 +146,8 @@ public final class KeycloakSecurity {
     }
 
     private static ReactiveJwtDecoder accessTokenDecoder(GatewaySecurityProperties.Oidc oidc) {
-        NimbusReactiveJwtDecoder decoder = NimbusReactiveJwtDecoder
-                .withJwkSetUri(oidc.effectiveInternalIssuer() + "/protocol/openid-connect/certs")
-                .webClient(WebClient.builder().build())
-                .build();
-        List<OAuth2TokenValidator<Jwt>> validators = new ArrayList<>();
-        validators.add(new JwtTimestampValidator(Duration.ofSeconds(30)));
-        validators.add(new JwtIssuerValidator(oidc.getIssuer()));
-        validators.add(new JwtClaimValidator<>(JwtClaimNames.AUD, aud -> audienceContains(aud, oidc.getAudience())));
-        if (oidc.getRequiredTokenType() != null && !oidc.getRequiredTokenType().isBlank()) {
-            validators.add(new JwtClaimValidator<>("typ", typ -> oidc.getRequiredTokenType().equals(typ)));
-        }
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(validators));
-        return decoder;
+        return AccessTokens.decoder(oidc.effectiveInternalIssuer() + "/protocol/openid-connect/certs",
+                oidc.getIssuer(), oidc.getAudience(), oidc.getRequiredTokenType());
     }
 
     private static KeycloakTokenClient tokenClient(GatewaySecurityProperties.Oidc oidc) {
@@ -177,12 +156,5 @@ public final class KeycloakSecurity {
                 internalIssuer + "/protocol/openid-connect/token",
                 internalIssuer + "/protocol/openid-connect/logout",
                 oidc.getClientId(), oidc.getClientSecret());
-    }
-
-    private static boolean audienceContains(Object aud, String expected) {
-        if (aud instanceof Collection<?> values) {
-            return values.stream().anyMatch(v -> expected.equals(String.valueOf(v)));
-        }
-        return aud != null && expected.equals(aud.toString());
     }
 }

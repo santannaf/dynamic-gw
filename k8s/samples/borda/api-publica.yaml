@@ -1,0 +1,34 @@
+# Modelo de rota do gateway de API pública (OAuth, scopes), com nomes e hosts fictícios. Serve de formato para
+# o levantamento: os times trocam estes exemplos por rotas reais e o CRD é validado com
+#   kubectl apply --dry-run=server -f k8s/samples/borda/
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: borda-api-pedidos-consulta
+  namespace: platform
+spec:
+  path: /v1/pedidos/**
+  targetUri: http://pedidos-api.pedidos.svc.cluster.local:8080
+  methods: [GET]
+  team: pedidos
+  description: Consulta pública de pedidos.
+  access:
+    anyOf:
+      - scope:pedidos.read
+      - scope:pedidos.write
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: borda-api-pedidos-criacao
+  namespace: platform
+spec:
+  path: /v1/pedidos/**
+  targetUri: http://pedidos-api.pedidos.svc.cluster.local:8080
+  methods: [POST]
+  team: pedidos
+  description: Criação de pedidos, repassando o token ao backend.
+  access:
+    anyOf:
+      - scope:pedidos.write
+    forwardToken: true

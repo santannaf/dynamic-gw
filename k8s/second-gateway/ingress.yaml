@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dynamic-gateway
+  labels:
+    app.kubernetes.io/name: dynamic-gateway
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+# Exemplo com uma réplica, entrando direto no Service para não repetir o nginx-lb.
+# Exponha só os prefixos das rotas, nunca "/": POST /internal/routes/reload não tem
+# autenticação, porque o operator chama de dentro do cluster, e quem bloqueia de fora é
+# a borda. Sem nginx-lb, o bloqueio é este Ingress não publicar /internal.
+spec:
+  rules:
+    - host: borda-exemplo.localhost
+      http:
+        paths:
+          - path: /iso
+            pathType: Prefix
+            backend:
+              service:
+                name: dynamic-gateway
+                port:
+                  number: 8080

@@ -5,10 +5,9 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 /**
- * Spring Security view of a {@link GatewayIdentity}, for both providers and
- * both credential types. Authorities keep the {@code group:}/{@code role:}
- * form so {@code hasAnyAuthority("role:gateway-admin")} matches what routes
- * declare.
+ * Spring Security view of a {@link GatewayIdentity}, for every channel and
+ * credential type. Authorities keep the {@code <type>:<name>} form so
+ * {@code hasAnyAuthority("role:gateway-admin")} matches what routes declare.
  */
 public class GatewayAuthenticationToken extends AbstractAuthenticationToken {
 

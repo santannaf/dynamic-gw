@@ -19,6 +19,7 @@ public final class IdentityHeaders {
     static final String SUBJECT = "Subject";
     static final String GROUPS = "Groups";
     static final String ROLES = "Roles";
+    static final String AUTHORITIES = "Authorities";
     static final String CLIENT_ID = "Client-Id";
     static final String TRUNCATED_SUFFIX = "-Truncated";
 
@@ -42,6 +43,8 @@ public final class IdentityHeaders {
         setIfPresent(headers, prefix + SUBJECT, identity.subject());
         setList(headers, prefix + GROUPS, identity.groups(), maxLength);
         setList(headers, prefix + ROLES, identity.roles(), maxLength);
+        setList(headers, prefix + AUTHORITIES,
+                identity.authorities().stream().sorted().map(IdentityHeaders::escapeSeparator).toList(), maxLength);
         if (identity.method() == GatewayIdentity.AuthMethod.BEARER) {
             setIfPresent(headers, prefix + CLIENT_ID, identity.clientId());
         }
@@ -99,6 +102,12 @@ public final class IdentityHeaders {
             headers.set(name + TRUNCATED_SUFFIX, "true");
         }
         headers.set(name, joined);
+    }
+
+    // Each entry carries its type, so a comma inside a value from the identity
+    // provider could forge another entry, such as role:gateway-admin.
+    private static String escapeSeparator(String authority) {
+        return authority.replace("%", "%25").replace(",", "%2C");
     }
 
     // Header values cannot carry control characters; values come from the

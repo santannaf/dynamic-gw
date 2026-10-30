@@ -8,8 +8,9 @@ import java.util.List;
  * {@code mode} stays a plain string ({@code public} | {@code authenticated})
  * so this module keeps parsing snapshots whose values it does not interpret;
  * the gateway owns the semantics and fails closed on unknown values.
- * {@code anyOf} holds authorities in the form {@code group:<name>} or
- * {@code role:<name>}. {@code forwardToken == null} means {@code false}.
+ * {@code anyOf} holds authorities in the form {@code <type>:<name>}; the
+ * gateway decides which types exist. {@code forwardToken == null} means
+ * {@code false}.
  */
 public record RouteAccess(
         String mode,

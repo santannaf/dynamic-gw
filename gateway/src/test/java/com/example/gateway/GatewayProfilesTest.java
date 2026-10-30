@@ -36,7 +36,9 @@ class GatewayProfilesTest {
                 Arguments.of(List.of("s3", "keycloak"), "s3", "keycloak"),
                 Arguments.of(List.of("s3", "ldap"), "s3", "ldap"),
                 Arguments.of(List.of("standalone-sso", "keycloak"), "properties", "keycloak"),
-                Arguments.of(List.of("standalone-sso", "ldap"), "properties", "ldap"));
+                Arguments.of(List.of("standalone-sso", "ldap"), "properties", "ldap"),
+                Arguments.of(List.of("oauth"), "configmap", "oauth"),
+                Arguments.of(List.of("s3", "oauth"), "s3", "oauth"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -77,6 +79,19 @@ class GatewayProfilesTest {
         assertThat(security.getOidc().getAudience()).isEqualTo("tools-gateway");
         assertThat(security.getInternal().getAnyOf()).containsExactly("role:gateway-admin");
         assertThat(security.getSession().isCookieSecure()).isTrue();
+    }
+
+    @Test
+    void oauthProfileValidatesTokensWithoutSession() {
+        GatewaySecurityProperties security = bindStrictly(environment(List.of("oauth"), Map.of()),
+                "gateway.security", GatewaySecurityProperties.class);
+
+        assertThat(security.getOauth().getIssuer()).isEqualTo("http://localhost:8080/auth/realms/tools");
+        assertThat(security.getOauth().getJwkSetUri()).isEqualTo(
+                "http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools/protocol/openid-connect/certs");
+        assertThat(security.getOauth().getAudience()).isEqualTo("tools-gateway");
+        assertThat(security.getAuthorities().getClaims()).containsEntry("scope", List.of("scope"));
+        assertThat(security.getPublicBaseUrl()).isNull();
     }
 
     @Test

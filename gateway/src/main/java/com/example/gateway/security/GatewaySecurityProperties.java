@@ -4,24 +4,30 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @ConfigurationProperties(prefix = "gateway.security")
 public class GatewaySecurityProperties {
 
     public static final String PROVIDER_KEYCLOAK = "keycloak";
     public static final String PROVIDER_LDAP = "ldap";
+    public static final String PROVIDER_OAUTH = "oauth";
 
     private boolean enabled = false;
     private String provider = PROVIDER_KEYCLOAK;
     private String defaultAccess = "authenticated";
     private String publicBaseUrl;
+    /** Origins of fronts served outside the gateway, such as a static site on a CDN. */
+    private List<String> frontOrigins = new ArrayList<>();
     private Oidc oidc = new Oidc();
     private Authorities authorities = new Authorities();
     private Internal internal = new Internal();
     private IdentityHeaders identityHeaders = new IdentityHeaders();
     private Session session = new Session();
     private Ldap ldap = new Ldap();
+    private OAuth oauth = new OAuth();
 
     public boolean isEnabled() { return enabled; }
 
@@ -38,6 +44,22 @@ public class GatewaySecurityProperties {
     public String getPublicBaseUrl() { return publicBaseUrl; }
 
     public void setPublicBaseUrl(String publicBaseUrl) { this.publicBaseUrl = publicBaseUrl; }
+
+    public List<String> getFrontOrigins() { return frontOrigins; }
+
+    public void setFrontOrigins(List<String> frontOrigins) { this.frontOrigins = frontOrigins; }
+
+    /**
+     * The fronts plus the gateway's own public URL. Behind a proxy that ends TLS
+     * the gateway cannot tell that a same-origin {@code Origin} header is its own.
+     */
+    public List<String> trustedOrigins() {
+        List<String> origins = new ArrayList<>(frontOrigins);
+        if (publicBaseUrl != null && !publicBaseUrl.isBlank()) {
+            origins.add(publicBaseUrl);
+        }
+        return origins;
+    }
 
     public Oidc getOidc() { return oidc; }
 
@@ -62,6 +84,36 @@ public class GatewaySecurityProperties {
     public Ldap getLdap() { return ldap; }
 
     public void setLdap(Ldap ldap) { this.ldap = ldap; }
+
+    public OAuth getOauth() { return oauth; }
+
+    public void setOauth(OAuth oauth) { this.oauth = oauth; }
+
+    public static class OAuth {
+        /** Must match the {@code iss} claim of the tokens. */
+        private String issuer;
+        /** JWKS of the authorization server, reachable from the pods. */
+        private String jwkSetUri;
+        private String audience;
+        /** Expected {@code typ} claim; blank skips the check, for servers that do not send it. */
+        private String requiredTokenType;
+
+        public String getIssuer() { return issuer; }
+
+        public void setIssuer(String issuer) { this.issuer = issuer; }
+
+        public String getJwkSetUri() { return jwkSetUri; }
+
+        public void setJwkSetUri(String jwkSetUri) { this.jwkSetUri = jwkSetUri; }
+
+        public String getAudience() { return audience; }
+
+        public void setAudience(String audience) { this.audience = audience; }
+
+        public String getRequiredTokenType() { return requiredTokenType; }
+
+        public void setRequiredTokenType(String requiredTokenType) { this.requiredTokenType = requiredTokenType; }
+    }
 
     public static class Oidc {
         private String registrationId = "keycloak";
@@ -117,6 +169,8 @@ public class GatewaySecurityProperties {
         private List<String> groupClaims = new ArrayList<>(List.of("groups"));
         /** {@code {client-id}} is replaced by {@code gateway.security.oidc.client-id}. */
         private List<String> roleClaims = new ArrayList<>(List.of("realm_access.roles", "resource_access.{client-id}.roles"));
+        /** Other authority types, as {@code <type>: [claim paths]}; a string claim is split on spaces. */
+        private Map<String, List<String>> claims = new LinkedHashMap<>();
 
         public List<String> getGroupClaims() { return groupClaims; }
 
@@ -125,6 +179,10 @@ public class GatewaySecurityProperties {
         public List<String> getRoleClaims() { return roleClaims; }
 
         public void setRoleClaims(List<String> roleClaims) { this.roleClaims = roleClaims; }
+
+        public Map<String, List<String>> getClaims() { return claims; }
+
+        public void setClaims(Map<String, List<String>> claims) { this.claims = claims; }
     }
 
     public static class Internal {

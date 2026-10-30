@@ -44,6 +44,7 @@ browser / API ──► nginx-lb ──► gateway (profile keycloak | ldap) ─
 | `security.oidc.client-id` / `audience` | `tools-gateway` / `tools-gateway` | — |
 | `security.authorities.group-claims` → `group:` | `groups` | — |
 | `security.authorities.role-claims` → `role:` | `realm_access.roles`, `resource_access.{client-id}.roles` | — |
+| `security.authorities.claims` → outros tipos | `scope` → `scope:` | — |
 | `security.ldap.url` | — | `ldap://openldap.platform.svc.cluster.local:389` |
 | `security.ldap.bind-dn` | — | `cn=readonly,dc=tools,dc=local` |
 | `security.ldap.user-search` | — | base `ou=people,dc=tools,dc=local`, filtro `(uid={0})` |

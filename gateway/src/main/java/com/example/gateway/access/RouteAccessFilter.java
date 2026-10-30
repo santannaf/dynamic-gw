@@ -25,11 +25,11 @@ public class RouteAccessFilter implements GlobalFilter, Ordered {
     public static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 50;
 
     private final AccessSettings settings;
-    private final LoginRedirector loginRedirector;
+    private final UnauthenticatedHandler unauthenticatedHandler;
 
-    public RouteAccessFilter(AccessSettings settings, LoginRedirector loginRedirector) {
+    public RouteAccessFilter(AccessSettings settings, UnauthenticatedHandler unauthenticatedHandler) {
         this.settings = settings;
-        this.loginRedirector = loginRedirector;
+        this.unauthenticatedHandler = unauthenticatedHandler;
     }
 
     @Override
@@ -79,17 +79,7 @@ public class RouteAccessFilter implements GlobalFilter, Ordered {
             case null, default -> AccessDecision.UNAUTHENTICATED;
         };
         exchange.getAttributes().put(AccessAttributes.DECISION, decision);
-        if (BrowserNavigation.matches(exchange.getRequest())) {
-            return loginRedirector.redirectToLogin(exchange);
-        }
-        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        if (settings.bearerChallenge()) {
-            String challenge = decision == AccessDecision.INVALID_TOKEN
-                    ? "Bearer realm=\"dynamic-gateway\", error=\"invalid_token\""
-                    : "Bearer realm=\"dynamic-gateway\"";
-            exchange.getResponse().getHeaders().set(HttpHeaders.WWW_AUTHENTICATE, challenge);
-        }
-        return exchange.getResponse().setComplete();
+        return unauthenticatedHandler.handle(exchange, decision);
     }
 
     private static Mono<Void> reject(ServerWebExchange exchange, AccessDecision decision, HttpStatus status) {

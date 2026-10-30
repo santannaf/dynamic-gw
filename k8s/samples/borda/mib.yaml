@@ -1,0 +1,17 @@
+# Modelo de rota do gateway MIB (sessão própria, permissões do MIB), com nomes e hosts fictícios. Serve de formato para
+# o levantamento: os times trocam estes exemplos por rotas reais e o CRD é validado com
+#   kubectl apply --dry-run=server -f k8s/samples/borda/
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: borda-mib-extrato
+  namespace: platform
+spec:
+  path: /mib/extrato/**
+  targetUri: http://extrato-bff.mib.svc.cluster.local:8080
+  methods: [GET]
+  team: mib
+  description: Extrato do internet banking.
+  access:
+    anyOf:
+      - mib:extrato-consultar

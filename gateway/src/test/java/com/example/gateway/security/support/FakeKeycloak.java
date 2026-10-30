@@ -111,6 +111,14 @@ public final class FakeKeycloak implements AutoCloseable {
     }
 
     public String accessToken(User user, String audience, String typ, Duration lifetime) {
+        return sign(accessTokenClaims(user, audience, typ, lifetime).build());
+    }
+
+    public String accessTokenWithScope(User user, String scope) {
+        return sign(accessTokenClaims(user, CLIENT_ID, "Bearer", accessTokenLifetime).claim("scope", scope).build());
+    }
+
+    private static JWTClaimsSet.Builder accessTokenClaims(User user, String audience, String typ, Duration lifetime) {
         Instant now = Instant.now();
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
                 .issuer(PUBLIC_ISSUER)
@@ -127,7 +135,7 @@ public final class FakeKeycloak implements AutoCloseable {
         if (user.email() != null) {
             claims.claim("email", user.email());
         }
-        return sign(claims.build());
+        return claims;
     }
 
     public String accessToken(User user) {

@@ -12,7 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-/** Upstream stand-in: answers 200 with the request it received, and remembers the last one. */
+/**
+ * Upstream stand-in: answers 200 with the request it received, and remembers
+ * the last one. It answers CORS on its own, as many backends do.
+ */
 public final class EchoUpstream implements AutoCloseable {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -35,6 +38,8 @@ public final class EchoUpstream implements AutoCloseable {
                     .put("path", exchange.getRequestURI().getPath());
             byte[] bytes = JSON.writeValueAsString(body).getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().add("Access-Control-Expose-Headers", "X-Total-Count");
             exchange.sendResponseHeaders(200, bytes.length);
             exchange.getResponseBody().write(bytes);
             exchange.close();

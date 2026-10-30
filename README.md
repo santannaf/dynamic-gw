@@ -579,21 +579,25 @@ Cabe folgado no limite de 1 MiB, com bastante sobra pra crescer.
 
 Desligado por padrão (`gateway.security.enabled=false`): deploys, scripts e k6 continuam iguais. Conceitos e onde ver tudo no Keycloak: [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md); roteiro de teste: [`TESTE_SSO.md`](TESTE_SSO.md); um guia por cenário de rotas: [CRD](SSO_CENARIO_CRD.md), [S3](SSO_CENARIO_S3.md) e [Properties](SSO_CENARIO_PROPERTIES.md). Ligado, o gateway identifica quem chama, aplica a política de cada rota, entrega a identidade pronta ao backend e registra **quem fez o quê e quando**. Desenho completo e decisões em `openspec/changes/add-keycloak-sso-audit/`.
 
-### Dois provedores, um modelo de autorização
+Este gateway é o exemplo para os outros gateways de borda: [`GATEWAY_DE_BORDA.md`](GATEWAY_DE_BORDA.md) traz o contrato comum, os modelos de integração de front-end e o passo a passo para criar um canal.
 
-A permissão vive em **grupos do AD** (uma OU por aplicação, grupos de leitura/escrita por ferramenta). O gateway não sabe de onde o grupo veio: normaliza tudo em autoridades `group:<nome>` / `role:<nome>`, e a rota declara quais aceita. Trocar de provedor não muda nenhuma `GatewayRoute`.
+### Três canais, um modelo de autorização
 
-| `gateway.security.provider` | `keycloak` (default)                                          | `ldap`                                     |
-|-----------------------------|---------------------------------------------------------------|--------------------------------------------|
-| Login                       | tela do Keycloak (OIDC code + PKCE)                           | tela do gateway em `/_gateway/login`       |
-| Papel do Keycloak           | ponte para o AD (LDAP federation + group mapper) e IdP        | não existe                                 |
-| Grupos vêm de               | claim `groups` do access token                                | busca direta no diretório                  |
-| APIs / contas de serviço    | bearer JWT (client credentials), validado local via JWKS      | não nesta versão                           |
-| Sessão                      | cookie JWE com o refresh token; Keycloak é a fonte da verdade | cookie JWE com o DN; revalida no diretório |
+Cada canal descobre quem está chamando do seu jeito, e todos normalizam o resultado em permissões `<tipo>:<nome>`. A rota declara quais aceita, e o tipo é aberto: `group:`, `role:`, `scope:` ou qualquer outro que o gateway produza. No tools, a permissão vive em **grupos do AD** (uma OU por aplicação, grupos de leitura/escrita por ferramenta). Trocar de provedor não muda nenhuma `GatewayRoute`.
 
-Nos dois casos a sessão é um cookie `GW_SESSION` cifrado (JWE `dir`/`A256GCM`, chave em Secret, rotação por `kid`) mais um **cache em memória por réplica**. Não há Redis. Quando o cache de uma réplica não tem a sessão (ou ela expirou), a réplica revalida com o provedor: refresh no Keycloak ou nova busca no diretório. Conta desabilitada ou removida do grupo perde o acesso em até um ciclo (5 min por padrão). O Keycloak **não** é chamado a cada request.
+| `gateway.security.provider` | `keycloak` (default)                                          | `ldap`                                     | `oauth`                                  |
+|-----------------------------|---------------------------------------------------------------|--------------------------------------------|------------------------------------------|
+| Login                       | tela do Keycloak (OIDC code + PKCE)                           | tela do gateway em `/_gateway/login`       | não tem: sem token válido, 401           |
+| Papel do Keycloak           | ponte para o AD (LDAP federation + group mapper) e IdP        | não existe                                 | emissor no lab; serve qualquer servidor OAuth |
+| Permissões vêm de           | claims do access token                                        | busca direta no diretório                  | claims do access token                   |
+| APIs / contas de serviço    | bearer JWT (client credentials), validado local via JWKS      | não nesta versão                           | bearer JWT, validado local via JWKS      |
+| Sessão                      | cookie JWE com o refresh token; Keycloak é a fonte da verdade | cookie JWE com o DN; revalida no diretório | não tem                                  |
 
-A escolha do provedor acontece no startup, não no build: o Spring AOT congela `@ConditionalOnProperty` ao gerar o native image, então um único `ActiveSecurity` monta o modo ativo e a mesma imagem serve desligado, `keycloak` e `ldap`.
+Claims de outros tipos entram por `gateway.security.authorities.claims` (`scope: [scope]`). Só esse mapeamento separa texto por espaço, como o `scope` do OAuth: um grupo como `Domain Admins` continua sendo um valor único.
+
+Com `keycloak` e `ldap`, a sessão é um cookie `GW_SESSION` cifrado (JWE `dir`/`A256GCM`, chave em Secret, rotação por `kid`) mais um **cache em memória por réplica**. Não há Redis. Quando o cache de uma réplica não tem a sessão (ou ela expirou), a réplica revalida com o provedor: refresh no Keycloak ou nova busca no diretório. Conta desabilitada ou removida do grupo perde o acesso em até um ciclo (5 min por padrão). O Keycloak **não** é chamado a cada request.
+
+A escolha do provedor acontece no startup, não no build: o Spring AOT congela `@ConditionalOnProperty` ao gerar o native image, então um único `ActiveSecurity` monta o canal ativo (`IdentityChannel`) e a mesma imagem serve desligado, `keycloak`, `ldap` e `oauth`.
 
 ### Política por rota
 
@@ -603,16 +607,18 @@ spec:
   targetUri: http://kafka-ui.tools.svc.cluster.local:8080
   access:
     mode: authenticated          # public | authenticated; omitido = gateway.security.default-access
-    anyOf: [group:GG_KAFKAUI_READ, group:GG_KAFKAUI_WRITE]
-    forwardToken: false          # true repassa Authorization: Bearer <access token> (keycloak)
+    anyOf: [group:GG_KAFKAUI_READ, group:GG_KAFKAUI_WRITE]   # <tipo>:<nome>, com tipo aberto
+    forwardToken: false          # true repassa Authorization: Bearer <access token> (canal com token)
 ```
 
 - Rota sem `access` segue `gateway.security.default-access` (default `authenticated`).
 - Browser sem sessão vai para o login; API recebe 401; sem o grupo, 403.
 - Leitura vs escrita: duas rotas com o mesmo `path` separadas por `methods` (exemplo em `k8s/samples/routes-sso.yaml`, `/sso/rw/**`).
 - A política viaja como metadata da rota, não como filtro: as 60k rotas continuam no caminho rápido do `FastRouteCompiler`.
-- O backend recebe `X-Auth-Request-User`, `-Email`, `-Subject`, `-Groups`, `-Roles` (e `-Client-Id` para contas de serviço). Headers com esse prefixo vindos de fora são sempre descartados, e o cookie de sessão do gateway nunca é repassado.
-- Endpoints do gateway ficam sob `/_gateway/` (`login`, `logout`, `whoami`, início/callback OIDC); o operator rejeita rotas nesse prefixo.
+- Permissão de um tipo que o gateway não produz não autoriza ninguém: a rota responde 403.
+- O backend recebe `X-Auth-Request-User`, `-Email`, `-Subject`, `-Groups`, `-Roles`, `-Authorities` (todas as permissões em `<tipo>:<nome>`) e `-Client-Id` para contas de serviço. Headers com esse prefixo vindos de fora são sempre descartados, e o cookie de sessão do gateway nunca é repassado.
+- Endpoints do gateway ficam sob `/_gateway/` (`login`, `login/start`, `logout`, `whoami`, início/callback OIDC); o operator rejeita rotas nesse prefixo.
+- Front estático em outra origem: `gateway.security.front-origins` libera CORS com credenciais e o retorno depois do login.
 - `GET /internal/routes` exige `gateway.security.internal.any-of` (default `role:gateway-admin`). `POST /internal/routes/reload` continua aberto in-cluster (o operator chama pelo Service) e o nginx-lb devolve 403 para quem vem de fora.
 
 ### Auditoria
@@ -653,7 +659,17 @@ HOST_PORT=18080 make sso-test       # e2e: login, bearer, multi-réplica, logout
 HOST_PORT=18080 make ldap-up        # OpenLDAP no lugar do AD + gateway com provider=ldap
 HOST_PORT=18080 make ldap-test
 
+HOST_PORT=18080 make oauth-up       # canal de API pública: só tokens, sem sessão
+HOST_PORT=18080 make oauth-test
+
+HOST_PORT=18080 make frontend-test  # modelos de integração de front-end (sobre make sso-up)
+
 make sso-down                       # volta o gateway sem SSO
+
+# segundo gateway de borda no mesmo cluster, com namespace, operator e snapshot próprios
+make second-gateway-up
+HOST_PORT=18080 make second-gateway-test
+make second-gateway-down
 
 # snapshot num bucket S3 (MinIO no cluster; S3_BACKEND=aws S3_BUCKET=... para um bucket real)
 HOST_PORT=18080 make s3-sso-up              # PROVIDER=ldap para o diretório no lugar do Keycloak
@@ -666,7 +682,7 @@ HOST_PORT=18080 make standalone-sso-test
 make standalone-sso-down            # volta o v1 sem SSO
 ```
 
-A configuração já vem pronta em profiles embarcados na imagem e combináveis: um de provedor (`application-keycloak.yaml`, `application-ldap.yaml`) e, quando o store não é o default, um de cenário. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
+A configuração já vem pronta em profiles embarcados na imagem e combináveis: um de provedor (`application-keycloak.yaml`, `application-ldap.yaml`, `application-oauth.yaml`) e, quando o store não é o default, um de cenário. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
 
 | Cenário de rotas | Rotas vêm de | Keycloak | LDAP | Guia |
 |---|---|---|---|---|

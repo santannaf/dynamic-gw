@@ -10,6 +10,7 @@ import com.example.gateway.security.session.SessionCache;
 import com.example.gateway.security.session.SessionCookieCodec;
 import com.example.gateway.security.session.SessionCookies;
 import com.example.gateway.security.session.SessionRejectedException;
+import com.example.gateway.security.token.TokenIdentities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -50,7 +51,7 @@ public class KeycloakSessionManager implements GatewaySessionManager {
     private final SessionCookies cookies;
     private final ReactiveJwtDecoder accessTokenDecoder;
     private final KeycloakTokenClient tokenClient;
-    private final KeycloakIdentities identities;
+    private final TokenIdentities identities;
     private final SessionCache<CachedSession> cache;
     private final Clock clock;
     private final String cookieName;
@@ -62,7 +63,7 @@ public class KeycloakSessionManager implements GatewaySessionManager {
                                   SessionCookies cookies,
                                   ReactiveJwtDecoder accessTokenDecoder,
                                   KeycloakTokenClient tokenClient,
-                                  KeycloakIdentities identities,
+                                  TokenIdentities identities,
                                   GatewaySecurityProperties properties,
                                   Clock clock) {
         this.codec = codec;

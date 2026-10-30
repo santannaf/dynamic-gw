@@ -14,7 +14,9 @@ public class GatewayRouteValidator {
             "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
     );
     private static final Set<String> ALLOWED_ACCESS_MODES = Set.of("public", "authenticated");
-    private static final Pattern AUTHORITY = Pattern.compile("^(group|role):.+$");
+    // <type>:<name>. Each edge gateway defines its own types, so the type stays
+    // open; this must match the pattern of spec.access.anyOf in the CRD.
+    private static final Pattern AUTHORITY = Pattern.compile("^[a-z][a-z0-9-]*:.+$");
     // Login, callback, logout and whoami live here; a route under this prefix
     // would be shadowed by the gateway's own endpoints.
     private static final String RESERVED_PATH_PREFIX = "/_gateway/";
@@ -66,7 +68,7 @@ public class GatewayRouteValidator {
             for (String authority : access.getAnyOf()) {
                 if (authority == null || !AUTHORITY.matcher(authority).matches()) {
                     return Optional.of("spec.access.anyOf contains invalid authority '" + authority
-                            + "' (expected group:<name> or role:<name>)");
+                            + "' (expected <type>:<name>, such as group:tools-admins or scope:orders.read)");
                 }
             }
         }

@@ -8,15 +8,12 @@ import java.util.Set;
  *
  * @param gatewayCookieNames cookies owned by the gateway (session, login state,
  *                           saved request); never forwarded upstream
- * @param bearerChallenge    whether a 401 carries {@code WWW-Authenticate: Bearer}
- *                           (true when the provider accepts bearer tokens)
  */
 public record AccessSettings(
         AccessPolicy.Mode defaultMode,
         String identityHeaderPrefix,
         int identityHeaderMaxLength,
-        Set<String> gatewayCookieNames,
-        boolean bearerChallenge
+        Set<String> gatewayCookieNames
 ) {
     public AccessSettings {
         gatewayCookieNames = Set.copyOf(gatewayCookieNames);

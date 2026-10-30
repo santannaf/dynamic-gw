@@ -102,11 +102,11 @@ spec:
                     anyOf:
                       type: array
                       maxItems: 32     # SEU - cap defensivo
-                      description: The caller needs at least one of these authorities. group:<name> comes from the token's groups claim (AD groups when Keycloak federates AD); role:<name> from realm/client roles.
+                      description: The caller needs at least one of these authorities, written <type>:<name>. Each gateway defines its types (group:<name>, role:<name>, scope:<name>, ...); a type the gateway does not produce authorizes nobody.
                       items:
                         type: string
                         maxLength: 256
-                        pattern: '^(group|role):.+$'
+                        pattern: '^[a-z][a-z0-9-]*:.+$'   # SEU - tipo aberto: cada gateway de borda define os seus
                     forwardToken:
                       type: boolean
                       description: When true the gateway forwards the caller's access token upstream as Authorization Bearer.

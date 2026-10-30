@@ -1,10 +1,12 @@
 package com.example.gateway.security.ldap;
 
+import com.example.gateway.access.UnauthenticatedHandler;
+import com.example.gateway.security.BrowserLoginHandler;
 import com.example.gateway.security.GatewaySecurityProperties;
+import com.example.gateway.security.IdentityChannel;
 import com.example.gateway.security.SecurityChains;
+import com.example.gateway.security.session.BrowserSession;
 import com.example.gateway.security.session.GatewaySessionManager;
-import com.example.gateway.security.session.SessionCookieCodec;
-import com.example.gateway.security.session.SessionCookies;
 import com.example.gateway.security.session.SessionSecurityContextRepository;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
@@ -15,34 +17,35 @@ import org.springframework.security.web.server.savedrequest.ServerRequestCache;
 import org.springframework.security.web.server.util.matcher.PathPatternParserServerWebExchangeMatcher;
 
 import java.time.Clock;
+import java.util.Set;
 
 /**
  * Provider {@code ldap}: the gateway authenticates against the directory
  * itself (AD or any LDAP server). No bearer tokens in this mode: the
  * {@code Authorization} header is not interpreted and travels upstream as is.
- *
- * Plain factory rather than a {@code @Configuration}: the provider is picked
- * at startup, and the native image evaluates {@code @Conditional} at build time.
  */
-public final class LdapSecurity implements AutoCloseable {
+public final class LdapSecurity implements IdentityChannel {
 
     private final GatewaySecurityProperties properties;
+    private final BrowserSession session;
     private final LdapDirectory directory;
     private final LoginAttemptLimiter limiter;
     private final LdapSessionManager sessionManager;
+    private final BrowserLoginHandler browserLogin;
 
-    private LdapSecurity(GatewaySecurityProperties properties, SessionCookieCodec codec, SessionCookies cookies,
-                         Clock clock) {
+    private LdapSecurity(GatewaySecurityProperties properties, BrowserSession session, Clock clock) {
         this.properties = properties;
+        this.session = session;
         this.directory = new LdapDirectory(properties.getLdap());
         GatewaySecurityProperties.Ldap.LoginAttempts attempts = properties.getLdap().getLoginAttempts();
         this.limiter = new LoginAttemptLimiter(attempts.getMaxFailures(), attempts.getMaxFailuresPerClient(),
                 attempts.getWindow(), clock);
-        this.sessionManager = new LdapSessionManager(codec, cookies, directory, properties, clock);
+        this.sessionManager = new LdapSessionManager(session.codec(), session.cookies(), directory, properties, clock);
+        this.browserLogin = new BrowserLoginHandler(session, LdapLogin.LOGIN_PATH, UnauthenticatedHandler.PLAIN_401);
     }
 
-    public static LdapSecurity create(GatewaySecurityProperties properties, SessionCookieCodec codec,
-                                      SessionCookies cookies, Clock clock) {
+    public static LdapSecurity create(GatewaySecurityProperties properties, Clock clock) {
+        BrowserSession session = BrowserSession.from(properties);
         GatewaySecurityProperties.Ldap ldap = properties.getLdap();
         SecurityChains.requireText(ldap.getUrl(), "gateway.security.ldap.url");
         SecurityChains.requireText(ldap.getBindDn(), "gateway.security.ldap.bind-dn");
@@ -51,22 +54,40 @@ public final class LdapSecurity implements AutoCloseable {
         SecurityChains.requireText(ldap.getUserSearch().getFilter(), "gateway.security.ldap.user-search.filter");
         SecurityChains.requireText(ldap.getGroupSearch().getBase(), "gateway.security.ldap.group-search.base");
         SecurityChains.requireText(ldap.getGroupSearch().getFilter(), "gateway.security.ldap.group-search.filter");
-        return new LdapSecurity(properties, codec, cookies, clock);
+        return new LdapSecurity(properties, session, clock);
     }
 
+    @Override
     public GatewaySessionManager sessionManager() {
         return sessionManager;
     }
 
-    public ServerHttpSecurity configure(ServerHttpSecurity http, SessionSecurityContextRepository contextRepository,
-                                        ServerRequestCache requestCache) {
+    @Override
+    public Set<String> gatewayCookieNames() {
+        return session.cookieNames();
+    }
+
+    @Override
+    public UnauthenticatedHandler unauthenticatedHandler() {
+        return browserLogin;
+    }
+
+    @Override
+    public BrowserLoginHandler browserLogin() {
+        return browserLogin;
+    }
+
+    @Override
+    public ServerHttpSecurity configure(ServerHttpSecurity http) {
+        ServerRequestCache requestCache = session.requestCache();
+        SessionSecurityContextRepository contextRepository = new SessionSecurityContextRepository(sessionManager);
         PathPatternParserServerWebExchangeMatcher loginPost =
                 new PathPatternParserServerWebExchangeMatcher(LdapLogin.LOGIN_PATH, HttpMethod.POST);
 
         AuthenticationWebFilter login = new AuthenticationWebFilter(LdapLogin.authenticationManager(directory, limiter));
         login.setRequiresAuthenticationMatcher(loginPost);
         login.setServerAuthenticationConverter(LdapLogin.converter());
-        login.setAuthenticationSuccessHandler(LdapLogin.success(sessionManager, limiter, requestCache));
+        login.setAuthenticationSuccessHandler(LdapLogin.success(sessionManager, limiter, session));
         login.setAuthenticationFailureHandler(LdapLogin.failure(limiter));
         login.setSecurityContextRepository(contextRepository);
 
@@ -76,7 +97,9 @@ public final class LdapSecurity implements AutoCloseable {
         boolean secure = properties.getSession().isCookieSecure();
         csrfTokens.setCookieCustomizer(cookie -> cookie.secure(secure).sameSite("Strict"));
 
-        return SecurityChains.common(http, properties, contextRepository, requestCache, SecurityChains.statusEntryPoint())
+        return SecurityChains.common(http, properties, SecurityChains.browserLoginEntryPoint(
+                        LdapLogin.LOGIN_PATH, requestCache, SecurityChains.statusEntryPoint()))
+                .securityContextRepository(contextRepository)
                 .csrf(csrf -> csrf.csrfTokenRepository(csrfTokens).requireCsrfProtectionMatcher(loginPost))
                 .addFilterAt(login, SecurityWebFiltersOrder.FORM_LOGIN);
     }

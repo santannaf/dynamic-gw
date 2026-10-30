@@ -45,6 +45,10 @@ gateway:
       role-claims:
         - realm_access.roles
         - "resource_access.{client-id}.roles"
+      # Outros tipos: <tipo> -> claims. Claim em texto é separado por espaço, como o scope do OAuth.
+      claims:
+        scope:
+          - scope
     internal:
       # Quem pode ler GET /internal/routes.
       any-of:

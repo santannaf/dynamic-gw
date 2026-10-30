@@ -2,20 +2,19 @@ package com.example.gateway.security;
 
 import com.example.gateway.access.AccessAttributes;
 import com.example.gateway.access.AccessDecision;
+import com.example.gateway.security.session.BrowserSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.web.server.DefaultServerRedirectStrategy;
 import org.springframework.security.web.server.WebFilterExchange;
 import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
 import org.springframework.security.web.server.authentication.ServerAuthenticationSuccessHandler;
-import org.springframework.security.web.server.savedrequest.ServerRequestCache;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
-/** Login success/failure handling shared by both providers, with the audit markers. */
+/** Login success/failure handling shared by the channels with a login, with the audit markers. */
 public final class LoginOutcomeHandlers {
 
     public static final String LOGIN_ACTION = "auth.login";
@@ -24,17 +23,13 @@ public final class LoginOutcomeHandlers {
     private LoginOutcomeHandlers() {
     }
 
-    /** Marks the audit event and sends the browser back to the URL saved before login (or {@code /}). */
-    public static ServerAuthenticationSuccessHandler success(ServerRequestCache requestCache) {
+    /** Marks the audit event and sends the browser to {@link BrowserSession#takeReturnTarget}. */
+    public static ServerAuthenticationSuccessHandler success(BrowserSession session) {
         DefaultServerRedirectStrategy redirects = new DefaultServerRedirectStrategy();
         return (webFilterExchange, authentication) -> {
             ServerWebExchange exchange = webFilterExchange.getExchange();
             mark(exchange, AccessDecision.ALLOWED);
-            return requestCache.getRedirectUri(exchange)
-                    .defaultIfEmpty(URI.create("/"))
-                    // removeMatchingRequest expires the saved-request cookie
-                    .flatMap(target -> requestCache.removeMatchingRequest(exchange)
-                            .then(redirects.sendRedirect(exchange, target)));
+            return session.takeReturnTarget(exchange).flatMap(target -> redirects.sendRedirect(exchange, target));
         };
     }
 

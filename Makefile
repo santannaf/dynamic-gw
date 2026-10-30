@@ -1,6 +1,8 @@
 .PHONY: cluster down clean-build jars images load-images bootstrap deploy \
         standalone-up standalone-down nginx-lb-up nginx-lb-down nginx-lb-pf \
         sso-up sso-down sso-test ldap-up ldap-test \
+        oauth-up oauth-down oauth-test frontend-test \
+        second-gateway-up second-gateway-down second-gateway-test \
         standalone-sso-up standalone-sso-down standalone-sso-test \
         s3-sso-up s3-sso-down s3-sso-test \
         test restart-test large-snapshot-test route-propagation-test \
@@ -162,6 +164,33 @@ sso-test:
 
 ldap-test:
 	./scripts/test-ldap.sh
+
+# Canal de exemplo sem sessão (provider=oauth): API pública, só tokens. O Keycloak
+# local faz o papel do authorization server.
+oauth-up:
+	PROVIDER=oauth ./scripts/deploy-sso.sh
+
+oauth-down:
+	./scripts/deploy-sso.sh down
+
+oauth-test:
+	./scripts/test-oauth.sh
+
+# Modelos de integração de front-end (pré-requisito: make sso-up).
+frontend-test:
+	./scripts/test-frontend-models.sh
+
+# Segundo gateway de borda no mesmo cluster, com namespace, operator e snapshot próprios.
+second-gateway-up:
+	kubectl kustomize --load-restrictor LoadRestrictionsNone k8s/second-gateway | kubectl apply -f -
+	kubectl -n borda-exemplo rollout status deployment/dynamic-gateway --timeout=180s
+	kubectl -n borda-exemplo rollout status deployment/gateway-route-operator --timeout=180s
+
+second-gateway-down:
+	kubectl delete namespace borda-exemplo --ignore-not-found
+
+second-gateway-test:
+	./scripts/test-second-gateway.sh
 
 # v1 standalone com SSO (profile standalone-sso): rotas com `access` embarcadas
 # na imagem, sem operator/CRD. PROVIDER=ldap troca o Keycloak pelo diretório.

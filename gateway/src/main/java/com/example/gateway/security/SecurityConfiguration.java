@@ -9,6 +9,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.filter.headers.HttpHeadersFilter;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -51,8 +52,7 @@ public class SecurityConfiguration {
         if (!activeSecurity.enabled()) {
             return (exchange, chain) -> chain.filter(exchange);
         }
-        return new RouteAccessFilter(activeSecurity.accessSettings(),
-                new CookieLoginRedirector(activeSecurity.requestCache(), SecurityChains.loginPath(activeSecurity.properties())));
+        return new RouteAccessFilter(activeSecurity.accessSettings(), activeSecurity.unauthenticatedHandler());
     }
 
     @Bean
@@ -61,6 +61,20 @@ public class SecurityConfiguration {
             return (exchange, chain) -> chain.filter(exchange);
         }
         return new IdentityCaptureWebFilter();
+    }
+
+    @Bean
+    WebFilter frontendCorsWebFilter(ActiveSecurity activeSecurity) {
+        GatewaySecurityProperties properties = activeSecurity.properties();
+        if (!activeSecurity.enabled() || properties.getFrontOrigins().isEmpty()) {
+            return (exchange, chain) -> chain.filter(exchange);
+        }
+        return new FrontendCorsWebFilter(properties.trustedOrigins());
+    }
+
+    @Bean
+    HttpHeadersFilter upstreamCorsHeadersFilter() {
+        return new UpstreamCorsHeadersFilter();
     }
 
     @Bean

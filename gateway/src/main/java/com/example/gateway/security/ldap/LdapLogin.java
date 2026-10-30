@@ -4,6 +4,7 @@ import com.example.gateway.access.AccessAttributes;
 import com.example.gateway.access.AccessDecision;
 import com.example.gateway.access.ClientAddress;
 import com.example.gateway.security.LoginOutcomeHandlers;
+import com.example.gateway.security.session.BrowserSession;
 import com.example.gateway.security.session.ProviderUnavailableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -17,7 +18,6 @@ import org.springframework.security.web.server.DefaultServerRedirectStrategy;
 import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
 import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
 import org.springframework.security.web.server.authentication.ServerAuthenticationSuccessHandler;
-import org.springframework.security.web.server.savedrequest.ServerRequestCache;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -68,8 +68,8 @@ public final class LdapLogin {
 
     public static ServerAuthenticationSuccessHandler success(LdapSessionManager sessionManager,
                                                              LoginAttemptLimiter limiter,
-                                                             ServerRequestCache requestCache) {
-        ServerAuthenticationSuccessHandler redirect = LoginOutcomeHandlers.success(requestCache);
+                                                             BrowserSession session) {
+        ServerAuthenticationSuccessHandler redirect = LoginOutcomeHandlers.success(session);
         return (webFilterExchange, authentication) -> {
             LdapUser user = ((LdapUserAuthentication) authentication).user();
             limiter.reset(user.username());

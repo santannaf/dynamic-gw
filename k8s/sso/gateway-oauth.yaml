@@ -1,0 +1,83 @@
+# Cenário CRDs (v2: GatewayRoute -> operator -> ConfigMap) com o canal OAuth: API
+# pública sem sessão, que só valida tokens. Substitui k8s/gateway/deployment.yaml.
+# Aplicado por scripts/deploy-sso.sh (MODE=v2 PROVIDER=oauth), que troca __HOST_PORT__.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-gateway
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: dynamic-gateway
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  # Duas réplicas por default para validar a propagação multi-instância:
+  # cada pod tem seu próprio RouteConfigChangeListener e converge sozinho
+  # quando o ConfigMap muda - sem depender de um sinal HTTP que só
+  # atingiria uma das réplicas.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dynamic-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dynamic-gateway
+        app.kubernetes.io/part-of: dynamic-gateway-control-plane
+    spec:
+      serviceAccountName: dynamic-gateway
+      containers:
+        - name: gateway
+          image: dynamic-gateway:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Faz o JVM (e timestamps de logback) usarem America/Sao_Paulo.
+            # debian:stable-slim já traz /usr/share/zoneinfo, então basta a env.
+            - name: TZ
+              value: America/Sao_Paulo
+            - name: GATEWAY_ROUTES_STORE_TYPE
+              value: configmap
+            - name: GATEWAY_ROUTES_STORE_CONFIGMAP_NAMESPACE
+              value: platform
+            - name: GATEWAY_ROUTES_STORE_CONFIGMAP_CONFIG_MAP_NAME
+              value: gateway-routes
+            - name: GATEWAY_ROUTES_STORE_CONFIGMAP_KEY
+              value: routes.yaml
+            # --- OAuth + auditoria: o resto vem do profile (gateway/src/main/resources/application-oauth.yaml) ---
+            - name: SPRING_PROFILES_ACTIVE
+              value: oauth
+            - name: GATEWAY_SECURITY_OAUTH_ISSUER
+              value: http://localhost:__HOST_PORT__/auth/realms/tools
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              # 4 cores liberados pra que o ForkJoinPool.commonPool() do
+              # parallelStream no FastRouteCompiler tenha paralelismo > 1
+              # (parallelism = max(1, availableProcessors() - 1)).
+              # Como reload é evento ocasional, o pico de CPU é curto;
+              # o request path normal usa muito menos.
+              cpu: 8000m
+              memory: 768Mi

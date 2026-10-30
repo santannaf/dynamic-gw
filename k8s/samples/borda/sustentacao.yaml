@@ -1,0 +1,17 @@
+# Modelo de rota do gateway de sustentação (sessão do SACA, permissões do SACA), com nomes e hosts fictícios. Serve de formato para
+# o levantamento: os times trocam estes exemplos por rotas reais e o CRD é validado com
+#   kubectl apply --dry-run=server -f k8s/samples/borda/
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: borda-sustentacao-clientes
+  namespace: platform
+spec:
+  path: /sustentacao/clientes/**
+  targetUri: http://clientes-front.sustentacao.svc.cluster.local:3000
+  team: sustentacao
+  description: Telas de atendimento ao cliente.
+  access:
+    anyOf:
+      - saca:cliente-consultar
+      - saca:cliente-alterar

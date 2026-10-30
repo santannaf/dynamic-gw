@@ -39,6 +39,10 @@ class AccessUnitsTest {
         assertThat(BrowserNavigation.matches(MockServerHttpRequest.get("/x").header(HttpHeaders.ACCEPT, "text/html")
                 .header("X-Requested-With", "XMLHttpRequest").build())).isFalse();
         assertThat(BrowserNavigation.matches(MockServerHttpRequest.get("/x").header(HttpHeaders.ACCEPT, "text/html")
+                .header("Sec-Fetch-Mode", "cors").build())).as("fetch asking for HTML, as htmx does").isFalse();
+        assertThat(BrowserNavigation.matches(MockServerHttpRequest.get("/x").header(HttpHeaders.ACCEPT, "text/html")
+                .header("Sec-Fetch-Mode", "navigate").build())).isTrue();
+        assertThat(BrowserNavigation.matches(MockServerHttpRequest.get("/x").header(HttpHeaders.ACCEPT, "text/html")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer x").build())).isFalse();
         assertThat(BrowserNavigation.matches(MockServerHttpRequest.get("/x").header(HttpHeaders.ACCEPT, "not a media type").build())).isFalse();
     }
@@ -48,9 +52,10 @@ class AccessUnitsTest {
         HttpHeaders headers = new HttpHeaders();
         headers.add("x-auth-request-user", "mallory");
         headers.add("X-Auth-Request-Groups", "admins");
+        headers.add("X-Auth-Request-Authorities", "role:gateway-admin");
         headers.add("X-Other", "kept");
         GatewayIdentity identity = new GatewayIdentity("sub-1", "alice", "alice@tools.local", "sid", "tools-cli",
-                Set.of("group:b", "group:a", "role:r"), GatewayIdentity.AuthMethod.BEARER, "token", null);
+                Set.of("group:b", "group:a", "role:r", "scope:orders.read"), GatewayIdentity.AuthMethod.BEARER, "token", null);
 
         IdentityHeaders.strip(headers, "X-Auth-Request-");
         assertThat(headers.headerNames()).containsExactly("X-Other");
@@ -59,6 +64,7 @@ class AccessUnitsTest {
         assertThat(headers.getFirst("X-Auth-Request-User")).isEqualTo("alice");
         assertThat(headers.getFirst("X-Auth-Request-Groups")).isEqualTo("a,b");
         assertThat(headers.getFirst("X-Auth-Request-Roles")).isEqualTo("r");
+        assertThat(headers.getFirst("X-Auth-Request-Authorities")).isEqualTo("group:a,group:b,role:r,scope:orders.read");
         assertThat(headers.getFirst("X-Auth-Request-Client-Id")).isEqualTo("tools-cli");
     }
 
@@ -72,6 +78,18 @@ class AccessUnitsTest {
 
         assertThat(headers.getFirst("X-Auth-Request-Groups")).isEqualTo("aaaa,bbbb");
         assertThat(headers.getFirst("X-Auth-Request-Groups-Truncated")).isEqualTo("true");
+        assertThat(headers.getFirst("X-Auth-Request-Authorities-Truncated")).isEqualTo("true");
+    }
+
+    @Test
+    void commaInAValueCannotForgeAnotherAuthority() {
+        HttpHeaders headers = new HttpHeaders();
+        GatewayIdentity identity = new GatewayIdentity("s", "u", null, null, null,
+                Set.of("team:x,role:gateway-admin", "team:100%"), GatewayIdentity.AuthMethod.BEARER, null, null);
+
+        IdentityHeaders.inject(headers, identity, "X-Auth-Request-", 4096);
+
+        assertThat(headers.getFirst("X-Auth-Request-Authorities")).isEqualTo("team:100%25,team:x%2Crole:gateway-admin");
     }
 
     @Test

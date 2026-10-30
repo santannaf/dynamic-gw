@@ -26,6 +26,10 @@ final class SecurityTestRoutes {
         registry.add("gateway.routes.store.properties.routes[5].access.mode", () -> "public");
         route(registry, 6, "logout-route", "/logout/**", upstream, 0);
         registry.add("gateway.routes.store.properties.routes[6].access.mode", () -> "public");
+        route(registry, 7, "scope-route", "/scope/**", upstream, 1);
+        registry.add("gateway.routes.store.properties.routes[7].access.any-of[0]", () -> "scope:orders.read");
+        route(registry, 8, "unknown-type-route", "/unknown-type/**", upstream, 1);
+        registry.add("gateway.routes.store.properties.routes[8].access.any-of[0]", () -> "saca:extrato");
     }
 
     private static void route(DynamicPropertyRegistry registry, int index, String id, String path,

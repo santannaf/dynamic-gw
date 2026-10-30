@@ -1,0 +1,47 @@
+# Profile "oauth": canal de API pública. O gateway só valida access tokens JWT:
+# não há sessão, login nem cookie, e quem chega sem token recebe 401. Combine
+# com o profile do cenário de rotas:
+#
+#   CRDs (ConfigMap, v2) ...... SPRING_PROFILES_ACTIVE=oauth
+#   S3 (v2) ................... SPRING_PROFILES_ACTIVE=s3,oauth
+#
+# Os valores abaixo apontam para o ambiente local, com o Keycloak fazendo o papel
+# do authorization server. Em outro ambiente, sobrescreva por variável de
+# ambiente (gateway.security.oauth.issuer -> GATEWAY_SECURITY_OAUTH_ISSUER).
+# Este profile não tem segredo: o gateway só usa a chave pública do JWKS.
+
+gateway:
+  security:
+    enabled: true
+    provider: oauth
+    # Rota sem bloco `access` exige token. Com "public", só as rotas com access protegem.
+    default-access: authenticated
+    oauth:
+      # Tem que ser igual ao `iss` dos tokens.
+      issuer: http://localhost:8080/auth/realms/tools
+      # JWKS do authorization server, visto de dentro do cluster.
+      jwk-set-uri: http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools/protocol/openid-connect/certs
+      # O access token precisa trazer este aud. Fora do lab, use o identificador da API e
+      # nunca um client id: o ID token traz o client id no aud e seria aceito como token.
+      audience: tools-gateway
+      # Claim `typ` do Keycloak; deixe vazio em servidor que não envia esse claim.
+      required-token-type: Bearer
+    authorities:
+      group-claims:
+        - groups
+      role-claims:
+        - realm_access.roles
+      # Tipo scope: a rota declara scope:<nome>. O claim vem como texto separado por espaço.
+      claims:
+        scope:
+          - scope
+    internal:
+      # Quem pode ler GET /internal/routes.
+      any-of:
+        - role:gateway-admin
+    identity-headers:
+      prefix: X-Auth-Request-
+      max-length: 4096
+  audit:
+    enabled: true
+    include-query: false

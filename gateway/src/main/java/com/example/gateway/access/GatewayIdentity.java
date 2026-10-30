@@ -8,8 +8,9 @@ import java.util.Set;
  * Who is calling, independent of the identity provider (Keycloak or LDAP) and
  * of how the caller authenticated (session cookie or bearer token).
  *
- * {@code authorities} use the normalized form {@code group:<name>} /
- * {@code role:<name>} that routes declare in {@code access.anyOf}.
+ * {@code authorities} use the normalized form {@code <type>:<name>} that routes
+ * declare in {@code access.anyOf}; each identity provider decides which types
+ * it produces.
  * {@code accessToken} is only present for Keycloak identities and is kept out
  * of {@link #toString()} so it never reaches a log line by accident.
  */

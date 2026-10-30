@@ -137,6 +137,15 @@ class LdapModeIntegrationTest {
     }
 
     @Test
+    void loginStartedByAFrontGoesToTheFormAndKeepsTheReturnTarget() {
+        client.get().uri("/_gateway/login/start?returnTo=/group/anything")
+                .exchange()
+                .expectStatus().isFound()
+                .expectHeader().location("/_gateway/login")
+                .expectCookie().exists("GW_RETURN_TO");
+    }
+
+    @Test
     void userOutsideTheGroupIsForbidden() {
         String session = login("bob", "bob-pass", "/group/anything");
 

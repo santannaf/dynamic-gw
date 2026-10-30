@@ -3,6 +3,7 @@
 #
 #   PROVIDER=keycloak ./scripts/deploy-sso.sh     # Keycloak como ponte/IdP (default)
 #   PROVIDER=ldap     ./scripts/deploy-sso.sh     # gateway direto no diretório (OpenLDAP no lugar do AD)
+#   PROVIDER=oauth    ./scripts/deploy-sso.sh     # API pública: só tokens, sem sessão (Keycloak como emissor)
 #   ./scripts/deploy-sso.sh down                  # volta o gateway sem SSO e remove Keycloak/OpenLDAP
 #
 # MODE escolhe o cenário de rotas (um .md na raiz para cada):
@@ -144,6 +145,7 @@ down() {
     else
         kubectl apply -f k8s/gateway/deployment.yaml
         kubectl -n "${NAMESPACE}" delete -f k8s/samples/routes-sso.yaml --ignore-not-found
+        kubectl -n "${NAMESPACE}" delete -f k8s/samples/routes-oauth.yaml --ignore-not-found
         # O cenário S3 troca o operator; v2 e s3 voltam para a ConfigMap.
         if operator_exists; then
             kubectl apply -f k8s/operator/deployment.yaml
@@ -195,10 +197,14 @@ case "${MODE}" in
         fi
         ;;
 esac
+if [[ ! -f "${GATEWAY_MANIFEST}" ]]; then
+    echo "MODE=${MODE} has no manifest for PROVIDER=${PROVIDER} (${GATEWAY_MANIFEST})" >&2
+    exit 2
+fi
 ensure_secrets
 
 case "${PROVIDER}" in
-    keycloak)
+    keycloak|oauth)
         ensure_image "${KEYCLOAK_IMAGE}"
         kubectl -n "${NAMESPACE}" create configmap keycloak-realm-tools \
             --from-file=realm-tools.json=k8s/sso/realm-tools.json \
@@ -221,7 +227,7 @@ case "${PROVIDER}" in
         wait_rollout openldap 180s
         ;;
     *)
-        echo "PROVIDER must be keycloak or ldap (got '${PROVIDER}')" >&2
+        echo "PROVIDER must be keycloak, ldap or oauth (got '${PROVIDER}')" >&2
         exit 2
         ;;
 esac
@@ -252,6 +258,10 @@ if [[ "${MODE}" == "standalone" ]]; then
 else
     kubectl apply -f k8s/samples/routes-sso.yaml
     TRY_PATH=/sso/group/headers
+    if [[ "${PROVIDER}" == "oauth" ]]; then
+        kubectl apply -f k8s/samples/routes-oauth.yaml
+        TRY_PATH=/oauth/orders/headers
+    fi
 fi
 kubectl apply -f k8s/nginx-lb/ >/dev/null
 kubectl -n "${NAMESPACE}" rollout restart deployment/nginx-lb >/dev/null
@@ -261,9 +271,13 @@ wait_edge
 
 echo
 echo "[sso] Up with provider=${PROVIDER}, mode=${MODE} at http://localhost:${HOST_PORT}"
-echo "      Users (local only): alice (tools-httpbin), bob (no groups), carol (tools-admins)"
-echo "      Password:           $(secret_value demo-password)"
+if [[ "${PROVIDER}" == "oauth" ]]; then
+    echo "      Token:              client tools-cli (client_credentials, secret in sso-secrets)"
+else
+    echo "      Users (local only): alice (tools-httpbin), bob (no groups), carol (tools-admins)"
+    echo "      Password:           $(secret_value demo-password)"
+fi
 echo "      Try:                http://localhost:${HOST_PORT}${TRY_PATH}"
-if [[ "${PROVIDER}" == "keycloak" ]]; then
+if [[ "${PROVIDER}" != "ldap" ]]; then
     echo "      Keycloak admin:     http://localhost:${HOST_PORT}/auth/admin (admin / $(secret_value keycloak-admin-password))"
 fi

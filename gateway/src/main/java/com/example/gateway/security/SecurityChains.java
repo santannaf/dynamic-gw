@@ -2,7 +2,6 @@ package com.example.gateway.security;
 
 import com.example.gateway.access.BrowserNavigation;
 import com.example.gateway.access.RouteAccessFilter;
-import com.example.gateway.security.session.SessionSecurityContextRepository;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -17,7 +16,7 @@ import org.springframework.security.web.server.savedrequest.NoOpServerRequestCac
 import org.springframework.security.web.server.savedrequest.ServerRequestCache;
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 
-/** Pieces of the Spring Security chain shared by both providers and by the disabled mode. */
+/** Pieces of the Spring Security chain shared by every channel and by the disabled mode. */
 public final class SecurityChains {
 
     private SecurityChains() {
@@ -44,29 +43,17 @@ public final class SecurityChains {
     }
 
     /**
-     * Parts both providers share: cookie-backed security context, no
-     * WebSession, no generated login/logout pages, no security headers on
-     * proxied responses, and authorization only for {@code GET /internal/routes}
-     * (route-level decisions happen in {@link RouteAccessFilter}, once the
-     * route is known).
+     * Parts every channel shares: no WebSession-backed request cache, no
+     * generated login/logout pages, no security headers on proxied responses,
+     * and authorization only for {@code GET /internal/routes} (route-level
+     * decisions happen in {@link RouteAccessFilter}, once the route is known).
+     * The channel still sets the security context repository.
      */
     public static ServerHttpSecurity common(ServerHttpSecurity http,
                                             GatewaySecurityProperties properties,
-                                            SessionSecurityContextRepository contextRepository,
-                                            ServerRequestCache requestCache,
-                                            ServerAuthenticationEntryPoint fallbackEntryPoint) {
-        RedirectServerAuthenticationEntryPoint toLogin = new RedirectServerAuthenticationEntryPoint(loginPath(properties));
-        toLogin.setRequestCache(requestCache);
-        ServerWebExchangeMatcher browserNavigation = exchange -> BrowserNavigation.matches(exchange.getRequest())
-                ? ServerWebExchangeMatcher.MatchResult.match()
-                : ServerWebExchangeMatcher.MatchResult.notMatch();
-        DelegatingServerAuthenticationEntryPoint entryPoint = new DelegatingServerAuthenticationEntryPoint(
-                new DelegatingServerAuthenticationEntryPoint.DelegateEntry(browserNavigation, toLogin));
-        entryPoint.setDefaultEntryPoint(fallbackEntryPoint);
-
+                                            ServerAuthenticationEntryPoint entryPoint) {
         String[] internalAuthorities = properties.getInternal().getAnyOf().toArray(String[]::new);
         return http
-                .securityContextRepository(contextRepository)
                 // Spring's request-cache filter would expire REDIRECT_URI on every proxied response;
                 // the cookie cache is used explicitly by the login redirect and the success handlers.
                 .requestCache(cache -> cache.requestCache(NoOpServerRequestCache.getInstance()))
@@ -82,10 +69,18 @@ public final class SecurityChains {
                         .anyExchange().permitAll());
     }
 
-    public static String loginPath(GatewaySecurityProperties properties) {
-        return GatewaySecurityProperties.PROVIDER_LDAP.equals(properties.getProvider())
-                ? "/_gateway/login"
-                : "/_gateway/oauth2/authorization/" + properties.getOidc().getRegistrationId();
+    /** Browser navigation goes to the login, keeping the URL; every other call gets {@code apiCalls}. */
+    public static ServerAuthenticationEntryPoint browserLoginEntryPoint(String loginPath, ServerRequestCache requestCache,
+                                                                        ServerAuthenticationEntryPoint apiCalls) {
+        RedirectServerAuthenticationEntryPoint toLogin = new RedirectServerAuthenticationEntryPoint(loginPath);
+        toLogin.setRequestCache(requestCache);
+        ServerWebExchangeMatcher browserNavigation = exchange -> BrowserNavigation.matches(exchange.getRequest())
+                ? ServerWebExchangeMatcher.MatchResult.match()
+                : ServerWebExchangeMatcher.MatchResult.notMatch();
+        DelegatingServerAuthenticationEntryPoint entryPoint = new DelegatingServerAuthenticationEntryPoint(
+                new DelegatingServerAuthenticationEntryPoint.DelegateEntry(browserNavigation, toLogin));
+        entryPoint.setDefaultEntryPoint(apiCalls);
+        return entryPoint;
     }
 
     public static ServerAuthenticationEntryPoint statusEntryPoint() {

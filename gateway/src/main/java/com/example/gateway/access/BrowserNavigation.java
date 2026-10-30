@@ -9,7 +9,9 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
  * Tells a top-level browser navigation (which can follow a redirect to the
  * login page) apart from API and XHR calls (which get a 401). Requires an
  * explicit {@code text/html} in {@code Accept}: curl and most API clients
- * send {@code *}{@code /*}, which must not trigger a redirect.
+ * send {@code *}{@code /*}, which must not trigger a redirect. A {@code fetch}
+ * that asks for HTML is told apart by {@code Sec-Fetch-Mode}, which browsers
+ * set to {@code navigate} only on real navigations.
  */
 public final class BrowserNavigation {
 
@@ -26,6 +28,10 @@ public final class BrowserNavigation {
             return false;
         }
         if ("XMLHttpRequest".equalsIgnoreCase(headers.getFirst("X-Requested-With"))) {
+            return false;
+        }
+        String fetchMode = headers.getFirst("Sec-Fetch-Mode");
+        if (fetchMode != null && !"navigate".equalsIgnoreCase(fetchMode)) {
             return false;
         }
         try {

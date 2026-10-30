@@ -15,6 +15,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.web.cors.reactive.CorsUtils;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
@@ -66,6 +67,10 @@ public class AccessAuditWebFilter implements WebFilter, Ordered {
     }
 
     private void emitSafely(ServerWebExchange exchange, Instant start, long durationNanos, SignalType signal) {
+        boolean routed = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR) != null;
+        if (CorsUtils.isPreFlightRequest(exchange.getRequest()) && !routed) {
+            return;
+        }
         try {
             sink.emit(build(exchange, start, durationNanos, signal == SignalType.CANCEL));
         } catch (RuntimeException e) {
@@ -138,7 +143,8 @@ public class AccessAuditWebFilter implements WebFilter, Ordered {
     /**
      * The route filter and the login handlers record their decision; for the
      * rest (gateway endpoints, 401s from Spring Security, unmatched paths)
-     * the status code tells the story.
+     * the status code tells the story. A 400 outside a route is a refusal of
+     * the gateway itself: the request firewall or a bad {@code returnTo}.
      */
     private static AccessDecision decision(ServerWebExchange exchange, Integer status, Route route) {
         AccessDecision recorded = exchange.getAttribute(AccessAttributes.DECISION);
@@ -150,6 +156,7 @@ public class AccessAuditWebFilter implements WebFilter, Ordered {
             return AccessDecision.ALLOWED;
         }
         return switch (status) {
+            case 400 -> route == null ? AccessDecision.FORBIDDEN : AccessDecision.ALLOWED;
             case 401 -> problem == AccessProblem.INVALID_TOKEN ? AccessDecision.INVALID_TOKEN
                     : problem == AccessProblem.SESSION_EXPIRED ? AccessDecision.SESSION_EXPIRED
                     : AccessDecision.UNAUTHENTICATED;

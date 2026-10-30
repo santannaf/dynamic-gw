@@ -2,11 +2,13 @@ package com.example.gateway.security;
 
 import com.example.gateway.access.AccessAttributes;
 import com.example.gateway.access.GatewayIdentity;
+import com.example.gateway.security.session.GatewaySessionManager;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -15,7 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Gateway-owned endpoints shared by both providers. Annotated controllers are
+ * Gateway-owned endpoints shared by every channel. Annotated controllers are
  * matched before gateway routes, so these paths can never be shadowed by a
  * {@code GatewayRoute} (the operator also rejects routes under {@code /_gateway/}).
  * Registered in every mode; with security off they answer 404.
@@ -55,13 +57,27 @@ public class GatewayEndpointsController {
         return ResponseEntity.ok(body);
     }
 
+    @GetMapping("/login/start")
+    public ResponseEntity<Void> startLogin(@RequestParam(name = "returnTo", defaultValue = "/") String returnTo,
+                                           ServerWebExchange exchange) {
+        BrowserLoginHandler login = security.browserLogin();
+        if (login == null) {
+            return ResponseEntity.notFound().build();
+        }
+        exchange.getAttributes().put(AccessAttributes.AUDIT_ACTION, LoginOutcomeHandlers.LOGIN_START_ACTION);
+        return login.startLogin(exchange, returnTo)
+                .map(target -> ResponseEntity.status(HttpStatus.FOUND).location(target).<Void>build())
+                .orElseGet(() -> ResponseEntity.badRequest().build());
+    }
+
     @RequestMapping(path = "/logout", method = {RequestMethod.GET, RequestMethod.POST})
     public Mono<ResponseEntity<Void>> logout(ServerWebExchange exchange) {
-        if (!security.enabled()) {
+        GatewaySessionManager sessions = security.sessionManager();
+        if (sessions == null) {
             return Mono.just(ResponseEntity.notFound().build());
         }
         exchange.getAttributes().put(AccessAttributes.AUDIT_ACTION, LOGOUT_ACTION);
-        return security.sessionManager().logout(exchange)
+        return sessions.logout(exchange)
                 .map(target -> ResponseEntity.status(HttpStatus.FOUND).location(target).<Void>build());
     }
 }

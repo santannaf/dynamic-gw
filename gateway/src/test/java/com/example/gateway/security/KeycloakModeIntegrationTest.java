@@ -23,7 +23,9 @@ import org.springframework.test.context.aot.DisabledInAotMode;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
+import java.net.URI;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +40,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisabledInAotMode
 class KeycloakModeIntegrationTest {
 
+    static final String FRONT_ORIGIN = "https://app.example.test";
+
     static final EchoUpstream upstream = new EchoUpstream();
     static final FakeKeycloak keycloak = new FakeKeycloak();
 
@@ -51,6 +55,8 @@ class KeycloakModeIntegrationTest {
         registry.add("gateway.security.oidc.internal-issuer", keycloak::internalIssuer);
         registry.add("gateway.security.oidc.client-id", () -> FakeKeycloak.CLIENT_ID);
         registry.add("gateway.security.oidc.client-secret", () -> FakeKeycloak.CLIENT_SECRET);
+        registry.add("gateway.security.authorities.claims.scope[0]", () -> "scope");
+        registry.add("gateway.security.front-origins[0]", () -> FRONT_ORIGIN);
         registry.add("gateway.security.session.keys[0].id", () -> "k1");
         registry.add("gateway.security.session.keys[0].secret", () -> TestSupport.KEY_1);
         registry.add("gateway.security.session.cookie-secure", () -> "false");
@@ -104,11 +110,13 @@ class KeycloakModeIntegrationTest {
         client.get().uri("/public/anything")
                 .header("X-Auth-Request-User", "admin")
                 .header("x-auth-request-groups", "tools-admins")
+                .header("X-Auth-Request-Authorities", "role:gateway-admin")
                 .exchange()
                 .expectStatus().isOk()
                 .expectHeader().doesNotExist(HttpHeaders.SET_COOKIE);
 
-        assertThat(upstream.lastHeaders()).doesNotContainKeys("X-Auth-Request-User", "X-Auth-Request-Groups");
+        assertThat(upstream.lastHeaders()).doesNotContainKeys("X-Auth-Request-User", "X-Auth-Request-Groups",
+                "X-Auth-Request-Authorities");
         AuditEvent event = audit.awaitPath("/public/anything");
         assertThat(event.action()).isEqualTo("route.access");
         assertThat(event.authMethod()).isEqualTo("none");
@@ -299,6 +307,50 @@ class KeycloakModeIntegrationTest {
     }
 
     @Test
+    void scopeFromTheTokenAuthorizesTheRouteAndReachesTheBackend() {
+        FakeKeycloak.User ordersApp = FakeKeycloak.User.serviceAccount("orders-app", List.of());
+        String token = keycloak.accessTokenWithScope(ordersApp, "openid orders.read");
+
+        client.get().uri("/scope/anything")
+                .headers(h -> h.setBearerAuth(token))
+                .exchange()
+                .expectStatus().isOk();
+
+        assertThat(upstream.lastHeaders().get("X-Auth-Request-Authorities"))
+                .containsExactly("scope:openid,scope:orders.read");
+        AuditEvent event = audit.awaitPath("/scope/anything");
+        assertThat(event.requiredAuthorities()).containsExactly("scope:orders.read");
+        assertThat(event.matchedAuthority()).isEqualTo("scope:orders.read");
+    }
+
+    @Test
+    void tokenWithoutTheRequiredScopeGets403() {
+        FakeKeycloak.User ordersApp = FakeKeycloak.User.serviceAccount("orders-app", List.of());
+        String token = keycloak.accessTokenWithScope(ordersApp, "openid orders.write");
+
+        client.get().uri("/scope/anything")
+                .headers(h -> h.setBearerAuth(token))
+                .exchange()
+                .expectStatus().isForbidden();
+
+        assertThat(upstream.lastHeaders()).isEmpty();
+    }
+
+    @Test
+    void authorityOfATypeTheGatewayDoesNotProduceAuthorizesNobody() {
+        FakeKeycloak.User alice = FakeKeycloak.User.of("alice", List.of("saca"), List.of("saca"));
+        String token = keycloak.accessTokenWithScope(alice, "saca extrato");
+
+        client.get().uri("/unknown-type/anything")
+                .headers(h -> h.setBearerAuth(token))
+                .exchange()
+                .expectStatus().isForbidden();
+
+        assertThat(upstream.lastHeaders()).isEmpty();
+        assertThat(audit.awaitPath("/unknown-type/anything").requiredAuthorities()).containsExactly("saca:extrato");
+    }
+
+    @Test
     void forwardTokenRouteRelaysTheAccessToken() {
         FakeKeycloak.User alice = FakeKeycloak.User.of("alice", List.of("tools-httpbin"), List.of());
         String token = keycloak.accessToken(alice);
@@ -382,6 +434,168 @@ class KeycloakModeIntegrationTest {
     }
 
     @Test
+    void frontOnAnotherOriginCanReadThe401() {
+        client.get().uri("/group/anything")
+                .header(HttpHeaders.ORIGIN, FRONT_ORIGIN)
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, FRONT_ORIGIN)
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
+    }
+
+    @Test
+    void preflightIsAnsweredWithoutCredentialsNorReachingTheRoute() {
+        client.options().uri("/group/anything")
+                .header(HttpHeaders.ORIGIN, FRONT_ORIGIN)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, FRONT_ORIGIN);
+
+        assertThat(upstream.lastHeaders()).isEmpty();
+    }
+
+    @Test
+    void preflightFromAnotherOriginIsRefused() {
+        client.options().uri("/group/anything")
+                .header(HttpHeaders.ORIGIN, "https://evil.test")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectHeader().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN);
+    }
+
+    @Test
+    void preflightLeavesNoAuditEventButARefusedOriginDoes() {
+        client.options().uri("/preflight-only")
+                .header(HttpHeaders.ORIGIN, FRONT_ORIGIN)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .exchange()
+                .expectStatus().isOk();
+        client.get().uri("/group/anything")
+                .header(HttpHeaders.ORIGIN, "https://evil.test")
+                .exchange()
+                .expectStatus().isForbidden();
+
+        AuditEvent refused = audit.awaitPath("/group/anything");
+        assertThat(refused.allowed()).isFalse();
+        assertThat(refused.reason()).isEqualTo("forbidden");
+        assertThat(audit.events()).noneMatch(event -> event.path().equals("/preflight-only"));
+        assertThat(upstream.lastHeaders()).isEmpty();
+    }
+
+    @Test
+    void gatewayIsTheOnlyOneAnsweringCorsToAFront() {
+        String token = keycloak.accessToken(FakeKeycloak.User.of("alice", List.of("tools-httpbin"), List.of()));
+
+        client.get().uri("/group/anything")
+                .headers(h -> h.setBearerAuth(token))
+                .header(HttpHeaders.ORIGIN, FRONT_ORIGIN)
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, FRONT_ORIGIN)
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "X-Total-Count");
+    }
+
+    @Test
+    void backendCorsHeadersPassWhenTheGatewayDidNotAnswerCors() {
+        client.get().uri("/public/anything")
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    }
+
+    @Test
+    void gatewayOwnPublicUrlIsNotCrossOrigin() {
+        client.post().uri("/public/anything")
+                .header(HttpHeaders.ORIGIN, "http://gateway.test")
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
+    void frontsNeverReachTheInternalEndpoints() {
+        client.options().uri("/internal/routes")
+                .header(HttpHeaders.ORIGIN, FRONT_ORIGIN)
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                .exchange()
+                .expectHeader().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN);
+        client.get().uri("/internal/routes")
+                .header(HttpHeaders.ORIGIN, FRONT_ORIGIN)
+                .exchange()
+                .expectHeader().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN);
+        client.get().uri(URI.create("http://localhost:" + port + "/%69nternal/routes"))
+                .header(HttpHeaders.ORIGIN, FRONT_ORIGIN)
+                .exchange()
+                .expectHeader().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN);
+    }
+
+    @Test
+    void staticFrontStartsTheLoginAndComesBack() {
+        String page = FRONT_ORIGIN + "/pedidos?id=1";
+        FakeKeycloak.User alice = FakeKeycloak.User.of("alice", List.of("tools-httpbin"), List.of());
+
+        EntityExchangeResult<byte[]> start = client.get().uri(b -> b.path("/_gateway/login/start")
+                        .queryParam("returnTo", "{page}").build(page))
+                .exchange()
+                .expectStatus().isFound()
+                .expectHeader().location("/_gateway/oauth2/authorization/keycloak")
+                .expectBody().returnResult();
+        assertThat(audit.awaitPath("/_gateway/login/start").action()).isEqualTo("auth.login_start");
+
+        EntityExchangeResult<byte[]> callback = callback(alice, TestSupport.cookie(start, "GW_RETURN_TO"));
+
+        assertThat(callback.getResponseHeaders().getLocation()).hasToString(page);
+        assertThat(TestSupport.expires(callback, "GW_RETURN_TO")).as("the target is used once").isTrue();
+    }
+
+    @Test
+    void frontCanAlsoReturnToAPathOfTheGateway() {
+        FakeKeycloak.User alice = FakeKeycloak.User.of("alice", List.of("tools-httpbin"), List.of());
+
+        EntityExchangeResult<byte[]> start = client.get().uri("/_gateway/login/start?returnTo=/group/anything")
+                .exchange()
+                .expectStatus().isFound()
+                .expectBody().returnResult();
+
+        assertThat(callback(alice, TestSupport.cookie(start, "GW_RETURN_TO")).getResponseHeaders().getLocation())
+                .hasToString("/group/anything");
+    }
+
+    @Test
+    void navigationReplacesALoginAFrontAbandoned() {
+        EntityExchangeResult<byte[]> navigation = client.get().uri("/group/anything")
+                .cookie("GW_RETURN_TO", "abandoned")
+                .accept(MediaType.TEXT_HTML)
+                .exchange()
+                .expectStatus().isFound()
+                .expectBody().returnResult();
+
+        assertThat(TestSupport.expires(navigation, "GW_RETURN_TO")).isTrue();
+    }
+
+    @Test
+    void returnTargetOutsideTheTrustedOriginsIsRefused() {
+        client.get().uri(b -> b.path("/_gateway/login/start").queryParam("returnTo", "{target}").build("https://evil.test/"))
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectHeader().doesNotExist(HttpHeaders.SET_COOKIE);
+
+        AuditEvent event = audit.awaitPath("/_gateway/login/start");
+        assertThat(event.action()).isEqualTo("auth.login_start");
+        assertThat(event.allowed()).isFalse();
+    }
+
+    @Test
+    void returnTargetChangedInTheCookieFallsBackToTheRoot() {
+        FakeKeycloak.User alice = FakeKeycloak.User.of("alice", List.of("tools-httpbin"), List.of());
+        String tampered = Base64.getUrlEncoder().withoutPadding().encodeToString("https://evil.test/".getBytes());
+
+        assertThat(callback(alice, tampered).getResponseHeaders().getLocation()).hasToString("/");
+        assertThat(callback(alice, "not*base64").getResponseHeaders().getLocation()).hasToString("/");
+    }
+
+    @Test
     void unmatchedPathIsAuditedAsNoRoute() {
         client.get().uri("/does-not-exist").exchange().expectStatus().isNotFound();
 
@@ -433,6 +647,23 @@ class KeycloakModeIntegrationTest {
         upstream.reset();
         audit.clear();
         return new Session(sessionCookie);
+    }
+
+    /** The login after {@code /_gateway/login/start}, with the return target as the browser holds it. */
+    private EntityExchangeResult<byte[]> callback(FakeKeycloak.User user, String returnTarget) {
+        EntityExchangeResult<byte[]> start = client.get().uri("/_gateway/oauth2/authorization/keycloak")
+                .exchange()
+                .expectStatus().isFound()
+                .expectBody().returnResult();
+        Map<String, String> params = TestSupport.query(start.getResponseHeaders().getLocation().toString());
+        keycloak.prepareLogin(user, params.get("nonce"));
+        return client.get()
+                .uri("/_gateway/login/oauth2/code/keycloak?code=abc&state={state}", params.get("state"))
+                .cookie("GW_AUTHZ", TestSupport.cookie(start, "GW_AUTHZ"))
+                .cookie("GW_RETURN_TO", returnTarget)
+                .exchange()
+                .expectStatus().isFound()
+                .expectBody().returnResult();
     }
 
     record Session(String cookie) {

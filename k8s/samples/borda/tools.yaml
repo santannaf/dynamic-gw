@@ -1,0 +1,34 @@
+# Modelo de rota do gateway tools (Keycloak ou Azure, grupos e roles), com nomes e hosts fictícios. Serve de formato para
+# o levantamento: os times trocam estes exemplos por rotas reais e o CRD é validado com
+#   kubectl apply --dry-run=server -f k8s/samples/borda/
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: borda-tools-kafka-leitura
+  namespace: platform
+spec:
+  path: /kafka-ui/**
+  targetUri: http://kafka-ui.tools.svc.cluster.local:8080
+  methods: [GET, HEAD]
+  team: tools
+  description: Leitura para quem tem o grupo de leitura ou de escrita.
+  access:
+    anyOf:
+      - group:tools-kafka-leitura
+      - group:tools-kafka-escrita
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: borda-tools-kafka-escrita
+  namespace: platform
+spec:
+  path: /kafka-ui/**
+  targetUri: http://kafka-ui.tools.svc.cluster.local:8080
+  methods: [POST, PUT, PATCH, DELETE]
+  team: tools
+  description: Escrita só para o grupo de escrita ou para administradores.
+  access:
+    anyOf:
+      - group:tools-kafka-escrita
+      - role:gateway-admin
