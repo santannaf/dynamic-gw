@@ -1,5 +1,10 @@
 # Seed do OpenLDAP local. __DEMO_PASSWORD__ é trocado por scripts/deploy-sso.sh
 # (a senha gerada vai para o Secret openldap-seed; este arquivo não tem segredo).
+#
+# Mesma forma do AD do IDM: usuários em ou=people e, na OU da aplicação
+# (ou=tools), os grupos que viram permissão. Negócio e operação são grupos
+# separados: tools-httpbin/tools-admins dão acesso à ferramenta, e
+# gateway-admins só opera o gateway (GET /internal/routes).
 dn: ou=people,dc=tools,dc=local
 objectClass: organizationalUnit
 ou: people
@@ -16,6 +21,7 @@ dn: uid=alice,ou=people,dc=tools,dc=local
 objectClass: inetOrgPerson
 uid: alice
 cn: Alice Tools
+givenName: Alice
 sn: Tools
 mail: alice@tools.local
 userPassword: __DEMO_PASSWORD__
@@ -24,6 +30,7 @@ dn: uid=bob,ou=people,dc=tools,dc=local
 objectClass: inetOrgPerson
 uid: bob
 cn: Bob Tools
+givenName: Bob
 sn: Tools
 mail: bob@tools.local
 userPassword: __DEMO_PASSWORD__
@@ -32,8 +39,18 @@ dn: uid=carol,ou=people,dc=tools,dc=local
 objectClass: inetOrgPerson
 uid: carol
 cn: Carol Tools
+givenName: Carol
 sn: Tools
 mail: carol@tools.local
+userPassword: __DEMO_PASSWORD__
+
+dn: uid=dave,ou=people,dc=tools,dc=local
+objectClass: inetOrgPerson
+uid: dave
+cn: Dave Tools
+givenName: Dave
+sn: Tools
+mail: dave@tools.local
 userPassword: __DEMO_PASSWORD__
 
 dn: cn=tools-httpbin,ou=tools,dc=tools,dc=local
@@ -46,6 +63,11 @@ dn: cn=tools-admins,ou=tools,dc=tools,dc=local
 objectClass: groupOfNames
 cn: tools-admins
 member: uid=carol,ou=people,dc=tools,dc=local
+
+dn: cn=gateway-admins,ou=tools,dc=tools,dc=local
+objectClass: groupOfNames
+cn: gateway-admins
+member: uid=dave,ou=people,dc=tools,dc=local
 
 # Grupo fora da OU da aplicação: não pode virar autoridade no gateway.
 dn: cn=finance,ou=other,dc=tools,dc=local

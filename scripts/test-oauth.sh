@@ -78,6 +78,8 @@ check "garbage token -> 401" "401" "$(code -H 'Authorization: Bearer garbage' "$
 check "token from another realm -> 401" "401" "$(code -H "Authorization: Bearer ${admin}" "${BASE}/oauth/orders/headers")"
 check "whoami shows the bearer identity" "bearer" \
     "$(curl -s -H "Authorization: Bearer ${with_scope}" "${BASE}/_gateway/whoami" | jq -r .method)"
+check "gateway-admin as a role of the API client reads /internal/routes" "200" \
+    "$(code -H "Authorization: Bearer ${without_scope}" "${BASE}/internal/routes")"
 
 echo "== audit trail"
 kubectl -n "${NAMESPACE}" logs -l app.kubernetes.io/name=dynamic-gateway --since-time="${START}" --tail=-1 --prefix=false \

@@ -1,8 +1,8 @@
 # SSO e autorização por rota: como funciona
 
-Este documento explica a diferença entre **entrar** (SSO) e **poder usar uma rota** (autorização), mostra onde ver usuários, grupos e sessões no Keycloak, e traz um exemplo completo: deixar `/sso/token` só para a Carol. O roteiro de testes com todos os cenários está em [`TESTE_SSO.md`](TESTE_SSO.md), e a configuração pronta de cada cenário de rotas (CRD, S3, Properties) em [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md), [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) e [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md).
+Este documento explica a diferença entre **entrar** (SSO) e **poder usar uma rota** (autorização), de onde vêm usuários, grupos e roles, onde ver tudo no Keycloak, e traz um exemplo completo: deixar `/sso/token` só para a Carol. No fim estão o modelo de roles e o passo a passo para ligar o Keycloak no AD de verdade. O roteiro de testes com todos os cenários está em [`TESTE_SSO.md`](TESTE_SSO.md), e a configuração pronta de cada cenário de rotas (CRD, S3, Properties) em [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md), [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) e [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md).
 
-Os exemplos usam o ambiente local do roteiro: gateway em `http://localhost:18080`, Keycloak em `/auth`, realm `tools`.
+Os exemplos usam o ambiente local do roteiro: gateway em `http://localhost:18080`, Keycloak em `/auth`, realm `tools`, e um OpenLDAP no lugar do AD.
 
 ---
 
@@ -10,7 +10,7 @@ Os exemplos usam o ambiente local do roteiro: gateway em `http://localhost:18080
 
 | Pergunta                                    | Quem responde           | Onde se configura                                                                           |
 |---------------------------------------------|-------------------------|---------------------------------------------------------------------------------------------|
-| **Quem é você?** (autenticação, o SSO)      | Keycloak, uma vez só    | usuários, senhas e grupos no Keycloak (ou no AD que ele federa)                             |
+| **Quem é você?** (autenticação, o SSO)      | Keycloak, uma vez só    | usuários, senhas e grupos no AD (no lab, o OpenLDAP), que o Keycloak federa                 |
 | **Você pode usar esta rota?** (autorização) | Gateway, a cada request | bloco `access` de cada rota (`GatewayRoute` no v2, `application-standalone-sso.yaml` no v1) |
 
 O SSO não libera as rotas. Ele só garante que a pessoa prove quem é **uma vez**. Depois disso, cada rota decide sozinha se aceita, olhando os grupos e roles que vieram do Keycloak.
@@ -29,7 +29,8 @@ Por isso, numa lista como `/anything/**`, `/httpbin/**`, `/sso/admin/**`, `/sso/
 
 ```
 1. Alice ─ GET /sso/token ─► Gateway: "não sei quem é" ─► redireciona para o Keycloak
-2. Keycloak: Alice digita a senha (uma vez) → o Keycloak cria a sessão SSO dela
+2. Keycloak: Alice digita a senha (uma vez). O Keycloak confere a senha com um bind no
+   diretório (a senha nunca fica no Keycloak) e cria a sessão SSO dela
 3. Keycloak ─ devolve um código ─► o Gateway troca o código por tokens e passa a saber:
       usuária = alice, grupos = [tools-httpbin]   → cria o cookie GW_SESSION
 4. Gateway confere a regra da rota /sso/token → aceita (200) ou nega (403)
@@ -43,16 +44,19 @@ Se a Alice recebe 403 em `/sso/token`, o SSO **funcionou**: ela está autenticad
 Onde fica a sessão:
 - **No Keycloak**, a sessão mestre (cookie `KEYCLOAK_SESSION`, path `/auth/realms/tools`).
 - **No browser**, o cookie `GW_SESSION` do gateway: cifrado (JWE), com o `sid` e o refresh token **dessa** sessão do Keycloak. Não existe sessão própria do gateway num banco ou num Redis.
-- **Em cada réplica do gateway**, um cache em memória com a identidade da Alice. Ele vale até o access token expirar (5 min). Depois disso, a réplica faz um refresh no Keycloak, e é aí que mudanças de grupo e desligamentos chegam ao gateway, sem novo login.
+- **Em cada réplica do gateway**, um cache em memória com a identidade da Alice. Ele vale até o access token expirar (5 min). Depois disso, a réplica faz um refresh no Keycloak, e é aí que mudanças de grupo e desligamentos chegam ao gateway, sem novo login. O Keycloak guarda o que leu do diretório por até 1 min (*cache policy* `MAX_LIFESPAN`), então uma mudança no AD chega às rotas em até ~6 min.
 
 O que o gateway recebe do Keycloak é o access token. A parte que importa para a autorização:
 
 ```json
 {"preferred_username": "alice", "groups": ["tools-httpbin"], "aud": "tools-gateway", "typ": "Bearer"}
-{"preferred_username": "carol", "groups": ["tools-admins", "tools-httpbin"], "realm_access": {"roles": ["gateway-admin"]}}
+{"preferred_username": "carol", "groups": ["tools-admins", "tools-httpbin"]}
+{"preferred_username": "dave",  "groups": ["gateway-admins"], "resource_access": {"tools-gateway": {"roles": ["gateway-admin"]}}}
 ```
 
-O gateway transforma isso em autoridades `group:tools-httpbin`, `group:tools-admins` e `role:gateway-admin`, e as compara com o `anyOf` da rota. O backend recebe a identidade pronta nos headers `X-Auth-Request-*`.
+O gateway transforma isso em autoridades (`group:tools-httpbin`, `group:tools-admins`, `group:gateway-admins`, `role:gateway-admin`) e as compara com o `anyOf` da rota. O backend recebe a identidade pronta nos headers `X-Auth-Request-*`.
+
+Só chegam grupos da OU da aplicação (`ou=tools`): a Alice também está em `finance`, de outra OU, e esse grupo nunca aparece no token. Roles, só as do client `tools-gateway`; o token não traz `realm_access`.
 
 ---
 
@@ -66,22 +70,23 @@ O gateway transforma isso em autoridades `group:tools-httpbin`, `group:tools-adm
    ```
 2. No seletor de realm, no topo do menu lateral, troque de `master` para **tools** (aparece como "tools (local)").
 
-| O que você quer ver                                           | Onde fica                                                                                                                                |
-|---------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
-| Lista de usuários                                             | **Users** (busque `alice` ou `*`)                                                                                                        |
-| Dados da Alice, senha, se está ativa                          | **Users → alice → Details / Credentials**                                                                                                |
-| Grupos da Alice (entrar ou sair)                              | **Users → alice → Groups** (*Join group* / *Leave*)                                                                                      |
-| Roles da Alice                                                | **Users → alice → Role mapping**; desmarque *Hide inherited roles* para ver também os que vêm de grupo                                   |
-| Sessões abertas da Alice (e encerrar)                         | **Users → alice → Sessions** (menu ⋮ → *Sign out*)                                                                                       |
-| Membros de um grupo                                           | **Groups → tools-httpbin → Members**                                                                                                     |
-| Roles que um grupo dá                                         | **Groups → tools-admins → Role mapping** (é daqui que a Carol herda `gateway-admin`)                                                     |
-| Quem tem um role direto                                       | **Realm roles → gateway-admin → Users in role**. Mostra só atribuições diretas, então a Carol não aparece aqui, porque herda pelo grupo. |
-| Todas as sessões do realm                                     | **Sessions**                                                                                                                             |
-| Histórico de logins, logouts e refreshes                      | **Events → User events**                                                                                                                 |
-| Quem mudou o quê no Keycloak (ex.: colocou a Alice num grupo) | **Events → Admin events**                                                                                                                |
-| **O token exatamente como o gateway vai receber**             | **Clients → tools-gateway → Client scopes → Evaluate**: escolha o usuário e abra *Generated access token*                                |
+| O que você quer ver                                           | Onde fica                                                                                                                                                                       |
+|---------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| De onde vêm usuários e grupos                                 | **User federation → directory**: URL `ldaps://`, *Edit mode* `READ_ONLY`, *Cache policy* `MAX_LIFESPAN`. Na aba **Mappers**, `groups` mostra a OU de onde saem os grupos      |
+| Lista de usuários                                             | **Users** (busque `alice` ou `*`). O usuário aparece depois do primeiro login ou de uma busca, que o importa do diretório                                                       |
+| Dados da Alice, se está ativa                                 | **Users → alice → Details**. *Federation link* mostra `directory`; os campos vêm do diretório e ficam só leitura                                                                |
+| Grupos da Alice                                               | **Users → alice → Groups**. Entrar ou sair de grupo é no AD (no lab, no OpenLDAP), não aqui: a federação é só leitura                                                          |
+| Roles do Dave                                                 | **Users → dave → Role mapping**; desmarque *Hide inherited roles* para ver o `tools-gateway gateway-admin` que vem do grupo                                                      |
+| Sessões abertas da Alice (e encerrar)                         | **Users → alice → Sessions** (menu ⋮ → *Sign out*)                                                                                                                              |
+| Membros de um grupo                                           | **Groups → tools-httpbin → Members**                                                                                                                                            |
+| Roles que um grupo dá                                         | **Groups → gateway-admins → Role mapping** (é daqui que o Dave herda `gateway-admin`)                                                                                           |
+| Quem tem uma role direto                                      | **Clients → tools-gateway → Roles → gateway-admin → Users in role**. Mostra só atribuições diretas: a conta de serviço da `tools-cli` aparece, o Dave não, porque herda pelo grupo |
+| Todas as sessões do realm                                     | **Sessions**                                                                                                                                                                    |
+| Histórico de logins, logouts e refreshes                      | **Events → User events**                                                                                                                                                        |
+| Quem mudou o quê no Keycloak                                  | **Events → Admin events**                                                                                                                                                       |
+| **O token exatamente como o gateway vai receber**             | **Clients → tools-gateway → Client scopes → Evaluate**: escolha o usuário e abra *Generated access token*                                                                       |
 
-A última linha é a melhor forma de entender por que uma rota aceitou ou negou alguém: o `groups` e o `realm_access.roles` desse token são o que o gateway compara com o `anyOf`.
+A última linha é a melhor forma de entender por que uma rota aceitou ou negou alguém: o `groups` e o `resource_access.tools-gateway.roles` desse token são o que o gateway compara com o `anyOf`.
 
 ### Pelo terminal (kcadm)
 
@@ -91,7 +96,7 @@ KC_ADMIN=$(kubectl -n platform get secret sso-secrets -o jsonpath='{.data.keyclo
 kc() { kubectl -n platform exec deploy/keycloak -- /opt/keycloak/bin/kcadm.sh "$@" 2>/dev/null; }
 kc config credentials --server http://localhost:8080/auth --realm master --user admin --password "$KC_ADMIN"
 
-kc get users -r tools --fields username,email,enabled                       # usuários
+kc get users -r tools --fields username,email,enabled,federationLink        # usuários já importados
 ALICE=$(kc get users -r tools -q username=alice -q exact=true --fields id | jq -r '.[0].id')
 kc get users/$ALICE/groups -r tools --fields name                            # grupos da alice
 kc get users/$ALICE/sessions -r tools | jq '.[] | {ipAddress, clients}'      # sessões abertas
@@ -101,7 +106,18 @@ kc get groups/$GROUP/members -r tools --fields username                      # m
 
 CLIENT=$(kc get clients -r tools -q clientId=tools-gateway --fields id | jq -r '.[0].id')
 kc get clients/$CLIENT/evaluate-scopes/generate-example-access-token -r tools -q userId=$ALICE -q scope=openid \
-  | jq '{preferred_username, groups, realm_access}'                         # o token que o gateway recebe
+  | jq '{preferred_username, groups, resource_access}'                      # o token que o gateway recebe
+```
+
+### No diretório do lab (OpenLDAP)
+
+Grupos e membros mudam no diretório, como o IDM faria no AD:
+
+```bash
+LDAP_ADMIN=$(kubectl -n platform get secret sso-secrets -o jsonpath='{.data.ldap-admin-password}' | base64 -d)
+ldap() { kubectl -n platform exec -i deploy/openldap -- "$@" -x -H ldap://localhost -D cn=admin,dc=tools,dc=local -w "$LDAP_ADMIN"; }
+
+ldap ldapsearch -b ou=tools,dc=tools,dc=local '(objectClass=groupOfNames)' cn member   # grupos da aplicação e membros
 ```
 
 ---
@@ -110,7 +126,7 @@ kc get clients/$CLIENT/evaluate-scopes/generate-example-access-token -r tools -q
 
 Hoje `/sso/token` exige `group:tools-httpbin`, e Alice e Carol estão nesse grupo, então as duas entram. Para restringir à Carol, a rota precisa exigir algo que **só a Carol tem**.
 
-A rota não aceita regra por usuário (do tipo "só a carol"), e isso é proposital. Quem concede acesso é o IDM, colocando a pessoa num grupo. Se a regra citasse pessoas, cada mudança de acesso viraria uma alteração de rota, fora do controle do IDM e sem trilha no AD/Keycloak.
+A rota não aceita regra por usuário (do tipo "só a carol"), e isso é proposital. Quem concede acesso é o IDM, colocando a pessoa num grupo do AD. Se a regra citasse pessoas, cada mudança de acesso viraria uma alteração de rota, fora do controle do IDM e sem trilha no AD.
 
 ### Opção 1: rápida, com um grupo que já existe
 
@@ -135,31 +151,100 @@ kubectl -n platform patch gwr sso-token --type merge -p '{"spec":{"access":{"any
 
 ### Opção 2: a recomendada, com um grupo próprio da ferramenta
 
-É o modelo que o IDM descreveu: um grupo por acesso, e quem entra nele é decidido fora do gateway.
+É o modelo que o IDM descreveu: um grupo por acesso, na OU da aplicação, e quem entra nele é decidido fora do gateway. Com a função `ldap` da seção 3:
 
-1. Keycloak admin, realm **tools** → **Groups → Create group** → `tools-token`.
-2. **Users → carol → Groups → Join group → `tools-token`**.
-3. A rota passa a exigir esse grupo:
+1. O IDM cria o grupo `tools-token` na OU `tools`, com a Carol:
+   ```bash
+   printf 'dn: cn=tools-token,ou=tools,dc=tools,dc=local\nobjectClass: groupOfNames\ncn: tools-token\nmember: uid=carol,ou=people,dc=tools,dc=local\n' \
+     | ldap ldapadd
+   ```
+2. A rota passa a exigir esse grupo:
    ```bash
    kubectl -n platform patch gwr sso-token --type merge -p '{"spec":{"access":{"anyOf":["group:tools-token"]}}}'
    ```
-4. A Carol precisa de um token novo para "ganhar" o grupo: faça logout em `http://localhost:18080/_gateway/logout` e login de novo, ou espere até 5 min pelo refresh. Resultado: Alice dá 403 e Carol dá 200.
-5. **Dar acesso à Alice sem mexer na rota:** Users → alice → Groups → Join group → `tools-token`. Em até 5 min, no próximo refresh, ela passa a receber 200 sem logar de novo. É isso que o IDM faria no dia a dia (no AD, com o Keycloak federando).
-6. Em **Events → Admin events** fica registrado quem colocou a Alice no grupo e quando. A auditoria do gateway mostra a partir de quando ela passou a acessar a rota.
+3. A Carol "ganha" o grupo no próximo refresh, em até ~6 min, ou na hora com logout em `http://localhost:18080/_gateway/logout` e login de novo. Resultado: Alice dá 403 e Carol dá 200. O grupo aparece sozinho no Keycloak (**Groups**): a federação cria o grupo quando alguém dele faz login.
+4. **Dar acesso à Alice sem mexer na rota:**
+   ```bash
+   printf 'dn: cn=tools-token,ou=tools,dc=tools,dc=local\nchangetype: modify\nadd: member\nmember: uid=alice,ou=people,dc=tools,dc=local\n' \
+     | ldap ldapmodify
+   ```
+   Em até ~6 min ela passa a receber 200 sem logar de novo. É isso que o IDM faz no dia a dia, no AD.
+5. A trilha da mudança fica no diretório (no AD, o log de auditoria dele). A auditoria do gateway mostra a partir de quando ela passou a acessar a rota.
 
 ### Voltar como estava
 
 ```bash
 kubectl -n platform patch gwr sso-token --type merge -p '{"spec":{"access":{"anyOf":["group:tools-httpbin"]}}}'
+ldap ldapdelete cn=tools-token,ou=tools,dc=tools,dc=local
 ```
 
 ---
 
 ## 5. Resumo de quem cuida de quê
 
-| Mudança                           | Quem faz                  | Onde                                                                     | Quando vale                                   |
-|-----------------------------------|---------------------------|--------------------------------------------------------------------------|-----------------------------------------------|
-| Qual grupo uma rota exige         | time da rota / plataforma | `access` da `GatewayRoute`                                               | segundos (v2) ou redeploy (v1)                |
-| Quem está em cada grupo           | IDM / suporte             | AD ou Keycloak                                                           | até 5 min, no próximo refresh, sem novo login |
-| Derrubar o acesso de alguém       | IDM                       | desabilitar o usuário ou encerrar a sessão no Keycloak/AD                | até 5 min                                     |
-| Saber quem acessou o quê e quando | SOC                       | auditoria do gateway (`AUDIT`) + eventos do Keycloak, ligados pelo `sid` | sempre                                        |
+| Mudança                           | Quem faz                  | Onde                                                                     | Quando vale                                    |
+|-----------------------------------|---------------------------|--------------------------------------------------------------------------|------------------------------------------------|
+| Qual grupo uma rota exige         | time da rota / plataforma | `access` da `GatewayRoute`                                               | segundos (v2) ou redeploy (v1)                 |
+| Quem está em cada grupo           | IDM / suporte             | AD (no lab, OpenLDAP)                                                    | até ~6 min, no próximo refresh, sem novo login |
+| Derrubar o acesso de alguém       | IDM                       | desabilitar a conta no AD, ou encerrar a sessão no Keycloak (na hora)    | até ~6 min                                     |
+| Quem opera o gateway              | plataforma / IDM          | grupo `gateway-admins` no AD (role `gateway-admin` no Keycloak)          | até ~6 min                                     |
+| Saber quem acessou o quê e quando | SOC                       | auditoria do gateway (`AUDIT`) + eventos do Keycloak, ligados pelo `sid` | sempre                                         |
+
+---
+
+## 6. Modelo de roles: operar o gateway não é usar as ferramentas
+
+| Permissão                          | Para quê                                 | De onde vem                                                                         | Exemplo no lab           |
+|------------------------------------|------------------------------------------|-------------------------------------------------------------------------------------|--------------------------|
+| `group:<nome>` (negócio)           | usar uma ferramenta (ler, escrever)      | grupo do AD na OU da aplicação, federado pelo Keycloak                              | `tools-httpbin`, `tools-admins` |
+| `role:gateway-admin` (operação)    | ler `GET /internal/routes`               | role do **client** `tools-gateway`, dada ao grupo `gateway-admins` do AD e à conta de serviço | Dave, `tools-cli`        |
+
+As regras que o realm segue, e por quê:
+
+- **Pessoa ganha acesso por grupo do AD.** Quem decide é o IDM, com trilha no AD. Nenhuma pessoa é cadastrada no Keycloak.
+- **Role é do client, nunca do realm.** Role de realm vale para o realm inteiro: uma role `admin` criada para outra aplicação abriria rotas aqui. O gateway só lê `resource_access.tools-gateway.roles`, e os clients têm *Full scope allowed* desligado, então o token não carrega roles de outras aplicações.
+- **Operação e negócio não se misturam.** `gateway-admin` só lê a tabela de rotas e não abre nenhuma ferramenta: o Dave e a `tools-cli` recebem 403 em `/sso/admin`. A Carol administra a ferramenta e recebe 403 em `/internal/routes`.
+- **Conta de serviço não está no AD**, então recebe role do client direto (a `tools-cli` tem `gateway-admin` para automação de plataforma). Uma automação que precise usar uma ferramenta ganharia uma role de negócio própria, como `role:tools-kafka-admin` em `k8s/samples/borda/tools.yaml`.
+- **Todo client que emite token para o gateway leva o mapper `groups`** (`tools-gateway` e `tools-cli`). Sem ele, quem chega por esse client fica sem grupos e recebe 403. Num Keycloak gerenciado, com mais clients, prefira um client scope `groups` default do realm.
+- **Nome de grupo é único na OU da aplicação.** O claim `groups` leva só o nome (`full.path: false`), igual ao `group:<cn>` do provider `ldap`, para que trocar de provedor não mude nenhuma rota.
+
+---
+
+## 7. Keycloak com o AD de verdade (POC)
+
+O realm do lab já vem pronto para o AD: a federação, os mappers e o grupo que recebe `gateway-admin` são os mesmos. Muda só o diretório, por variável:
+
+```bash
+DIRECTORY=ad \
+LDAP_URL=ldaps://ad.corp.local:636 \
+LDAP_BIND_DN='CN=svc-tools-gateway,OU=Services,DC=corp,DC=local' \
+LDAP_BIND_PASSWORD='…' \
+LDAP_USERS_DN='OU=Users,DC=corp,DC=local' \
+LDAP_GROUPS_DN='OU=Tools,OU=Groups,DC=corp,DC=local' \
+LDAP_CA_FILE=./ca-corporativa.pem \
+HOST_PORT=18080 make sso-up
+```
+
+O `deploy-sso.sh` não sobe o OpenLDAP, grava a senha e a CA no Secret `keycloak-ldap` (sem passar a senha por linha de comando) e recria o Keycloak com o realm apontando para o AD:
+
+| Configuração do realm                       | No AD                                                         | Por quê                                                                                         |
+|---------------------------------------------|---------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| Conexão                                     | `ldaps://` com a CA em `KC_TRUSTSTORE_PATHS`                  | bind simples em `ldap://` manda a senha aberta; sem a CA, o Keycloak falha com *PKIX path building failed* |
+| Conta do bind                               | conta de serviço só de leitura                                | o Keycloak nunca escreve no AD (*Edit mode* `READ_ONLY`)                                         |
+| Usuário                                     | vendor `ad`, `sAMAccountName`, `objectGUID`                   | login com o usuário de rede; o id não muda quando a conta é renomeada ou movida de OU           |
+| Senha                                       | bind no AD                                                    | a senha não fica no Keycloak; lockout e política de senha do AD continuam valendo               |
+| Conta desabilitada, travada ou senha vencida | mapper *MSAD account controls*                                | o login é recusado, e uma sessão aberta cai no próximo refresh                                  |
+| Grupos                                      | só da OU em `LDAP_GROUPS_DN`, estratégia `LOAD_GROUPS_BY_MEMBER_ATTRIBUTE_RECURSIVELY` | grupos aninhados, com o mesmo `1.2.840.113556.1.4.1941` do provider `ldap`; nada fora da OU vira permissão |
+| Cache                                       | `MAX_LIFESPAN` de 1 min                                       | no cache padrão, o Keycloak guarda usuário e grupos sem prazo e uma remoção no AD não chega ao token |
+
+Antes da POC, combine com o IDM:
+
+- **O grupo de operação.** Crie `gateway-admins` na OU da aplicação, ou passe o nome do grupo que já existe em `GATEWAY_ADMINS_GROUP`.
+- **As rotas.** Elas citam os grupos de verdade (`group:<cn do grupo>`). Os exemplos `routes-sso.yaml` usam os grupos do lab; troque por grupos da OU.
+- **`LDAP_USERS_DN` numa OU de usuários**, não na raiz do domínio: na raiz o AD devolve *referrals* para DomainDnsZones e Configuration. Se os usuários estão espalhados, use o Global Catalog (`ldaps://ad.corp.local:3269`).
+- **Atributos dos usuários.** Quem não tem `mail`, `givenName` ou `sn` no AD recebe a tela de completar o perfil no primeiro login.
+- **Firewall.** O pod do Keycloak precisa alcançar o AD na 636 (ou 3269).
+
+Para login transparente nas máquinas do domínio, ligue Kerberos/SPNEGO na mesma federação (*Allow Kerberos authentication*), com keytab do SPN `HTTP/<host do Keycloak>`. Se a empresa usa Entra ID (o Azure AD) em vez de AD local, não há LDAP: a federação é por OIDC/SAML (*Identity providers*), e os grupos chegam por um mapper do provedor.
+
+Para conferir sem a POC: `make sso-test` roda no lab as mesmas verificações (usuário vindo do diretório, LDAPS, só leitura, cache de 1 min, OU, separação entre operar e usar).

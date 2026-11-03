@@ -21,48 +21,48 @@ browser / API ──► nginx-lb ──► gateway (profile keycloak | ldap) ─
 
 ## O que já está configurado
 
-| Peça | Arquivo | O que tem |
-|---|---|---|
+| Peça                                     | Arquivo                                                                           | O que tem                                                                                         |
+|------------------------------------------|-----------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
 | Profile do provedor, embarcado na imagem | `gateway/src/main/resources/application-keycloak.yaml` ou `application-ldap.yaml` | segurança e auditoria ligadas, realm/client do Keycloak ou servidor e bases de busca do diretório |
-| Store de rotas | `gateway/src/main/resources/application.yaml` | `gateway.routes.store.type: configmap` (default) |
-| Deployment do gateway | `k8s/sso/gateway-keycloak.yaml` ou `k8s/sso/gateway-ldap.yaml` | ativa o profile e passa só a URL pública e os segredos |
-| Rotas de exemplo | `k8s/samples/routes-sso.yaml` | 7 rotas `/sso/*`, uma política diferente em cada |
-| CRD | `k8s/crd/gatewayroutes.platform.saca.pags.yaml` | `spec.access` validado no `kubectl apply` |
-| Operator | `k8s/operator/deployment.yaml` | sem mudança: o operator não participa do SSO |
+| Store de rotas                           | `gateway/src/main/resources/application.yaml`                                     | `gateway.routes.store.type: configmap` (default)                                                  |
+| Deployment do gateway                    | `k8s/sso/gateway-keycloak.yaml` ou `k8s/sso/gateway-ldap.yaml`                    | ativa o profile e passa só a URL pública e os segredos                                            |
+| Rotas de exemplo                         | `k8s/samples/routes-sso.yaml`                                                     | 7 rotas `/sso/*`, uma política diferente em cada                                                  |
+| CRD                                      | `k8s/crd/gatewayroutes.platform.saca.pags.yaml`                                   | `spec.access` validado no `kubectl apply`                                                         |
+| Operator                                 | `k8s/operator/deployment.yaml`                                                    | sem mudança: o operator não participa do SSO                                                      |
 
 **Profiles ativos:** `SPRING_PROFILES_ACTIVE=keycloak` ou `SPRING_PROFILES_ACTIVE=ldap`.
 
 ### Propriedades
 
-| Propriedade (`gateway.…`) | `keycloak` | `ldap` |
-|---|---|---|
-| `security.enabled` / `audit.enabled` | `true` / `true` | `true` / `true` |
-| `security.default-access` (rota sem `access`) | `authenticated` | `authenticated` |
-| `security.public-base-url` | variável de ambiente | variável de ambiente |
-| `security.oidc.issuer` | `${public-base-url}/auth/realms/tools` | — |
-| `security.oidc.internal-issuer` | `http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools` | — |
-| `security.oidc.client-id` / `audience` | `tools-gateway` / `tools-gateway` | — |
-| `security.authorities.group-claims` → `group:` | `groups` | — |
-| `security.authorities.role-claims` → `role:` | `realm_access.roles`, `resource_access.{client-id}.roles` | — |
-| `security.authorities.claims` → outros tipos | `scope` → `scope:` | — |
-| `security.ldap.url` | — | `ldap://openldap.platform.svc.cluster.local:389` |
-| `security.ldap.bind-dn` | — | `cn=readonly,dc=tools,dc=local` |
-| `security.ldap.user-search` | — | base `ou=people,dc=tools,dc=local`, filtro `(uid={0})` |
-| `security.ldap.group-search` → `group:<cn>` | — | base `ou=tools,dc=tools,dc=local`, filtro `(member={0})` |
-| `security.ldap.revalidate-after` | — | `5m` |
-| `security.internal.any-of` (quem lê `/internal/routes`) | `role:gateway-admin` | `group:tools-admins` |
-| `security.session.cookie-secure` | `true` | `true` |
+| Propriedade (`gateway.…`)                               | `keycloak`                                                          | `ldap`                                                   |
+|---------------------------------------------------------|---------------------------------------------------------------------|----------------------------------------------------------|
+| `security.enabled` / `audit.enabled`                    | `true` / `true`                                                     | `true` / `true`                                          |
+| `security.default-access` (rota sem `access`)           | `authenticated`                                                     | `authenticated`                                          |
+| `security.public-base-url`                              | variável de ambiente                                                | variável de ambiente                                     |
+| `security.oidc.issuer`                                  | `${public-base-url}/auth/realms/tools`                              | —                                                        |
+| `security.oidc.internal-issuer`                         | `http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools` | —                                                        |
+| `security.oidc.client-id` / `audience`                  | `tools-gateway` / `tools-gateway`                                   | —                                                        |
+| `security.authorities.group-claims` → `group:`          | `groups`                                                            | —                                                        |
+| `security.authorities.role-claims` → `role:`            | `resource_access.{client-id}.roles` (só roles do client)            | —                                                        |
+| `security.authorities.claims` → outros tipos            | `scope` → `scope:`                                                  | —                                                        |
+| `security.ldap.url`                                     | —                                                                   | `ldap://openldap.platform.svc.cluster.local:389`         |
+| `security.ldap.bind-dn`                                 | —                                                                   | `cn=readonly,dc=tools,dc=local`                          |
+| `security.ldap.user-search`                             | —                                                                   | base `ou=people,dc=tools,dc=local`, filtro `(uid={0})`   |
+| `security.ldap.group-search` → `group:<cn>`             | —                                                                   | base `ou=tools,dc=tools,dc=local`, filtro `(member={0})` |
+| `security.ldap.revalidate-after`                        | —                                                                   | `5m`                                                     |
+| `security.internal.any-of` (quem lê `/internal/routes`) | `role:gateway-admin`                                                | `group:gateway-admins`                                   |
+| `security.session.cookie-secure`                        | `true`                                                              | `true`                                                   |
 
 Os segredos nunca ficam no profile, porque ele vai dentro da imagem. O manifest passa:
 
-| Variável | `keycloak` | `ldap` | Para quê |
-|---|---|---|---|
-| `GATEWAY_SECURITY_PUBLIC_BASE_URL` | `http://localhost:<HOST_PORT>` | idem | redirect do login e, no Keycloak, o issuer |
-| `GATEWAY_SECURITY_SESSION_KEYS_0_ID` / `_SECRET` | `k1` / Secret `sso-secrets` | idem | chave AES-256 do cookie de sessão |
-| `GATEWAY_SECURITY_OIDC_CLIENT_SECRET` | Secret `sso-secrets` | — | client `tools-gateway` |
-| `GATEWAY_SECURITY_LDAP_BIND_PASSWORD` | — | Secret `sso-secrets` | conta de serviço somente leitura |
-| `GATEWAY_SECURITY_SESSION_COOKIE_SECURE` | `false` | `false` | **só no lab** (http); em produção remova |
-| `GATEWAY_SECURITY_LDAP_REVALIDATE_AFTER` | — | `30s` | **só no lab**, para o e2e ver a revalidação |
+| Variável                                         | `keycloak`                     | `ldap`               | Para quê                                    |
+|--------------------------------------------------|--------------------------------|----------------------|---------------------------------------------|
+| `GATEWAY_SECURITY_PUBLIC_BASE_URL`               | `http://localhost:<HOST_PORT>` | idem                 | redirect do login e, no Keycloak, o issuer  |
+| `GATEWAY_SECURITY_SESSION_KEYS_0_ID` / `_SECRET` | `k1` / Secret `sso-secrets`    | idem                 | chave AES-256 do cookie de sessão           |
+| `GATEWAY_SECURITY_OIDC_CLIENT_SECRET`            | Secret `sso-secrets`           | —                    | client `tools-gateway`                      |
+| `GATEWAY_SECURITY_LDAP_BIND_PASSWORD`            | —                              | Secret `sso-secrets` | conta de serviço somente leitura            |
+| `GATEWAY_SECURITY_SESSION_COOKIE_SECURE`         | `false`                        | `false`              | **só no lab** (http); em produção remova    |
+| `GATEWAY_SECURITY_LDAP_REVALIDATE_AFTER`         | —                              | `30s`                | **só no lab**, para o e2e ver a revalidação |
 
 ## Subir
 
@@ -72,23 +72,26 @@ Pré-requisito: cluster e plataforma v2 no ar ([`TESTE_SSO.md`](TESTE_SSO.md), s
 export HOST_PORT=18080 CLUSTER_NAME=dynamic-gateway-lab BASE=http://localhost:18080
 export KUBECONFIG=$(k3d kubeconfig write $CLUSTER_NAME)
 
-make sso-up        # Keycloak (realm tools) + gateway com o profile keycloak + rotas /sso/*
+make sso-up        # OpenLDAP + Keycloak (realm tools) federando por LDAPS + gateway com o profile keycloak + rotas /sso/*
 make ldap-up       # OpenLDAP (no lugar do AD) + gateway com o profile ldap + rotas /sso/*
 ```
 
 Os dois imprimem os usuários e a senha do lab. Trocar de um para o outro só troca o gateway. O Keycloak não reinicia, e as sessões abertas continuam valendo.
 
-| Usuário | Grupos | Role (só Keycloak) |
-|---|---|---|
-| `alice` | `tools-httpbin` | — |
-| `bob` | — | — |
-| `carol` | `tools-admins`, `tools-httpbin` | `gateway-admin` (herdado do grupo) |
+| Usuário | Grupos (no diretório)           | Role (só Keycloak, do client `tools-gateway`) |
+|---------|---------------------------------|-----------------------------------------------|
+| `alice` | `tools-httpbin`                 | —                                             |
+| `bob`   | —                               | —                                             |
+| `carol` | `tools-admins`, `tools-httpbin` | —                                             |
+| `dave`  | `gateway-admins`                | `gateway-admin` (herdado do grupo)            |
+
+Os quatro vivem no OpenLDAP, que faz o papel do AD: o Keycloak federa o diretório, e o provider `ldap` lê o mesmo diretório direto. `gateway-admins` só opera o gateway; os outros grupos dão acesso às ferramentas.
 
 ## Testar
 
 ```bash
-make sso-test      # passed=32 failed=0
-make ldap-test     # passed=21 failed=0
+make sso-test      # passed=44 failed=0
+make ldap-test     # passed=23 failed=0
 ```
 
 À mão:
@@ -101,16 +104,17 @@ curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Accept: text/html' 
 
 🌐 Abra `http://localhost:18080/sso/group/headers` numa janela anônima e entre como `alice`: 200, com `X-Auth-Request-User: alice`. Como `bob`, dá 403.
 
-| Rota | `access` | alice | bob | carol |
-|---|---|---|---|---|
-| `/sso/public/**` | `mode: public` (sem login) | 200 | 200 | 200 |
-| `/sso/auth/**` | nenhum: vale o `default-access` | 200 | 200 | 200 |
-| `/sso/group/**` | `anyOf: [group:tools-httpbin]` | 200 | 403 | 200 |
-| `/sso/admin/**` | `anyOf: [role:gateway-admin, group:tools-admins]` | 403 | 403 | 200 |
-| `/sso/token/**` | `anyOf: [group:tools-httpbin]`, `forwardToken: true` | 200 | 403 | 200 |
-| `/sso/rw/**` GET/HEAD | `anyOf: [group:tools-httpbin, group:tools-admins]` | 200 | 403 | 200 |
-| `/sso/rw/**` POST/PUT/PATCH/DELETE | `anyOf: [group:tools-admins]` | 403 | 403 | 200 |
-| `/anything/**`, `/httpbin/**` (do `make deploy`) | nenhum | 200 | 200 | 200 |
+| Rota                                             | `access`                                             | alice | bob | carol | dave |
+|--------------------------------------------------|------------------------------------------------------|-------|-----|-------|------|
+| `/sso/public/**`                                 | `mode: public` (sem login)                           | 200   | 200 | 200   | 200  |
+| `/sso/auth/**`                                   | nenhum: vale o `default-access`                      | 200   | 200 | 200   | 200  |
+| `/sso/group/**`                                  | `anyOf: [group:tools-httpbin]`                       | 200   | 403 | 200   | 403  |
+| `/sso/admin/**`                                  | `anyOf: [group:tools-admins]`                        | 403   | 403 | 200   | 403  |
+| `/sso/token/**`                                  | `anyOf: [group:tools-httpbin]`, `forwardToken: true` | 200   | 403 | 200   | 403  |
+| `/sso/rw/**` GET/HEAD                            | `anyOf: [group:tools-httpbin, group:tools-admins]`   | 200   | 403 | 200   | 403  |
+| `/sso/rw/**` POST/PUT/PATCH/DELETE               | `anyOf: [group:tools-admins]`                        | 403   | 403 | 200   | 403  |
+| `/anything/**`, `/httpbin/**` (do `make deploy`) | nenhum                                               | 200   | 200 | 200   | 200  |
+| `GET /internal/routes`                           | `security.internal.any-of`                           | 403   | 403 | 403   | 200  |
 
 ## Mudar quem acessa uma rota
 
@@ -129,18 +133,20 @@ spec:
   team: financeiro
   access:
     anyOf:
-      - group:tools-financeiro-leitura     # grupo do AD/Keycloak; role:<nome> só no Keycloak
+      - group:tools-financeiro-leitura     # grupo do AD, na OU da aplicação; role:<nome> é role do client, só no Keycloak
 ```
 
 ```bash
 kubectl -n platform patch gwr sso-group --type merge -p '{"spec":{"access":{"anyOf":["group:tools-admins"]}}}'
 ```
 
-Vale em segundos, sem restart. O operator publica um snapshot novo e sinaliza o reload; além disso, cada réplica observa a ConfigMap. O hash de "snapshot inalterado" inclui o `access`, então mudar só a política já dispara o reload. Combinações inválidas, como `mode: public` com `anyOf`, são recusadas no próprio `kubectl apply`. Quem está em cada grupo continua sendo decisão do IDM, no AD ou no Keycloak. A mudança chega no próximo refresh (Keycloak, até 5 min) ou na próxima revalidação (LDAP, `revalidate-after`).
+Vale em segundos, sem restart. O operator publica um snapshot novo e sinaliza o reload; além disso, cada réplica observa a ConfigMap. O hash de "snapshot inalterado" inclui o `access`, então mudar só a política já dispara o reload. Combinações inválidas, como `mode: public` com `anyOf`, são recusadas no próprio `kubectl apply`. Quem está em cada grupo continua sendo decisão do IDM, no AD. A mudança chega no próximo refresh (Keycloak, até ~6 min: 5 do access token e 1 do cache da federação) ou na próxima revalidação (LDAP, `revalidate-after`).
 
 ## Em outro ambiente
 
 Os profiles apontam para o lab. Fora dele, sobrescreva por variável de ambiente no Deployment, sem rebuild:
+
+O Keycloak federa o AD com as mesmas configurações do realm do lab. Para a POC no lab, com o AD de verdade: `DIRECTORY=ad LDAP_URL=ldaps://… make sso-up`, passo a passo em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#7-keycloak-com-o-ad-de-verdade-poc). No gateway:
 
 ```bash
 # Keycloak

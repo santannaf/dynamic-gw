@@ -18,12 +18,12 @@ browser / API ──► nginx-lb ──► gateway (profiles standalone-sso + ke
 
 ## O que já está configurado
 
-| Peça | Arquivo | O que tem |
-|---|---|---|
-| Rotas e políticas, embarcadas | `gateway/src/main/resources/application-standalone-sso.yaml` | `store.type: properties`, 4 rotas com `access`, segurança e auditoria ligadas |
-| Profile do provedor, embarcado | `application-keycloak.yaml` ou `application-ldap.yaml` | os mesmos dos cenários CRD e S3 |
-| Deployment do gateway | `k8s/sso/gateway-standalone-keycloak.yaml` ou `k8s/sso/gateway-standalone-ldap.yaml` | ativa os profiles e passa a URL pública e os segredos |
-| Service e Ingress | `k8s/gateway-standalone/service.yaml`, `ingress.yaml` | os do v1 |
+| Peça                           | Arquivo                                                                              | O que tem                                                                     |
+|--------------------------------|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
+| Rotas e políticas, embarcadas  | `gateway/src/main/resources/application-standalone-sso.yaml`                         | `store.type: properties`, 4 rotas com `access`, segurança e auditoria ligadas |
+| Profile do provedor, embarcado | `application-keycloak.yaml` ou `application-ldap.yaml`                               | os mesmos dos cenários CRD e S3                                               |
+| Deployment do gateway          | `k8s/sso/gateway-standalone-keycloak.yaml` ou `k8s/sso/gateway-standalone-ldap.yaml` | ativa os profiles e passa a URL pública e os segredos                         |
+| Service e Ingress              | `k8s/gateway-standalone/service.yaml`, `ingress.yaml`                                | os do v1                                                                      |
 
 **Profiles ativos:** `SPRING_PROFILES_ACTIVE=standalone-sso,keycloak` ou `SPRING_PROFILES_ACTIVE=standalone-sso,ldap`.
 
@@ -44,26 +44,26 @@ As rotas (`gateway.routes.store.properties.routes`):
   access: { mode: public }
 - id: me-route                           # sem access: vale o default-access (qualquer autenticado)
   path: /me/**
-- id: admin-route                        # role do Keycloak OU grupo do diretório; backend recebe o token
+- id: admin-route                        # admin da ferramenta (grupo do diretório); backend recebe o token
   path: /admin/**
   access:
-    any-of: [role:gateway-admin, group:tools-admins]
+    any-of: [group:tools-admins]
     forward-token: true
 ```
 
 Todas apontam para `http://go-httpbin.platform.svc.cluster.local:8080`, que devolve os headers recebidos. A segurança (`gateway.security.…` e `gateway.audit.…`) é a mesma dos outros cenários:
 
-| Propriedade (`gateway.…`) | `keycloak` | `ldap` |
-|---|---|---|
-| `security.enabled` / `audit.enabled` | `true` / `true` | `true` / `true` |
-| `security.default-access` | `authenticated` | `authenticated` |
-| `security.oidc.issuer` | `${public-base-url}/auth/realms/tools` | — |
-| `security.oidc.internal-issuer` | `http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools` | — |
-| `security.oidc.client-id` / `audience` | `tools-gateway` | — |
-| `security.ldap.url` | — | `ldap://openldap.platform.svc.cluster.local:389` |
-| `security.ldap.bind-dn` | — | `cn=readonly,dc=tools,dc=local` |
-| `security.ldap.user-search` / `group-search` | — | `ou=people,…` `(uid={0})` / `ou=tools,…` `(member={0})` |
-| `security.internal.any-of` | `role:gateway-admin` | `group:tools-admins` |
+| Propriedade (`gateway.…`)                    | `keycloak`                                                          | `ldap`                                                  |
+|----------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------------|
+| `security.enabled` / `audit.enabled`         | `true` / `true`                                                     | `true` / `true`                                         |
+| `security.default-access`                    | `authenticated`                                                     | `authenticated`                                         |
+| `security.oidc.issuer`                       | `${public-base-url}/auth/realms/tools`                              | —                                                       |
+| `security.oidc.internal-issuer`              | `http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools` | —                                                       |
+| `security.oidc.client-id` / `audience`       | `tools-gateway`                                                     | —                                                       |
+| `security.ldap.url`                          | —                                                                   | `ldap://openldap.platform.svc.cluster.local:389`        |
+| `security.ldap.bind-dn`                      | —                                                                   | `cn=readonly,dc=tools,dc=local`                         |
+| `security.ldap.user-search` / `group-search` | —                                                                   | `ou=people,…` `(uid={0})` / `ou=tools,…` `(member={0})` |
+| `security.internal.any-of`                   | `role:gateway-admin`                                                | `group:gateway-admins`                                  |
 
 O manifest passa `GATEWAY_SECURITY_PUBLIC_BASE_URL`, a chave de sessão (`SESSION_KEYS_0_*`) e `OIDC_CLIENT_SECRET` ou `LDAP_BIND_PASSWORD`, como na tabela do [cenário CRD](SSO_CENARIO_CRD.md#propriedades).
 
@@ -84,16 +84,17 @@ Se o operator do v2 estiver no mesmo namespace, o script avisa. O operator conti
 ## Testar
 
 ```bash
-make standalone-sso-test                  # passed=21 failed=0
-PROVIDER=ldap make standalone-sso-test    # passed=17 failed=0
+make standalone-sso-test                  # passed=26 failed=0
+PROVIDER=ldap make standalone-sso-test    # passed=20 failed=0
 ```
 
-| Rota | `access` | alice (`tools-httpbin`) | bob (sem grupos) | carol (`tools-admins`) |
-|---|---|---|---|---|
-| `/anything/**` | `mode: public` | 200 | 200 | 200 |
-| `/me/**` | nenhum (`default-access`) | 200 | 200 | 200 |
-| `/httpbin/**` | `any-of: [group:tools-httpbin]` | 200 | 403 | 200 |
-| `/admin/**` | `any-of: [role:gateway-admin, group:tools-admins]` | 403 | 403 | 200 |
+| Rota               | `access`                                 | alice (`tools-httpbin`) | bob (sem grupos) | carol (`tools-admins`) | dave (`gateway-admins`) |
+|--------------------|------------------------------------------|-------------------------|------------------|------------------------|-------------------------|
+| `/anything/**`     | `mode: public`                           | 200                     | 200              | 200                    | 200                     |
+| `/me/**`           | nenhum (`default-access`)                | 200                     | 200              | 200                    | 200                     |
+| `/httpbin/**`      | `any-of: [group:tools-httpbin]`          | 200                     | 403              | 200                    | 403                     |
+| `/admin/**`        | `any-of: [group:tools-admins]`           | 403                     | 403              | 200                    | 403                     |
+| `/internal/routes` | `security.internal.any-of`               | 403                     | 403              | 403                    | 200                     |
 
 À mão:
 
@@ -120,7 +121,7 @@ O SSO se sobrescreve por variável de ambiente, sem rebuild, com as mesmas vari�
 
 ## Cuidados
 
-- **No LDAP só existem grupos.** `role:gateway-admin` nunca casa, e por isso o `admin-route` aceita também `group:tools-admins`. `forward-token` não tem efeito.
+- **No LDAP só existem grupos.** Quem opera o gateway é o grupo `gateway-admins` (no Keycloak, esse grupo dá a role `gateway-admin`). `forward-token` não tem efeito, porque não existe access token.
 - **Não aplique os manifests do v2 (operator, CRD) por cima deste cenário** sem derrubá-lo antes (`make standalone-sso-down`). Seriam dois caminhos de rota competindo.
 - **O limite de tentativas de login do LDAP é por réplica:** 5 por usuário × réplicas.
 

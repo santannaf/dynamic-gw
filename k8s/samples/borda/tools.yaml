@@ -27,8 +27,8 @@ spec:
   targetUri: http://kafka-ui.tools.svc.cluster.local:8080
   methods: [POST, PUT, PATCH, DELETE]
   team: tools
-  description: Escrita só para o grupo de escrita ou para administradores.
+  description: Escrita para o grupo de escrita ou para a role de admin da ferramenta (role do client, não do realm).
   access:
     anyOf:
       - group:tools-kafka-escrita
-      - role:gateway-admin
+      - role:tools-kafka-admin

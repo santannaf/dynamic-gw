@@ -31,9 +31,10 @@ gateway:
     # URL que o browser usa para chegar no gateway (redirect do login).
     public-base-url: http://localhost:8080
     internal:
-      # No LDAP só existem grupos: o admin de GET /internal/routes é um grupo.
+      # No LDAP só existem grupos: quem opera o gateway (GET /internal/routes) é um
+      # grupo próprio, separado dos grupos que dão acesso às ferramentas.
       any-of:
-        - group:tools-admins
+        - group:gateway-admins
     identity-headers:
       prefix: X-Auth-Request-
       max-length: 4096

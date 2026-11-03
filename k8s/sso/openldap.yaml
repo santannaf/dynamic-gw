@@ -1,11 +1,14 @@
-# OpenLDAP fazendo o papel do AD para o provedor `ldap` do gateway.
+# OpenLDAP fazendo o papel do AD: o Keycloak federa este diretório (provider
+# `keycloak`/`oauth`) e o gateway fala direto com ele (provider `ldap`).
 # Mesma forma que o IDM descreveu: uma OU por aplicação (ou=tools) com os
 # grupos de acesso; usuários em ou=people. O seed (LDIF com as senhas) vem do
 # Secret `openldap-seed`, gerado por scripts/deploy-sso.sh.
 #
-# O gateway lê com a conta somente-leitura cn=readonly (LDAP_READONLY_USER),
-# nunca com o admin. Em produção, troca-se a URL por ldaps:// do AD e o filtro
-# de usuário por (sAMAccountName={0}).
+# Os dois leem com a conta somente-leitura cn=readonly (LDAP_READONLY_USER),
+# nunca com o admin. O Keycloak usa LDAPS (636) com o certificado do Secret
+# `openldap-tls`, assinado pela CA do lab, como faria com o AD. A porta 389
+# continua aberta só para o provider `ldap` do lab. Em produção, troca-se a
+# URL por ldaps:// do AD e o filtro de usuário por (sAMAccountName={0}).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,12 +40,27 @@ spec:
           ports:
             - name: ldap
               containerPort: 389
+            - name: ldaps
+              containerPort: 636
           env:
             - name: LDAP_ORGANISATION
               value: tools
             - name: LDAP_DOMAIN
               value: tools.local
             - name: LDAP_TLS
+              value: "true"
+            - name: LDAP_TLS_CRT_FILENAME
+              value: tls.crt
+            - name: LDAP_TLS_KEY_FILENAME
+              value: tls.key
+            - name: LDAP_TLS_CA_CRT_FILENAME
+              value: ca.crt
+            - name: LDAP_TLS_DH_PARAM_FILENAME
+              value: dhparam.pem
+            # Sem certificado de cliente; e sem obrigar TLS na 389 (provider `ldap` do lab).
+            - name: LDAP_TLS_VERIFY_CLIENT
+              value: never
+            - name: LDAP_TLS_ENFORCE
               value: "false"
             - name: LDAP_ADMIN_PASSWORD
               valueFrom:
@@ -73,10 +91,29 @@ spec:
               mountPath: /container/service/slapd/assets/config/bootstrap/ldif/custom/50-tools.ldif
               subPath: 50-tools.ldif
               readOnly: true
+            - name: tls
+              mountPath: /container/service/slapd/assets/certs/tls.crt
+              subPath: tls.crt
+              readOnly: true
+            - name: tls
+              mountPath: /container/service/slapd/assets/certs/tls.key
+              subPath: tls.key
+              readOnly: true
+            - name: tls
+              mountPath: /container/service/slapd/assets/certs/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: tls
+              mountPath: /container/service/slapd/assets/certs/dhparam.pem
+              subPath: dhparam.pem
+              readOnly: true
       volumes:
         - name: seed
           secret:
             secretName: openldap-seed
+        - name: tls
+          secret:
+            secretName: openldap-tls
 ---
 apiVersion: v1
 kind: Service
@@ -93,3 +130,6 @@ spec:
     - name: ldap
       port: 389
       targetPort: ldap
+    - name: ldaps
+      port: 636
+      targetPort: ldaps

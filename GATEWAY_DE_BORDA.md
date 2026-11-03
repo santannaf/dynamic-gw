@@ -2,12 +2,12 @@
 
 Este repositório é o exemplo a partir do qual cada time constrói o seu gateway de borda. Cada gateway cuida da própria autenticação e do que fazer com quem não está logado. O que é comum entre todos é a forma de declarar quem pode usar cada rota.
 
-| Reaproveita como está | Cada gateway implementa |
-|---|---|
-| CRD `GatewayRoute` (`k8s/crd/`) | O canal: como descobrir quem está chamando |
-| Operator (`operator/`) | O que responder a quem chega sem identidade |
-| Modelo e formato do snapshot (`shared/`) | De onde vêm as permissões do usuário |
-| A tabela de decisão e os headers abaixo | |
+| Reaproveita como está                    | Cada gateway implementa                     |
+|------------------------------------------|---------------------------------------------|
+| CRD `GatewayRoute` (`k8s/crd/`)          | O canal: como descobrir quem está chamando  |
+| Operator (`operator/`)                   | O que responder a quem chega sem identidade |
+| Modelo e formato do snapshot (`shared/`) | De onde vêm as permissões do usuário        |
+| A tabela de decisão e os headers abaixo  |                                             |
 
 Um gateway em outra stack pode ler o snapshot direto do store, desde que siga este contrato.
 
@@ -39,24 +39,24 @@ Cada gateway tem seu namespace, seu operator e seu snapshot. Uma rota exposta em
 
 Primeiro resolva o modo efetivo:
 
-| `access` da rota | Modo efetivo |
-|---|---|
-| Ausente | `gateway.security.default-access` |
-| Sem `mode`, com `anyOf` | `authenticated` |
+| `access` da rota        | Modo efetivo                      |
+|-------------------------|-----------------------------------|
+| Ausente                 | `gateway.security.default-access` |
+| Sem `mode`, com `anyOf` | `authenticated`                   |
 | Sem `mode`, sem `anyOf` | `gateway.security.default-access` |
-| `mode` desconhecido | `authenticated` |
-| `public` com `anyOf` | `authenticated` |
+| `mode` desconhecido     | `authenticated`                   |
+| `public` com `anyOf`    | `authenticated`                   |
 
 Depois aplique a decisão:
 
-| Modo efetivo | `anyOf` | Identidade | Resultado |
-|---|---|---|---|
-| `public` | | Qualquer | Encaminha |
-| `authenticated` | Vazio | Presente | Encaminha |
+| Modo efetivo    | `anyOf`   | Identidade             | Resultado                    |
+|-----------------|-----------|------------------------|------------------------------|
+| `public`        |           | Qualquer               | Encaminha                    |
+| `authenticated` | Vazio     | Presente               | Encaminha                    |
 | `authenticated` | Com itens | Tem uma das permissões | Encaminha e audita `matched` |
-| `authenticated` | Com itens | Não tem nenhuma | 403 |
-| `authenticated` | Qualquer | Ausente | Resposta do canal |
-| `authenticated` | Qualquer | Provedor fora do ar | 503, sem redirecionar |
+| `authenticated` | Com itens | Não tem nenhuma        | 403                          |
+| `authenticated` | Qualquer  | Ausente                | Resposta do canal            |
+| `authenticated` | Qualquer  | Provedor fora do ar    | 503, sem redirecionar        |
 
 Permissão de um tipo que o gateway não produz não autoriza ninguém, e a rota responde 403. Por isso nenhum gateway pode tratar `anyOf` como opcional.
 
@@ -82,10 +82,10 @@ routes:
       forwardToken: false
 ```
 
-| Store | Onde fica | Como o gateway percebe a mudança |
-|---|---|---|
-| ConfigMap | `binaryData[routes.yaml.gz]` (YAML com gzip) | Watch da ConfigMap |
-| S3 | Objeto YAML | Polling de ETag |
+| Store     | Onde fica                                    | Como o gateway percebe a mudança |
+|-----------|----------------------------------------------|----------------------------------|
+| ConfigMap | `binaryData[routes.yaml.gz]` (YAML com gzip) | Watch da ConfigMap               |
+| S3        | Objeto YAML                                  | Polling de ETag                  |
 
 O reload precisa ser idempotente: um sinal repetido, ou fora de ordem, não pode mudar nada. O hash do snapshot tem que incluir `access`, senão uma troca só de permissão não dispara o reload.
 
@@ -93,16 +93,16 @@ O reload precisa ser idempotente: um sinal repetido, ou fora de ordem, não pode
 
 Antes de encaminhar, o gateway remove qualquer header de entrada com o prefixo `X-Auth-Request-` e injeta os verificados:
 
-| Header | Conteúdo |
-|---|---|
-| `X-Auth-Request-User` | Nome do usuário |
-| `X-Auth-Request-Email` | E-mail |
-| `X-Auth-Request-Subject` | Identificador estável |
-| `X-Auth-Request-Authorities` | Todas as permissões, como `group:a,scope:b`. No valor, `,` vira `%2C` e `%` vira `%25` |
-| `X-Auth-Request-Groups` | Só os grupos, sem o tipo |
-| `X-Auth-Request-Roles` | Só as roles, sem o tipo |
-| `X-Auth-Request-Client-Id` | Client, em chamada com token |
-| `X-Auth-Request-<nome>-Truncated` | `true` quando a lista passou de `max-length` |
+| Header                            | Conteúdo                                                                               |
+|-----------------------------------|----------------------------------------------------------------------------------------|
+| `X-Auth-Request-User`             | Nome do usuário                                                                        |
+| `X-Auth-Request-Email`            | E-mail                                                                                 |
+| `X-Auth-Request-Subject`          | Identificador estável                                                                  |
+| `X-Auth-Request-Authorities`      | Todas as permissões, como `group:a,scope:b`. No valor, `,` vira `%2C` e `%` vira `%25` |
+| `X-Auth-Request-Groups`           | Só os grupos, sem o tipo                                                               |
+| `X-Auth-Request-Roles`            | Só as roles, sem o tipo                                                                |
+| `X-Auth-Request-Client-Id`        | Client, em chamada com token                                                           |
+| `X-Auth-Request-<nome>-Truncated` | `true` quando a lista passou de `max-length`                                           |
 
 Gateway novo deve usar `X-Auth-Request-Authorities`. `Groups` e `Roles` continuam existindo para os backends atuais. Cada header aceita até `gateway.security.identity-headers.max-length`, então confira o limite de headers do backend. O Tomcat, por exemplo, aceita 8 KiB no total por padrão.
 
@@ -112,25 +112,25 @@ Os cookies do gateway nunca são repassados.
 
 O prefixo `/_gateway/` é do gateway, e o operator rejeita rotas sob ele.
 
-| Endpoint | Função |
-|---|---|
-| `GET /_gateway/whoami` | Identidade atual, ou 401 |
+| Endpoint                                   | Função                                                         |
+|--------------------------------------------|----------------------------------------------------------------|
+| `GET /_gateway/whoami`                     | Identidade atual, ou 401                                       |
 | `GET /_gateway/login/start?returnTo=<url>` | Inicia o login e volta para `returnTo`. 404 em canal sem login |
-| `GET` ou `POST /_gateway/logout` | Encerra a sessão. 404 em canal sem sessão |
+| `GET` ou `POST /_gateway/logout`           | Encerra a sessão. 404 em canal sem sessão                      |
 
 ### Auditoria
 
 Cada decisão gera uma linha JSON no logger `AUDIT`. Esse formato é consumido por SIEM e SOC: todo gateway deve emitir a mesma forma, e mudar um campo é mudança de contrato.
 
-| Campo | Conteúdo |
-|---|---|
-| `event.action` | `route.access`, `auth.login`, `auth.logout` e outros |
-| `event.outcome` e `event.reason` | `success` ou `failure`, e o motivo (`allowed`, `forbidden`, `unauthenticated`, `invalid_token`, `session_expired`) |
-| `user.id`, `user.name`, `user.email` | Quem chamou |
-| `gateway.auth.method` | `session`, `bearer` ou `none` |
-| `gateway.route.id` e `gateway.route.team` | A rota |
-| `gateway.access.required` | O `anyOf` da rota, com o tipo |
-| `gateway.access.matched` | A permissão que liberou o acesso |
+| Campo                                     | Conteúdo                                                                                                           |
+|-------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `event.action`                            | `route.access`, `auth.login`, `auth.logout` e outros                                                               |
+| `event.outcome` e `event.reason`          | `success` ou `failure`, e o motivo (`allowed`, `forbidden`, `unauthenticated`, `invalid_token`, `session_expired`) |
+| `user.id`, `user.name`, `user.email`      | Quem chamou                                                                                                        |
+| `gateway.auth.method`                     | `session`, `bearer` ou `none`                                                                                      |
+| `gateway.route.id` e `gateway.route.team` | A rota                                                                                                             |
+| `gateway.access.required`                 | O `anyOf` da rota, com o tipo                                                                                      |
+| `gateway.access.matched`                  | A permissão que liberou o acesso                                                                                   |
 
 Nunca registre token, cookie, `Authorization`, senha ou query string. Preflight de CORS respondido pelo gateway não gera evento, porque não chega a uma rota. Já uma chamada de origem recusada gera evento com `event.reason=forbidden`.
 
@@ -138,17 +138,17 @@ Nunca registre token, cookie, `Authorization`, senha ou query string. Preflight 
 
 Todo tráfego externo passa pela borda, que valida a sessão e encaminha. O que muda entre os modelos é quem entrega o HTML e quem agrega os dados. `make frontend-test` prova os modelos abaixo que têm comportamento no gateway.
 
-| Modelo | Situação | O que o gateway faz |
-|---|---|---|
-| 1. Estático + BFF | Válido | Sem sessão, o AJAX recebe 401 e o front chama `/_gateway/login/start`. Com o front em outra origem, configure `gateway.security.front-origins` |
-| 2. SSR puro | Válido | Navegação sem sessão vai para o login e volta para a página |
-| 3. SSR ou híbrido, AJAX na própria app | Válido | Mesma sessão nas páginas e nos route handlers. AJAX sem sessão recebe 401, nunca redirect |
-| 4. Híbrido + BFF separado | Válido | Mesma sessão em duas rotas com `targetUri` diferentes |
-| 5. SSR chama BFF para montar o HTML | Inválido | Fora da borda. Regra de arquitetura |
-| 6. Navegador fora da borda | Inválido | Bloqueie com `NetworkPolicy`, como `k8s/samples/network-policy-backend.yaml`. O backend confia nos headers do gateway, então não pode aceitar outra origem de tráfego |
-| 7. Estático sem BFF | Inválido | O gateway não distingue BFF de API de domínio. Revise o `targetUri` das rotas |
-| 8. SSR agrega + BFF para o AJAX | Inválido | Regra de arquitetura |
-| 9. App SSR servindo outros consumidores | Inválido | Declare grupos de usuário no `anyOf` das rotas de front: token de outro sistema não tem esses grupos e recebe 403 |
+| Modelo                                  | Situação | O que o gateway faz                                                                                                                                                   |
+|-----------------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1. Estático + BFF                       | Válido   | Sem sessão, o AJAX recebe 401 e o front chama `/_gateway/login/start`. Com o front em outra origem, configure `gateway.security.front-origins`                        |
+| 2. SSR puro                             | Válido   | Navegação sem sessão vai para o login e volta para a página                                                                                                           |
+| 3. SSR ou híbrido, AJAX na própria app  | Válido   | Mesma sessão nas páginas e nos route handlers. AJAX sem sessão recebe 401, nunca redirect                                                                             |
+| 4. Híbrido + BFF separado               | Válido   | Mesma sessão em duas rotas com `targetUri` diferentes                                                                                                                 |
+| 5. SSR chama BFF para montar o HTML     | Inválido | Fora da borda. Regra de arquitetura                                                                                                                                   |
+| 6. Navegador fora da borda              | Inválido | Bloqueie com `NetworkPolicy`, como `k8s/samples/network-policy-backend.yaml`. O backend confia nos headers do gateway, então não pode aceitar outra origem de tráfego |
+| 7. Estático sem BFF                     | Inválido | O gateway não distingue BFF de API de domínio. Revise o `targetUri` das rotas                                                                                         |
+| 8. SSR agrega + BFF para o AJAX         | Inválido | Regra de arquitetura                                                                                                                                                  |
+| 9. App SSR servindo outros consumidores | Inválido | Declare grupos de usuário no `anyOf` das rotas de front: token de outro sistema não tem esses grupos e recebe 403                                                     |
 
 ### Front estático em outra origem
 
@@ -212,3 +212,5 @@ Se o provedor da sessão estiver fora do ar, lance `ProviderUnavailableException
 6. **Mantenha o backend alcançável só pelo gateway.**
 7. **Valide `iss`, `aud` e `exp`** em todo token. Use como `aud` o identificador da API, nunca um client id: o ID token traz o client id no `aud`.
 8. **Bloqueie `POST /internal/routes/reload` na borda.** Ele não tem autenticação, porque o operator chama de dentro do cluster. Aqui quem bloqueia é o nginx-lb. Sem ele, exponha só os prefixos das rotas, como em `k8s/second-gateway/ingress.yaml`.
+9. **Separe operação de negócio.** A permissão que lê `/internal/routes` (`gateway.security.internal.any-of`) não aparece no `anyOf` de rota de ferramenta, e grupo de ferramenta não opera o gateway. Aqui, `role:gateway-admin` e o grupo `gateway-admins` só operam.
+10. **Só aceite permissão emitida para este gateway.** No Keycloak, leia as roles do client do gateway (`resource_access.<client>.roles`), nunca as do realm: role de realm vale para todas as aplicações, e uma de mesmo nome criada para outra abriria rotas aqui. Grupos, só os da OU da aplicação. O realm de exemplo está em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#6-modelo-de-roles-operar-o-gateway-não-é-usar-as-ferramentas).

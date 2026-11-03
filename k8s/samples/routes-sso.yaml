@@ -6,7 +6,8 @@
 #   /sso/public/**  qualquer um, sem login
 #   /sso/auth/**    qualquer usuário autenticado (rota sem access = default do gateway)
 #   /sso/group/**   precisa do grupo tools-httpbin
-#   /sso/admin/**   precisa do role gateway-admin (Keycloak) ou do grupo tools-admins (LDAP)
+#   /sso/admin/**   precisa do grupo tools-admins (admin da ferramenta). A role
+#                   gateway-admin não abre esta rota: ela só opera o gateway.
 #   /sso/token/**   como /sso/group, e repassa o access token ao backend
 #   /sso/rw/**      leitura (GET/HEAD) para tools-httpbin ou tools-admins; escrita só tools-admins
 apiVersion: platform.saca.pags/v1alpha1
@@ -60,11 +61,10 @@ spec:
   targetUri: http://go-httpbin.platform.svc.cluster.local:8080
   stripPrefix: 2
   team: platform-team
-  description: Admins, whether they come as a Keycloak role or as a directory group.
+  description: Tool admins only; operating the gateway (role gateway-admin) does not open it.
   access:
     mode: authenticated
     anyOf:
-      - role:gateway-admin
       - group:tools-admins
 ---
 apiVersion: platform.saca.pags/v1alpha1

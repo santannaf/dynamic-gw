@@ -55,7 +55,7 @@ Depois do teste, para devolver o kubectl dos outros terminais ao cluster de semp
 make sso-up
 ```
 
-Isso sobe o Keycloak com o realm `tools`, o gateway com `provider=keycloak` + auditoria, as rotas de exemplo `/sso/*`, o go-httpbin e o nginx-lb. No fim ele imprime os usuários e a senha. Para guardar as senhas em variáveis:
+Isso sobe o OpenLDAP (no lugar do AD), o Keycloak com o realm `tools` federando esse diretório por LDAPS, o gateway com `provider=keycloak` + auditoria, as rotas de exemplo `/sso/*`, o go-httpbin e o nginx-lb. No fim ele imprime os usuários e a senha. Para guardar as senhas em variáveis:
 
 ```bash
 export PASSWORD=$(kubectl -n platform get secret sso-secrets -o jsonpath='{.data.demo-password}' | base64 -d)
@@ -63,12 +63,15 @@ export KC_ADMIN=$(kubectl -n platform get secret sso-secrets -o jsonpath='{.data
 echo "usuarios: $PASSWORD   admin do Keycloak: $KC_ADMIN"
 ```
 
-| Usuário              | Grupos                          | Role                               | Uso no teste                            |
-|----------------------|---------------------------------|------------------------------------|-----------------------------------------|
-| `alice`              | `tools-httpbin`                 | —                                  | usuária comum de um tool                |
-| `bob`                | —                               | —                                  | autenticado, sem acesso a nada restrito |
-| `carol`              | `tools-admins`, `tools-httpbin` | `gateway-admin` (herdado do grupo) | admin                                   |
-| `tools-cli` (client) | —                               | `gateway-admin`                    | conta de serviço (M2M)                  |
+| Usuário              | Grupos (no diretório)           | Role (client `tools-gateway`)      | Uso no teste                                    |
+|----------------------|---------------------------------|------------------------------------|-------------------------------------------------|
+| `alice`              | `tools-httpbin` (e `finance`, fora da OU `tools`) | —                | usuária comum de um tool                        |
+| `bob`                | —                               | —                                  | autenticado, sem acesso a nada restrito         |
+| `carol`              | `tools-admins`, `tools-httpbin` | —                                  | admin da ferramenta                             |
+| `dave`               | `gateway-admins`                | `gateway-admin` (herdado do grupo) | opera o gateway, sem acesso às ferramentas      |
+| `tools-cli` (client) | —                               | `gateway-admin`                    | conta de serviço (M2M) da plataforma            |
+
+As pessoas vivem só no diretório: o Keycloak confere a senha com um bind e importa o usuário no primeiro login. No realm ficam a conta de serviço, a role `gateway-admin` do client `tools-gateway` e o grupo `gateway-admins`, que a recebe. O modelo está em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#6-modelo-de-roles-operar-o-gateway-não-é-usar-as-ferramentas).
 
 Para **recomeçar do zero sem recriar o cluster** (o realm é reimportado e todas as sessões caem):
 
@@ -100,15 +103,16 @@ Dicas de browser:
 
 O que esperar de cada rota:
 
-| Rota                               | `access`                                          | alice        | bob | carol        |
-|------------------------------------|---------------------------------------------------|--------------|-----|--------------|
-| `/sso/public/**`                   | `mode: public`                                    | 200          | 200 | 200          |
-| `/sso/auth/**`                     | sem `access` (default `authenticated`)            | 200          | 200 | 200          |
-| `/sso/group/**`                    | `anyOf: [group:tools-httpbin]`                    | 200          | 403 | 200          |
-| `/sso/admin/**`                    | `anyOf: [role:gateway-admin, group:tools-admins]` | 403          | 403 | 200          |
-| `/sso/token/**`                    | `group:tools-httpbin` + `forwardToken: true`      | 200 + Bearer | 403 | 200 + Bearer |
-| `/sso/rw/**` GET/HEAD              | `tools-httpbin` ou `tools-admins`                 | 200          | 403 | 200          |
-| `/sso/rw/**` POST/PUT/PATCH/DELETE | `tools-admins`                                    | 403          | 403 | 200          |
+| Rota                               | `access`                                          | alice        | bob | carol        | dave |
+|------------------------------------|---------------------------------------------------|--------------|-----|--------------|------|
+| `/sso/public/**`                   | `mode: public`                                    | 200          | 200 | 200          | 200  |
+| `/sso/auth/**`                     | sem `access` (default `authenticated`)            | 200          | 200 | 200          | 200  |
+| `/sso/group/**`                    | `anyOf: [group:tools-httpbin]`                    | 200          | 403 | 200          | 403  |
+| `/sso/admin/**`                    | `anyOf: [group:tools-admins]`                     | 403          | 403 | 200          | 403  |
+| `/sso/token/**`                    | `group:tools-httpbin` + `forwardToken: true`      | 200 + Bearer | 403 | 200 + Bearer | 403  |
+| `/sso/rw/**` GET/HEAD              | `tools-httpbin` ou `tools-admins`                 | 200          | 403 | 200          | 403  |
+| `/sso/rw/**` POST/PUT/PATCH/DELETE | `tools-admins`                                    | 403          | 403 | 200          | 403  |
+| `GET /internal/routes`             | `internal.any-of: [role:gateway-admin]`           | 403          | 403 | 403          | 200  |
 
 Um 403 aparece como página em branco: o status está no DevTools (F12 → Network).
 
@@ -195,11 +199,13 @@ EOF
 # The GatewayRoute "invalida" is invalid: spec.access: ... access.mode=public cannot be combined with a non-empty access.anyOf
 ```
 
-### 1.7 bob e carol
+### 1.7 bob, carol e dave
 
 🌐 Feche todas as janelas anônimas e abra uma nova. Entre por `http://localhost:18080/sso/auth/headers` como `bob` → 200. Depois abra `/sso/group/headers` → **403**.
 
-🌐 Feche tudo de novo e entre como `carol` por `http://localhost:18080/sso/admin/headers` → 200. O JSON mostra `X-Auth-Request-Roles: gateway-admin`. Abra `/sso/token/headers`: o backend recebe também `Authorization: Bearer eyJ…` (`forwardToken`). Em `/internal/routes` aparece a tabela de rotas com o `access` de cada uma (só admin vê; para a alice é 403).
+🌐 Feche tudo de novo e entre como `carol` por `http://localhost:18080/sso/admin/headers` → 200. O JSON mostra `X-Auth-Request-Groups: tools-admins,tools-httpbin` e nenhum `X-Auth-Request-Roles`. Abra `/sso/token/headers`: o backend recebe também `Authorization: Bearer eyJ…` (`forwardToken`). `/internal/routes` dá **403**: administrar a ferramenta não é operar o gateway.
+
+🌐 Feche tudo e entre como `dave` por `http://localhost:18080/sso/auth/headers` → 200, com `X-Auth-Request-Groups: gateway-admins` e `X-Auth-Request-Roles: gateway-admin` (a role vem do grupo, no Keycloak). Em `/internal/routes` aparece a tabela de rotas com o `access` de cada uma. `/sso/admin/headers` e `/sso/group/headers` dão **403**: operar o gateway não abre nenhuma ferramenta.
 
 ### 1.8 Conta de serviço (M2M)
 
@@ -214,6 +220,11 @@ curl -s -H "Authorization: Bearer $TOKEN" $BASE/sso/auth/headers | jq '.headers 
 
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" $BASE/sso/group/headers   # 403: sem o grupo
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" $BASE/internal/routes     # 200: tem gateway-admin
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" $BASE/sso/admin/headers   # 403: operar não abre ferramenta
+
+# As roles do token: só as do client tools-gateway, nenhuma do realm
+cut -d. -f2 <<<"$TOKEN" | tr '_-' '/+' | base64 -d 2>/dev/null | jq '{resource_access, realm_access}'
+# {"resource_access":{"tools-gateway":{"roles":["gateway-admin"]}},"realm_access":null}
 ```
 
 Um token válido de outro realm/audiência não serve:
@@ -262,17 +273,24 @@ kubectl -n platform logs deployment/keycloak | grep -E 'type="(LOGIN|LOGOUT|REFR
 # o outro lado da trilha: eventos do Keycloak com o mesmo sessionId
 ```
 
-### 1.11 O IDM tira a alice do grupo
+### 1.11 O IDM tira a alice do grupo (no diretório)
+
+O grupo é do diretório, então a mudança é lá, como o IDM faria no AD. O Keycloak não deixa mexer em grupo federado (é só leitura).
 
 Para ver o efeito rápido, reduza antes o tempo de vida do access token. No admin do realm **tools** → **Realm settings → Tokens → Access Token Lifespan = 1 minute** → Save. Depois faça login da alice de novo, porque os tokens antigos ainda são de 5 min.
 
-1. Admin → **Users → alice → Groups** → selecione `tools-httpbin` → **Leave**.
-2. 🌐 Como alice, `/sso/group/headers` continua 200 enquanto o token atual vale. Em até ~1 min (ou 5, sem o ajuste acima) passa a dar **403**, sem novo login. `/sso/auth/headers` continua 200.
-3. Para desfazer: **Users → alice → Groups → Join group → tools-httpbin**. No próximo refresh volta o 200.
+1. Tire a alice de `tools-httpbin` no OpenLDAP:
+   ```bash
+   LDAP_ADMIN=$(kubectl -n platform get secret sso-secrets -o jsonpath='{.data.ldap-admin-password}' | base64 -d)
+   printf 'dn: cn=tools-httpbin,ou=tools,dc=tools,dc=local\nchangetype: modify\ndelete: member\nmember: uid=alice,ou=people,dc=tools,dc=local\n' \
+     | kubectl -n platform exec -i deploy/openldap -- ldapmodify -x -H ldap://localhost -D cn=admin,dc=tools,dc=local -w "$LDAP_ADMIN"
+   ```
+2. 🌐 Como alice, `/sso/group/headers` continua 200 enquanto o token atual vale. Em até ~2 min (1 do token + 1 do cache da federação; ~6 sem o ajuste acima) passa a dar **403**, sem novo login. `/sso/auth/headers` continua 200.
+3. Para desfazer, rode o mesmo comando com `add: member` no lugar de `delete: member`. No próximo refresh volta o 200.
 
 ### 1.12 Desligamento: derrubar a sessão no Keycloak
 
-1. Admin → **Users → alice → Sessions** → menu ⋮ → **Sign out**. Para simular um desligamento, também dá para desmarcar **Enabled** no usuário.
+1. Admin → **Users → alice → Sessions** → menu ⋮ → **Sign out**. No AD, o desligamento é desabilitar a conta: o mapper *MSAD account controls* recusa o próximo refresh. No lab, que não tem esse atributo, desmarque **Enabled** no usuário do Keycloak.
 2. 🌐 No próximo refresh (até o fim do access token), a alice volta para a tela de login. Na auditoria o request aparece com `motivo: session_expired`.
 
 ### 1.13 Logout pelo gateway
@@ -289,7 +307,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE/internal/routes/reload
 ### 1.15 Tudo de uma vez
 
 ```bash
-make sso-test     # passed=32 failed=0
+make sso-test     # passed=44 failed=0
 ```
 
 ---
@@ -305,7 +323,7 @@ make ldap-up      # OpenLDAP + gateway com provider=ldap (o Keycloak continua no
 1. 🌐 Janela anônima nova (feche as outras): `http://localhost:18080/sso/group/headers` vai para a **tela de login do próprio gateway** (`/_gateway/login`). Entre como `alice`.
 2. O backend recebe `X-Auth-Request-User: alice` e `X-Auth-Request-Groups: tools-httpbin`. O `finance` **não** aparece, porque fica fora de `ou=tools`.
 3. Senha errada volta para `?error` com a mesma mensagem para usuário inexistente. Errar várias vezes seguidas o mesmo usuário termina em **429**. O limite é por réplica: com 2 réplicas, até ~10 tentativas na janela de 5 min.
-4. `bob` → 403 em `/sso/group/headers`. `carol` → 200 em `/internal/routes` (aqui o admin é o grupo `tools-admins`).
+4. `bob` → 403 em `/sso/group/headers`. `carol` → 403 em `/internal/routes` e `dave` → 200: aqui quem opera o gateway é o grupo `gateway-admins`, separado dos grupos das ferramentas.
 5. O `Authorization` não é interpretado neste modo:
 
    ```bash
@@ -327,7 +345,7 @@ make ldap-up      # OpenLDAP + gateway com provider=ldap (o Keycloak continua no
 8. A auditoria mostra os `auth.login` (inclusive as falhas, com o usuário digitado e nunca a senha) e os `throttled`.
 
 ```bash
-make ldap-test    # passed=21 failed=0
+make ldap-test    # passed=23 failed=0
 ```
 
 Para voltar ao Keycloak: `make sso-up`.
@@ -342,17 +360,18 @@ O mesmo SSO sem operator nem CRD. As rotas e o `access` de cada uma estão em `g
 make standalone-sso-up          # troca o gateway do cluster pelo v1 (PROVIDER=ldap também funciona)
 ```
 
-| Rota           | Política                                                                  | alice | bob | carol                         |
-|----------------|---------------------------------------------------------------------------|-------|-----|-------------------------------|
-| `/anything/**` | `mode: public`                                                            | 200   | 200 | 200                           |
-| `/me/**`       | sem `access` (default `authenticated`)                                    | 200   | 200 | 200                           |
-| `/httpbin/**`  | `any-of: [group:tools-httpbin]`                                           | 200   | 403 | 200                           |
-| `/admin/**`    | `any-of: [role:gateway-admin, group:tools-admins]`, `forward-token: true` | 403   | 403 | 200 (backend recebe o Bearer) |
+| Rota               | Política                                                  | alice | bob | carol                         | dave |
+|--------------------|-----------------------------------------------------------|-------|-----|-------------------------------|------|
+| `/anything/**`     | `mode: public`                                            | 200   | 200 | 200                           | 200  |
+| `/me/**`           | sem `access` (default `authenticated`)                    | 200   | 200 | 200                           | 200  |
+| `/httpbin/**`      | `any-of: [group:tools-httpbin]`                           | 200   | 403 | 200                           | 403  |
+| `/admin/**`        | `any-of: [group:tools-admins]`, `forward-token: true`     | 403   | 403 | 200 (backend recebe o Bearer) | 403  |
+| `/internal/routes` | `role:gateway-admin` (keycloak) ou `group:gateway-admins` (ldap) | 403 | 403 | 403                      | 200  |
 
 🌐 Repita o login em `http://localhost:18080/httpbin/headers`. A sessão do Keycloak continua valendo, então se você já estava logado entra sem senha.
 
 ```bash
-make standalone-sso-test        # passed=21 failed=0
+make standalone-sso-test        # passed=26 failed=0
 make sso-up                     # volta para o v2 com SSO
 ```
 
@@ -361,7 +380,7 @@ make sso-up                     # volta para o v2 com SSO
 ## 4. Limpeza
 
 ```bash
-make sso-down                              # gateway sem SSO; Keycloak e OpenLDAP removidos (Secret sso-secrets fica)
+make sso-down                              # gateway sem SSO; Keycloak e OpenLDAP removidos (Secrets sso-secrets e openldap-tls ficam)
 k3d cluster delete dynamic-gateway-lab     # remove o cluster de teste inteiro
 kubectl config use-context k3d-lab         # se o `make cluster` tiver trocado seu contexto
 ```

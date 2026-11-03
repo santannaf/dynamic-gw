@@ -82,6 +82,15 @@ class GatewayProfilesTest {
     }
 
     @Test
+    void keycloakRolesComeOnlyFromTheGatewayClient() {
+        GatewaySecurityProperties security = bindStrictly(environment(List.of("keycloak"), Map.of()),
+                "gateway.security", GatewaySecurityProperties.class);
+
+        assertThat(security.getAuthorities().getRoleClaims()).containsExactly("resource_access.{client-id}.roles");
+        assertThat(security.getAuthorities().getGroupClaims()).containsExactly("groups");
+    }
+
+    @Test
     void oauthProfileValidatesTokensWithoutSession() {
         GatewaySecurityProperties security = bindStrictly(environment(List.of("oauth"), Map.of()),
                 "gateway.security", GatewaySecurityProperties.class);
@@ -91,6 +100,7 @@ class GatewayProfilesTest {
                 "http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools/protocol/openid-connect/certs");
         assertThat(security.getOauth().getAudience()).isEqualTo("tools-gateway");
         assertThat(security.getAuthorities().getClaims()).containsEntry("scope", List.of("scope"));
+        assertThat(security.getAuthorities().getRoleClaims()).containsExactly("resource_access.tools-gateway.roles");
         assertThat(security.getPublicBaseUrl()).isNull();
     }
 
@@ -119,11 +129,11 @@ class GatewayProfilesTest {
     }
 
     @Test
-    void ldapAdminsAreAGroupBecauseTheDirectoryHasNoRoles() {
+    void ldapOperatorsAreTheirOwnGroupBecauseTheDirectoryHasNoRoles() {
         GatewaySecurityProperties security = bindStrictly(environment(List.of("ldap"), Map.of()),
                 "gateway.security", GatewaySecurityProperties.class);
 
-        assertThat(security.getInternal().getAnyOf()).containsExactly("group:tools-admins");
+        assertThat(security.getInternal().getAnyOf()).containsExactly("group:gateway-admins");
     }
 
     @Test

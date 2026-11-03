@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # E2E do SSO com provider=keycloak no k3d (pré-requisito: PROVIDER=keycloak make sso-up).
-# Usa só curl + jq: login de browser roteirizado (formulário do Keycloak),
-# bearer de conta de serviço, multi-réplica, logout e trilha de auditoria.
+# Usa só curl + jq: login de browser roteirizado (formulário do Keycloak) com
+# usuários do diretório federado, separação entre operar o gateway e usar as
+# ferramentas, bearer de conta de serviço, multi-réplica, logout e auditoria.
 set -uo pipefail
 
 HOST_PORT="${HOST_PORT:-8080}"
@@ -45,6 +46,21 @@ browser_login() {
 
 header() { jq -r --arg h "$1" '.headers[$h][0] // empty' "${WORK}/body"; }
 
+# Payload de um JWT (base64url sem padding).
+jwt_claims() {
+    local payload
+    payload="$(printf '%s' "$1" | cut -d. -f2 | tr '_-' '/+')"
+    while (( ${#payload} % 4 )); do payload+="="; done
+    printf '%s' "${payload}" | base64 -d 2>/dev/null
+}
+
+# Token do admin no realm master (vive 60 s: pegue um novo antes de usar).
+admin_token() {
+    curl -s -d grant_type=password -d client_id=admin-cli -d username=admin --data-urlencode "password=${ADMIN_PASSWORD}" \
+        "${BASE}/auth/realms/master/protocol/openid-connect/token" | jq -r .access_token
+}
+api() { curl -s -H "Authorization: Bearer ${admin}" "${BASE}/auth/admin/realms/tools$1"; }
+
 echo "== scenario"
 PROFILES="$(kubectl -n "${NAMESPACE}" get deployment dynamic-gateway \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SPRING_PROFILES_ACTIVE")].value}')"
@@ -70,17 +86,37 @@ check "login lands on the protected route" "200" "$(browser_login alice "${WORK}
 curl -s -b "${WORK}/alice" -H 'X-Auth-Request-User: mallory' -H 'Cookie: theme=dark' \
     "${BASE}/sso/group/headers" -o "${WORK}/body"
 check "backend sees the verified user" "alice" "$(header X-Auth-Request-User)"
-check "backend sees the group" "tools-httpbin" "$(header X-Auth-Request-Groups)"
+check "only groups under the app OU reach the token (finance stays out)" "tools-httpbin" "$(header X-Auth-Request-Groups)"
 check "session cookie is not forwarded" "" "$(header Cookie | grep -o 'GW_SESSION' || true)"
 check "read side of /sso/rw" "200" "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/alice" "${BASE}/sso/rw/get")"
 check "write side of /sso/rw needs tools-admins" "403" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/alice" -X POST "${BASE}/sso/rw/post")"
 check "whoami" "alice" "$(curl -s -b "${WORK}/alice" "${BASE}/_gateway/whoami" | jq -r .user)"
 
-echo "== bob (no groups) and carol (tools-admins)"
+echo "== directory (Keycloak federates it; the realm keeps no people)"
+admin="$(admin_token)"
+directory="$(api '/components?type=org.keycloak.storage.UserStorageProvider' | jq -r '.[0].id')"
+check "alice was imported from the directory" "${directory}" "$(api '/users?username=alice&exact=true' | jq -r '.[0].federationLink')"
+check "federation is read-only, over LDAPS" "READ_ONLY ldaps" \
+    "$(api "/components/${directory}" | jq -r '"\(.config.editMode[0]) \(.config.connectionUrl[0] | split(":")[0])"')"
+check "directory changes reach Keycloak within 1 min (then the next refresh)" "MAX_LIFESPAN 60000" \
+    "$(api "/components/${directory}" | jq -r '"\(.config.cachePolicy[0]) \(.config.maxLifespan[0])"')"
+check "no local people in the realm" "0" \
+    "$(api '/users?max=1000' | jq '[.[] | select(.federationLink == null and (.username | startswith("service-account-") | not))] | length')"
+check "no realm roles of our own (only the default ones)" "default-roles-tools offline_access uma_authorization" \
+    "$(api '/roles' | jq -r '[.[].name] | sort | join(" ")')"
+
+echo "== bob (no groups), carol (tool admin), dave (operates the gateway)"
 check "bob logs in" "403" "$(browser_login bob "${WORK}/bob" /sso/group/headers)"
 check "carol logs in" "200" "$(browser_login carol "${WORK}/carol" /sso/admin/headers)"
-check "carol reads /internal/routes" "200" "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/carol" "${BASE}/internal/routes")"
+check "carol has no gateway role" "" "$(header X-Auth-Request-Roles)"
+check "carol does not operate the gateway" "403" "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/carol" "${BASE}/internal/routes")"
+check "dave logs in" "200" "$(browser_login dave "${WORK}/dave" /sso/auth/headers)"
+check "dave gets gateway-admin from the gateway-admins group" "gateway-admins gateway-admin" \
+    "$(header X-Auth-Request-Groups) $(header X-Auth-Request-Roles)"
+check "dave reads /internal/routes" "200" "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/dave" "${BASE}/internal/routes")"
+check "operating the gateway opens no tool" "403 403" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/dave" "${BASE}/sso/admin/get") $(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/dave" "${BASE}/sso/group/get")"
 check "alice cannot read /internal/routes" "403" "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/alice" "${BASE}/internal/routes")"
 
 echo "== service account (tools-cli, client credentials)"
@@ -94,8 +130,11 @@ curl -s -H "Authorization: Bearer ${token}" "${BASE}/sso/token/headers" -o "${WO
 check "forwardToken needs the group (service account has none)" "" "$(header Authorization)"
 check "service account with gateway-admin reads /internal/routes" "200" \
     "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${token}" "${BASE}/internal/routes")"
-foreign="$(curl -s -d grant_type=password -d client_id=admin-cli -d username=admin --data-urlencode "password=${ADMIN_PASSWORD}" \
-    "${BASE}/auth/realms/master/protocol/openid-connect/token" | jq -r .access_token)"
+check "service account: operating the gateway opens no tool" "403" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${token}" "${BASE}/sso/admin/get")"
+check "token carries only the gateway client's role, no realm roles" '["gateway-admin"] null' \
+    "$(jwt_claims "${token}" | jq -c '.resource_access["tools-gateway"].roles') $(jwt_claims "${token}" | jq -c '.realm_access')"
+foreign="$(admin_token)"
 check "token from another realm/audience -> 401" "401" \
     "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${foreign}" "${BASE}/sso/auth/headers")"
 

@@ -38,19 +38,21 @@ gateway:
         - profile
         - email
     authorities:
-      # Grupos do Keycloak ou do AD federado pelo Keycloak -> group:<nome>
+      # Grupos do AD federado pelo Keycloak (só os da OU da aplicação) -> group:<nome>
       group-claims:
         - groups
-      # Roles do realm e do client -> role:<nome>
+      # Só as roles do client do gateway -> role:<nome>. Role de realm fica de fora:
+      # vale para o realm inteiro, e uma role de mesmo nome criada para outra
+      # aplicação liberaria rotas aqui.
       role-claims:
-        - realm_access.roles
         - "resource_access.{client-id}.roles"
       # Outros tipos: <tipo> -> claims. Claim em texto é separado por espaço, como o scope do OAuth.
       claims:
         scope:
           - scope
     internal:
-      # Quem pode ler GET /internal/routes.
+      # Quem opera o gateway (GET /internal/routes): role do client tools-gateway, dada
+      # ao grupo gateway-admins do AD e à conta de serviço. Não abre nenhuma ferramenta.
       any-of:
         - role:gateway-admin
     identity-headers:

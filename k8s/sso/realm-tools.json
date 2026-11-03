@@ -20,13 +20,21 @@
   "adminEventsEnabled": true,
   "adminEventsDetailsEnabled": true,
   "roles": {
-    "realm": [
-      { "name": "gateway-admin", "description": "Reads /internal/routes on the gateway" }
-    ]
+    "client": {
+      "tools-gateway": [
+        {
+          "name": "gateway-admin",
+          "description": "Operates the gateway (GET /internal/routes). Grants no access to any tool."
+        }
+      ]
+    }
   },
   "groups": [
-    { "name": "tools-httpbin", "path": "/tools-httpbin" },
-    { "name": "tools-admins", "path": "/tools-admins", "realmRoles": ["gateway-admin"] }
+    {
+      "name": "${GATEWAY_ADMINS_GROUP}",
+      "path": "/${GATEWAY_ADMINS_GROUP}",
+      "clientRoles": { "tools-gateway": ["gateway-admin"] }
+    }
   ],
   "clients": [
     {
@@ -41,6 +49,7 @@
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
       "redirectUris": ["${GATEWAY_PUBLIC_BASE_URL}/_gateway/login/oauth2/code/keycloak"],
       "webOrigins": [],
       "attributes": {
@@ -85,6 +94,7 @@
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
       "protocolMappers": [
         {
           "name": "audience: tools-gateway",
@@ -96,45 +106,161 @@
             "id.token.claim": "false",
             "introspection.token.claim": "true"
           }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
         }
       ]
     }
   ],
+  "clientScopeMappings": {
+    "tools-gateway": [
+      { "client": "tools-cli", "roles": ["gateway-admin"] }
+    ]
+  },
   "users": [
-    {
-      "username": "alice",
-      "enabled": true,
-      "email": "alice@tools.local",
-      "emailVerified": true,
-      "firstName": "Alice",
-      "lastName": "Tools",
-      "credentials": [{ "type": "password", "value": "${TOOLS_DEMO_PASSWORD}", "temporary": false }],
-      "groups": ["/tools-httpbin"]
-    },
-    {
-      "username": "bob",
-      "enabled": true,
-      "email": "bob@tools.local",
-      "emailVerified": true,
-      "firstName": "Bob",
-      "lastName": "Tools",
-      "credentials": [{ "type": "password", "value": "${TOOLS_DEMO_PASSWORD}", "temporary": false }]
-    },
-    {
-      "username": "carol",
-      "enabled": true,
-      "email": "carol@tools.local",
-      "emailVerified": true,
-      "firstName": "Carol",
-      "lastName": "Tools",
-      "credentials": [{ "type": "password", "value": "${TOOLS_DEMO_PASSWORD}", "temporary": false }],
-      "groups": ["/tools-admins", "/tools-httpbin"]
-    },
     {
       "username": "service-account-tools-cli",
       "enabled": true,
       "serviceAccountClientId": "tools-cli",
-      "realmRoles": ["gateway-admin"]
+      "clientRoles": { "tools-gateway": ["gateway-admin"] }
     }
-  ]
+  ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "name": "directory",
+        "providerId": "ldap",
+        "subComponents": {
+          "org.keycloak.storage.ldap.mappers.LDAPStorageMapper": [
+            {
+              "name": "username",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["${LDAP_USERNAME_ATTRIBUTE}"],
+                "user.model.attribute": ["username"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["false"],
+                "is.mandatory.in.ldap": ["true"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "email",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["mail"],
+                "user.model.attribute": ["email"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["false"],
+                "is.mandatory.in.ldap": ["false"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "first name",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["givenName"],
+                "user.model.attribute": ["firstName"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["true"],
+                "is.mandatory.in.ldap": ["false"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "last name",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["sn"],
+                "user.model.attribute": ["lastName"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["true"],
+                "is.mandatory.in.ldap": ["false"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "groups",
+              "providerId": "group-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "groups.dn": ["${LDAP_GROUPS_DN}"],
+                "group.name.ldap.attribute": ["cn"],
+                "group.object.classes": ["${LDAP_GROUP_OBJECT_CLASSES}"],
+                "preserve.group.inheritance": ["false"],
+                "ignore.missing.groups": ["false"],
+                "membership.ldap.attribute": ["member"],
+                "membership.attribute.type": ["DN"],
+                "membership.user.ldap.attribute": ["${LDAP_USERNAME_ATTRIBUTE}"],
+                "mode": ["READ_ONLY"],
+                "user.roles.retrieve.strategy": ["${LDAP_GROUPS_STRATEGY}"],
+                "memberof.ldap.attribute": ["memberOf"],
+                "drop.non.existing.groups.during.sync": ["false"]
+              }
+            },
+            {
+              "name": "MSAD account controls",
+              "providerId": "msad-user-account-control-mapper",
+              "subComponents": {},
+              "config": {}
+            }
+          ]
+        },
+        "config": {
+          "enabled": ["true"],
+          "priority": ["0"],
+          "vendor": ["${LDAP_VENDOR}"],
+          "connectionUrl": ["${LDAP_URL}"],
+          "startTls": ["false"],
+          "useTruststoreSpi": ["always"],
+          "connectionPooling": ["true"],
+          "connectionTimeout": ["5000"],
+          "readTimeout": ["10000"],
+          "authType": ["simple"],
+          "bindDn": ["${LDAP_BIND_DN}"],
+          "bindCredential": ["${LDAP_BIND_PASSWORD}"],
+          "usersDn": ["${LDAP_USERS_DN}"],
+          "usernameLDAPAttribute": ["${LDAP_USERNAME_ATTRIBUTE}"],
+          "rdnLDAPAttribute": ["${LDAP_RDN_ATTRIBUTE}"],
+          "uuidLDAPAttribute": ["${LDAP_UUID_ATTRIBUTE}"],
+          "userObjectClasses": ["${LDAP_USER_OBJECT_CLASSES}"],
+          "searchScope": ["2"],
+          "pagination": ["true"],
+          "editMode": ["READ_ONLY"],
+          "importEnabled": ["true"],
+          "syncRegistrations": ["false"],
+          "batchSizeForSync": ["1000"],
+          "fullSyncPeriod": ["-1"],
+          "changedSyncPeriod": ["-1"],
+          "cachePolicy": ["MAX_LIFESPAN"],
+          "maxLifespan": ["60000"],
+          "trustEmail": ["true"],
+          "validatePasswordPolicy": ["false"],
+          "usePasswordModifyExtendedOp": ["false"],
+          "allowKerberosAuthentication": ["false"],
+          "useKerberosForPasswordAuthentication": ["false"]
+        }
+      }
+    ]
+  }
 }

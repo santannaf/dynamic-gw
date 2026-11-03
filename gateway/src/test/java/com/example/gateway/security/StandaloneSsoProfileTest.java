@@ -58,7 +58,7 @@ class StandaloneSsoProfileTest {
         assertThat(routes.get("anything-route").access()).isEqualTo(new RouteAccess("public", null, null));
         assertThat(routes.get("me-route").access()).isNull();
         assertThat(routes.get("admin-route").access())
-                .isEqualTo(new RouteAccess(null, List.of("role:gateway-admin", "group:tools-admins"), true));
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), true));
         assertThat(routeLocator.size()).isEqualTo(4);
     }
 }

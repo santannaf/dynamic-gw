@@ -4,7 +4,7 @@
 #   PROVIDER=ldap make standalone-sso-up   # e rode este script com PROVIDER=ldap
 # As rotas vêm de gateway/src/main/resources/application-standalone-sso.yaml:
 #   /anything/** pública · /me/** qualquer autenticado · /httpbin/** tools-httpbin
-#   /admin/** gateway-admin (role) ou tools-admins (grupo), com forward-token
+#   /admin/** tools-admins (grupo), com forward-token; /internal/routes só para quem opera o gateway
 set -uo pipefail
 
 HOST_PORT="${HOST_PORT:-8080}"
@@ -82,8 +82,13 @@ if [[ "${PROVIDER}" == "keycloak" ]]; then
     check "forward-token relays the access token" "yes" \
         "$(header Authorization | grep -q '^Bearer ey' && echo yes || echo no)"
 fi
-check "carol reads the v1 route table" "4" \
-    "$(curl -s -b "${WORK}/carol" "${BASE}/internal/routes" | jq '[.routes[] | select(.access != null or .id == "me-route")] | length')"
+check "carol does not operate the gateway" "403" "$(status -b "${WORK}/carol" "${BASE}/internal/routes")"
+
+echo "== dave (gateway-admins)"
+check "dave reaches the authenticated route" "200" "$(login dave "${WORK}/dave" /me/headers)"
+check "dave is not a tool admin" "403" "$(status -b "${WORK}/dave" "${BASE}/admin/headers")"
+check "dave reads the v1 route table" "4" \
+    "$(curl -s -b "${WORK}/dave" "${BASE}/internal/routes" | jq '[.routes[] | select(.access != null or .id == "me-route")] | length')"
 
 if [[ "${PROVIDER}" == "keycloak" ]]; then
     echo "== service account (tools-cli)"
@@ -93,6 +98,9 @@ if [[ "${PROVIDER}" == "keycloak" ]]; then
     check "bearer on an authenticated route" "200" "$(status -H "Authorization: Bearer ${token}" "${BASE}/me/headers")"
     check "backend sees the client id" "tools-cli" "$(header X-Auth-Request-Client-Id)"
     check "bearer without the group" "403" "$(status -H "Authorization: Bearer ${token}" "${BASE}/httpbin/headers")"
+    check "service account with gateway-admin reads the route table" "200" \
+        "$(status -H "Authorization: Bearer ${token}" "${BASE}/internal/routes")"
+    check "operating the gateway opens no tool" "403" "$(status -H "Authorization: Bearer ${token}" "${BASE}/admin/headers")"
 fi
 
 echo "== audit trail"

@@ -2,6 +2,10 @@
 # do gateway. Aplicado por scripts/deploy-sso.sh, que troca __HOST_PORT__
 # pela porta do k3d e cria o ConfigMap do realm e o Secret `sso-secrets`.
 #
+# Usuários e grupos vêm do diretório (User federation, somente leitura, por
+# LDAPS): OpenLDAP do lab ou o AD da POC. No realm só ficam a conta de serviço
+# e as roles do client tools-gateway.
+#
 # Um único issuer público para browser e pods: KC_HOSTNAME fixa o `iss`
 # (http://localhost:<porta>/auth/realms/tools) e BACKCHANNEL_DYNAMIC deixa
 # o gateway falar com o Service interno sem mudar o `iss` dos tokens.
@@ -67,9 +71,18 @@ spec:
             - name: TOOLS_CLI_CLIENT_SECRET
               valueFrom:
                 secretKeyRef: {name: sso-secrets, key: tools-cli-client-secret}
-            - name: TOOLS_DEMO_PASSWORD
+            # Federação do diretório (placeholders ${LDAP_*} do realm): os valores vêm
+            # do ConfigMap e do Secret `keycloak-ldap`, que o deploy-sso.sh monta para o
+            # OpenLDAP do lab (DIRECTORY=openldap) ou para o AD da POC (DIRECTORY=ad).
+            - name: LDAP_BIND_PASSWORD
               valueFrom:
-                secretKeyRef: {name: sso-secrets, key: demo-password}
+                secretKeyRef: {name: keycloak-ldap, key: bind-password}
+            # CA que assina o certificado do diretório (LDAPS). Sem ela, PKIX path building failed.
+            - name: KC_TRUSTSTORE_PATHS
+              value: /opt/keycloak/conf/truststores/ldap-ca.pem
+          envFrom:
+            - configMapRef:
+                name: keycloak-ldap
           readinessProbe:
             httpGet:
               path: /auth/realms/tools/.well-known/openid-configuration
@@ -89,10 +102,20 @@ spec:
             - name: realm
               mountPath: /opt/keycloak/data/import
               readOnly: true
+            - name: ldap-ca
+              mountPath: /opt/keycloak/conf/truststores/ldap-ca.pem
+              subPath: ca.pem
+              readOnly: true
       volumes:
         - name: realm
           configMap:
             name: keycloak-realm-tools
+        - name: ldap-ca
+          secret:
+            secretName: keycloak-ldap
+            items:
+              - key: ca.pem
+                path: ca.pem
 ---
 apiVersion: v1
 kind: Service

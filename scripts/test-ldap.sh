@@ -71,9 +71,12 @@ check "backend sees the verified user" "alice" "$(header X-Auth-Request-User)"
 check "only groups under ou=tools become authorities" "tools-httpbin" "$(header X-Auth-Request-Groups)"
 check "whoami" "group:tools-httpbin" "$(curl -s -b "${WORK}/alice" "${BASE}/_gateway/whoami" | jq -r '.authorities | join(",")')"
 
-echo "== bob, carol, bad passwords"
+echo "== bob, carol, dave, bad passwords"
 check "bob is authenticated but not in the group" "403" "$(form_login bob "${PASSWORD}" "${WORK}/bob" /sso/group/headers)"
-check "carol (tools-admins) reads /internal/routes" "200" "$(form_login carol "${PASSWORD}" "${WORK}/carol" /internal/routes)"
+check "carol (tools-admins) does not operate the gateway" "403" "$(form_login carol "${PASSWORD}" "${WORK}/carol" /internal/routes)"
+check "dave (gateway-admins) reads /internal/routes" "200" "$(form_login dave "${PASSWORD}" "${WORK}/dave" /internal/routes)"
+check "operating the gateway opens no tool" "403" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/dave" "${BASE}/sso/admin/get")"
 check "wrong password -> back to the form with error" "302 ${BASE}/_gateway/login?error" \
     "$(curl -s -o /dev/null -c "${WORK}/x" -b "${WORK}/x" "${BASE}/_gateway/login" && \
        curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -c "${WORK}/x" -b "${WORK}/x" \

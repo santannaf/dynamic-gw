@@ -24,14 +24,14 @@ Depois de gravar, o operator manda o sinal de reload pelo Service do gateway (pu
 
 ## O que já está configurado
 
-| Peça | Arquivo | O que tem |
-|---|---|---|
-| Profile do store, embarcado | `gateway/src/main/resources/application-s3.yaml` | `type: s3`, key `snapshots/routes.yaml`, `poll-interval: 15s`, região `us-east-1` |
-| Profile do provedor, embarcado | `application-keycloak.yaml` ou `application-ldap.yaml` | os mesmos do cenário CRD |
-| Deployment do gateway | `k8s/sso/gateway-s3-keycloak.yaml` ou `k8s/sso/gateway-s3-ldap.yaml` | igual ao do cenário CRD (2 réplicas); muda só o store |
-| Deployment do operator | `k8s/sso/operator-s3.yaml` | publica no bucket em vez da ConfigMap |
-| S3 local | `k8s/s3/minio.yaml` | MinIO com PVC e o bucket criado no startup |
-| Rotas de exemplo | `k8s/samples/routes-sso.yaml` | as mesmas 7 rotas `/sso/*` |
+| Peça                           | Arquivo                                                              | O que tem                                                                         |
+|--------------------------------|----------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| Profile do store, embarcado    | `gateway/src/main/resources/application-s3.yaml`                     | `type: s3`, key `snapshots/routes.yaml`, `poll-interval: 15s`, região `us-east-1` |
+| Profile do provedor, embarcado | `application-keycloak.yaml` ou `application-ldap.yaml`               | os mesmos do cenário CRD                                                          |
+| Deployment do gateway          | `k8s/sso/gateway-s3-keycloak.yaml` ou `k8s/sso/gateway-s3-ldap.yaml` | igual ao do cenário CRD (2 réplicas); muda só o store                             |
+| Deployment do operator         | `k8s/sso/operator-s3.yaml`                                           | publica no bucket em vez da ConfigMap                                             |
+| S3 local                       | `k8s/s3/minio.yaml`                                                  | MinIO com PVC e o bucket criado no startup                                        |
+| Rotas de exemplo               | `k8s/samples/routes-sso.yaml`                                        | as mesmas 7 rotas `/sso/*`                                                        |
 
 **Profiles ativos:** `SPRING_PROFILES_ACTIVE=s3,keycloak` ou `SPRING_PROFILES_ACTIVE=s3,ldap`.
 
@@ -39,30 +39,30 @@ Depois de gravar, o operator manda o sinal de reload pelo Service do gateway (pu
 
 O store (`gateway.routes.store.…` no gateway, `operator.routes.store.…` no operator):
 
-| Propriedade | Profile | MinIO (lab) | AWS |
-|---|---|---|---|
-| `type` | `s3` | | |
-| `s3.bucket` | vazio, vem do ambiente | `dynamic-gateway-routes` | o seu bucket (`S3_BUCKET`) |
-| `s3.key` | `snapshots/routes.yaml` | | |
-| `s3.region` | `us-east-1` | | `S3_REGION` |
-| `s3.endpoint` | vazio (AWS) | `http://minio.platform.svc.cluster.local:9000` | vazio |
-| `s3.path-style-access` | `false` | `true` | `false` |
-| `s3.poll-interval` (só o gateway) | `15s` | | |
-| credenciais (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) | `envFrom` de um Secret | `minio-credentials` (gerado) | `aws-credentials` (você cria) |
+| Propriedade                                                 | Profile                 | MinIO (lab)                                    | AWS                           |
+|-------------------------------------------------------------|-------------------------|------------------------------------------------|-------------------------------|
+| `type`                                                      | `s3`                    |                                                |                               |
+| `s3.bucket`                                                 | vazio, vem do ambiente  | `dynamic-gateway-routes`                       | o seu bucket (`S3_BUCKET`)    |
+| `s3.key`                                                    | `snapshots/routes.yaml` |                                                |                               |
+| `s3.region`                                                 | `us-east-1`             |                                                | `S3_REGION`                   |
+| `s3.endpoint`                                               | vazio (AWS)             | `http://minio.platform.svc.cluster.local:9000` | vazio                         |
+| `s3.path-style-access`                                      | `false`                 | `true`                                         | `false`                       |
+| `s3.poll-interval` (só o gateway)                           | `15s`                   |                                                |                               |
+| credenciais (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) | `envFrom` de um Secret  | `minio-credentials` (gerado)                   | `aws-credentials` (você cria) |
 
 A segurança (`gateway.security.…` e `gateway.audit.…`) é a mesma do cenário CRD:
 
-| Propriedade (`gateway.…`) | `keycloak` | `ldap` |
-|---|---|---|
-| `security.enabled` / `audit.enabled` | `true` / `true` | `true` / `true` |
-| `security.default-access` | `authenticated` | `authenticated` |
-| `security.oidc.issuer` | `${public-base-url}/auth/realms/tools` | — |
-| `security.oidc.internal-issuer` | `http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools` | — |
-| `security.oidc.client-id` / `audience` | `tools-gateway` | — |
-| `security.ldap.url` | — | `ldap://openldap.platform.svc.cluster.local:389` |
-| `security.ldap.bind-dn` | — | `cn=readonly,dc=tools,dc=local` |
-| `security.ldap.user-search` / `group-search` | — | `ou=people,…` `(uid={0})` / `ou=tools,…` `(member={0})` |
-| `security.internal.any-of` | `role:gateway-admin` | `group:tools-admins` |
+| Propriedade (`gateway.…`)                    | `keycloak`                                                          | `ldap`                                                  |
+|----------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------------|
+| `security.enabled` / `audit.enabled`         | `true` / `true`                                                     | `true` / `true`                                         |
+| `security.default-access`                    | `authenticated`                                                     | `authenticated`                                         |
+| `security.oidc.issuer`                       | `${public-base-url}/auth/realms/tools`                              | —                                                       |
+| `security.oidc.internal-issuer`              | `http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools` | —                                                       |
+| `security.oidc.client-id` / `audience`       | `tools-gateway`                                                     | —                                                       |
+| `security.ldap.url`                          | —                                                                   | `ldap://openldap.platform.svc.cluster.local:389`        |
+| `security.ldap.bind-dn`                      | —                                                                   | `cn=readonly,dc=tools,dc=local`                         |
+| `security.ldap.user-search` / `group-search` | —                                                                   | `ou=people,…` `(uid={0})` / `ou=tools,…` `(member={0})` |
+| `security.internal.any-of`                   | `role:gateway-admin`                                                | `group:gateway-admins`                                  |
 
 O manifest do gateway passa o bucket, a região, o endpoint, o path-style, `SPRING_PROFILES_ACTIVE`, `GATEWAY_SECURITY_PUBLIC_BASE_URL` e os segredos (`SESSION_KEYS_0_*`, mais `OIDC_CLIENT_SECRET` ou `LDAP_BIND_PASSWORD`), como na tabela do [cenário CRD](SSO_CENARIO_CRD.md#propriedades).
 
@@ -98,8 +98,8 @@ O caminho com AWS não foi exercitado no lab, porque não havia conta. O código
 ## Testar
 
 ```bash
-make s3-sso-test                 # passed=33 failed=0
-PROVIDER=ldap make s3-sso-test   # passed=22 failed=0
+make s3-sso-test                 # passed=45 failed=0
+PROVIDER=ldap make s3-sso-test   # passed=24 failed=0
 ```
 
 São os mesmos e2e do cenário CRD, com uma checagem a mais: o log do gateway prova que as rotas vieram de `s3://`. À mão:

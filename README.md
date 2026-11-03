@@ -34,16 +34,16 @@ O backend de persistência neste POC é um `ConfigMap` do Kubernetes (com gzip +
 
 Duas formas de rodar o gateway, decididas por uma única propriedade (`gateway.routes.store.type`):
 
-| Característica                      | **v1 standalone**                            | **v2 com operator**                                                  |
-|-------------------------------------|----------------------------------------------|----------------------------------------------------------------------|
-| Rotas declaradas em                 | `application.yaml` do gateway                | CRDs `GatewayRoute` no cluster                                       |
-| CRD instalado                       | ❌                                           | ✅                                                                   |
-| Operator deployado                  | ❌                                           | ✅                                                                   |
-| RBAC pra `ConfigMap`-watch          | ❌ não precisa                               | ✅                                                                   |
-| Trocar rota sem restart             | ❌ exige rollout                             | ✅ ~250 ms via watcher                                               |
-| Multi-time (cada um aplicando CRDs) | ❌                                           | ✅                                                                   |
-| Manifests deployados                | `k8s/gateway-standalone/`                    | `k8s/namespace.yaml` + `k8s/crd/` + `k8s/operator/` + `k8s/gateway/` |
-| Guia detalhado                      | [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md) | [`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md)                           |
+| Característica                      | **v1 standalone**                            | **v2 com operator**                                                    |
+|-------------------------------------|----------------------------------------------|------------------------------------------------------------------------|
+| Rotas declaradas em                 | `application.yaml` do gateway                | CRDs `GatewayRoute` no cluster                                         |
+| CRD instalado                       | ❌                                           | ✅                                                                     |
+| Operator deployado                  | ❌                                           | ✅                                                                     |
+| RBAC pra `ConfigMap`-watch          | ❌ não precisa                               | ✅                                                                     |
+| Trocar rota sem restart             | ❌ exige rollout                             | ✅ ~250 ms via watcher                                                 |
+| Multi-time (cada um aplicando CRDs) | ❌                                           | ✅                                                                     |
+| Manifests deployados                | `k8s/gateway-standalone/`                    | `k8s/namespace.yaml` + `k8s/crd/` + `k8s/operator/` + `k8s/gateway/`   |
+| Guia detalhado                      | [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md) | [`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md)                             |
 | Hot-reload via S3                   | –                                            | [`TESTE_S3.md`](TESTE_S3.md), [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) |
 
 Os dois modos compartilham 100% do pipeline downstream (`RouteConfigEntry` → `RouteDefinitionMapper` → `FastRouteCompiler` → `InMemoryDynamicRouteLocator`). Só a fonte do snapshot muda — `PropertiesRouteConfigProvider` vs `ConfigMapRouteConfigProvider` vs `S3RouteConfigProvider`.
@@ -109,32 +109,32 @@ O módulo `shared` propositadamente **não depende** de nada Kubernetes- ou AWS-
 
 Versões declaradas nos `build.gradle` (out/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`.
 
-| Componente | Versão | Observação |
-|---|---|---|
-| Java | 25 | toolchain do Gradle |
-| Gradle | 9.5.1 | wrapper |
-| Spring Boot | 4.1.2 | plugin no `build.gradle` raiz e BOM nos módulos |
-| Spring Cloud | 2025.1.4 | Spring Cloud Gateway Server WebFlux 5.0.4 |
-| Spring Framework / Spring Security | 7.0.10 / 7.1.2 | pelo BOM do Boot |
-| Netty | 4.2.19 | pelo BOM do Boot; o binário nativo precisa de `-H:+SharedArenaSupport` |
-| Jackson | 3.2.4 (anotações 2.22) | sobrescreve o BOM do Boot (3.1) porque a Fabric8 8 exige 3.2 |
-| Fabric8 Kubernetes Client | 8.0.0 | gateway e operator; cliente HTTP Vert.x 5 |
-| AWS SDK v2 | 2.57.4 | S3 com `url-connection-client` |
-| UnboundID LDAP SDK | 7.0.5 | pelo BOM do Boot (provider `ldap`) |
-| GraalVM Native Build Tools | 1.1.17 | plugin Gradle |
-| Spring Dependency Management | 1.1.7 | plugin Gradle |
-| Testes | JUnit 6.0.3, Mockito 5.24.0, AssertJ 3.27.7, Awaitility 4.3.0 | JUnit e AssertJ pelo BOM do Boot; o `shared` fixa as mesmas |
+| Componente                         | Versão                                                        | Observação                                                             |
+|------------------------------------|---------------------------------------------------------------|------------------------------------------------------------------------|
+| Java                               | 25                                                            | toolchain do Gradle                                                    |
+| Gradle                             | 9.5.1                                                         | wrapper                                                                |
+| Spring Boot                        | 4.1.2                                                         | plugin no `build.gradle` raiz e BOM nos módulos                        |
+| Spring Cloud                       | 2025.1.4                                                      | Spring Cloud Gateway Server WebFlux 5.0.4                              |
+| Spring Framework / Spring Security | 7.0.10 / 7.1.2                                                | pelo BOM do Boot                                                       |
+| Netty                              | 4.2.19                                                        | pelo BOM do Boot; o binário nativo precisa de `-H:+SharedArenaSupport` |
+| Jackson                            | 3.2.4 (anotações 2.22)                                        | sobrescreve o BOM do Boot (3.1) porque a Fabric8 8 exige 3.2           |
+| Fabric8 Kubernetes Client          | 8.0.0                                                         | gateway e operator; cliente HTTP Vert.x 5                              |
+| AWS SDK v2                         | 2.57.4                                                        | S3 com `url-connection-client`                                         |
+| UnboundID LDAP SDK                 | 7.0.5                                                         | pelo BOM do Boot (provider `ldap`)                                     |
+| GraalVM Native Build Tools         | 1.1.17                                                        | plugin Gradle                                                          |
+| Spring Dependency Management       | 1.1.7                                                         | plugin Gradle                                                          |
+| Testes                             | JUnit 6.0.3, Mockito 5.24.0, AssertJ 3.27.7, Awaitility 4.3.0 | JUnit e AssertJ pelo BOM do Boot; o `shared` fixa as mesmas            |
 
-| Imagem | Versão | Uso |
-|---|---|---|
-| `ghcr.io/graalvm/native-image-community` | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway |
-| `debian:stable-slim` | 13 | runtime do gateway (build com `--pull`) |
-| `eclipse-temurin` | 25-jre (25.0.4) | runtime do operator (build com `--pull`) |
-| `quay.io/keycloak/keycloak` | 26.1 | IdP do lab (`k8s/sso/`) |
-| `osixia/openldap` | 1.5.0 | diretório do lab, no lugar do AD |
-| `bitnamilegacy/minio` | 2025.5.24 | S3 local do lab |
-| `nginx` | 1.27-alpine | nginx-lb, a borda |
-| `mccutchen/go-httpbin` | latest | backend de exemplo |
+| Imagem                                   | Versão                 | Uso                                      |
+|------------------------------------------|------------------------|------------------------------------------|
+| `ghcr.io/graalvm/native-image-community` | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway     |
+| `debian:stable-slim`                     | 13                     | runtime do gateway (build com `--pull`)  |
+| `eclipse-temurin`                        | 25-jre (25.0.4)        | runtime do operator (build com `--pull`) |
+| `quay.io/keycloak/keycloak`              | 26.1                   | IdP do lab (`k8s/sso/`)                  |
+| `osixia/openldap`                        | 1.5.0                  | diretório do lab, no lugar do AD         |
+| `bitnamilegacy/minio`                    | 2025.5.24              | S3 local do lab                          |
+| `nginx`                                  | 1.27-alpine            | nginx-lb, a borda                        |
+| `mccutchen/go-httpbin`                   | latest                 | backend de exemplo                       |
 
 ---
 
@@ -619,7 +619,7 @@ spec:
 - O backend recebe `X-Auth-Request-User`, `-Email`, `-Subject`, `-Groups`, `-Roles`, `-Authorities` (todas as permissões em `<tipo>:<nome>`) e `-Client-Id` para contas de serviço. Headers com esse prefixo vindos de fora são sempre descartados, e o cookie de sessão do gateway nunca é repassado.
 - Endpoints do gateway ficam sob `/_gateway/` (`login`, `login/start`, `logout`, `whoami`, início/callback OIDC); o operator rejeita rotas nesse prefixo.
 - Front estático em outra origem: `gateway.security.front-origins` libera CORS com credenciais e o retorno depois do login.
-- `GET /internal/routes` exige `gateway.security.internal.any-of` (default `role:gateway-admin`). `POST /internal/routes/reload` continua aberto in-cluster (o operator chama pelo Service) e o nginx-lb devolve 403 para quem vem de fora.
+- `GET /internal/routes` exige `gateway.security.internal.any-of` (default `role:gateway-admin`). É permissão de operação: não abre rota de ferramenta, e grupo de ferramenta não abre `/internal/routes`. `POST /internal/routes/reload` continua aberto in-cluster (o operator chama pelo Service) e o nginx-lb devolve 403 para quem vem de fora.
 
 ### Auditoria
 
@@ -653,8 +653,8 @@ rules:
 ```bash
 HOST_PORT=18080 make cluster        # a porta precisa estar livre: é ela que entra no issuer e no redirect
 make load-images && make deploy     # plataforma v2
-HOST_PORT=18080 make sso-up         # Keycloak (realm tools) + gateway com provider=keycloak
-HOST_PORT=18080 make sso-test       # e2e: login, bearer, multi-réplica, logout, auditoria
+HOST_PORT=18080 make sso-up         # OpenLDAP + Keycloak (realm tools) federando por LDAPS + gateway com provider=keycloak
+HOST_PORT=18080 make sso-test       # e2e: federação, login, operação x negócio, bearer, multi-réplica, logout, auditoria
 
 HOST_PORT=18080 make ldap-up        # OpenLDAP no lugar do AD + gateway com provider=ldap
 HOST_PORT=18080 make ldap-test
@@ -690,11 +690,20 @@ A configuração já vem pronta em profiles embarcados na imagem e combináveis:
 | S3 (v2) | `GatewayRoute` → objeto S3 | `s3,keycloak` | `s3,ldap` | [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) |
 | Properties (v1) | `application-standalone-sso.yaml`, na imagem | `standalone-sso,keycloak` | `standalone-sso,ldap` | [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md) |
 
-Usuários locais: `alice` (tools-httpbin), `bob` (sem grupo), `carol` (tools-admins). A senha é gerada no Secret `sso-secrets` e impressa pelo `sso-up`. Detalhes manuais em [`TESTE_SSO.md`](TESTE_SSO.md).
+Usuários do diretório do lab (OpenLDAP no lugar do AD, o mesmo para o Keycloak e para o provider `ldap`): `alice` (tools-httpbin), `bob` (sem grupo), `carol` (tools-admins, tools-httpbin) e `dave` (gateway-admins: opera o gateway, sem acesso às ferramentas). A senha é gerada no Secret `sso-secrets` e impressa pelo `sso-up`. No Keycloak, nenhuma pessoa é cadastrada no realm: ficam a conta de serviço `tools-cli` e a role `gateway-admin`, do client `tools-gateway` (nunca do realm), dada ao grupo `gateway-admins`. O modelo e o porquê estão em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#6-modelo-de-roles-operar-o-gateway-não-é-usar-as-ferramentas); o passo a passo manual, em [`TESTE_SSO.md`](TESTE_SSO.md).
 
 ### Ligando no AD de verdade
 
-- **Via Keycloak** (`provider=keycloak`): no realm, *User federation → LDAP* apontando para o AD (com Kerberos/SPNEGO se quiser login transparente) e um mapper *group-ldap-mapper* restrito à OU da aplicação. Os grupos chegam no claim `groups`; nada muda no gateway.
+- **Via Keycloak** (`provider=keycloak`): o realm do lab já federa o diretório como faria com o AD: *User federation* somente leitura por LDAPS, grupos só da OU da aplicação (aninhados, no AD), *MSAD account controls* e cache de 1 min. Para a POC, o mesmo `make sso-up` aponta para o AD de verdade:
+
+  ```bash
+  DIRECTORY=ad LDAP_URL=ldaps://ad.corp.local:636 \
+  LDAP_BIND_DN='CN=svc-tools-gateway,OU=Services,DC=corp,DC=local' LDAP_BIND_PASSWORD='…' \
+  LDAP_USERS_DN='OU=Users,DC=corp,DC=local' LDAP_GROUPS_DN='OU=Tools,OU=Groups,DC=corp,DC=local' \
+  LDAP_CA_FILE=./ca-corporativa.pem HOST_PORT=18080 make sso-up
+  ```
+
+  Os grupos chegam no claim `groups`; nada muda no gateway. Configuração, checklist com o IDM e Kerberos em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#7-keycloak-com-o-ad-de-verdade-poc).
 - **Direto** (`provider=ldap`):
 
 ```yaml

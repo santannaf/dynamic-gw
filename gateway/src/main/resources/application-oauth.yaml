@@ -29,8 +29,10 @@ gateway:
     authorities:
       group-claims:
         - groups
+      # No Keycloak, as roles do client da API (o mesmo nome do audience). Role de
+      # realm fica de fora: vale para o realm inteiro, não só para esta API.
       role-claims:
-        - realm_access.roles
+        - resource_access.tools-gateway.roles
       # Tipo scope: a rota declara scope:<nome>. O claim vem como texto separado por espaço.
       claims:
         scope:
