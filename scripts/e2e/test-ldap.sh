@@ -113,8 +113,12 @@ printf 'dn: cn=tools-httpbin,ou=tools,dc=tools,dc=local\nchangetype: modify\nadd
 kubectl -n "${NAMESPACE}" scale deployment/dynamic-gateway --replicas=2 >/dev/null
 
 echo "== logout"
+copy="$(awk '$6 == "GW_SESSION" {print $7}' "${WORK}/alice")"
+whoami_codes() { for _ in 1 2 3 4 5 6; do printf '%s ' "$(curl -s -o /dev/null -w '%{http_code}' -H "Cookie: GW_SESSION=${copy}" "${BASE}/_gateway/whoami")"; done; }
+check "before the logout a copy of the cookie works on every replica" "200 200 200 200 200 200 " "$(whoami_codes)"
 check "logout returns to the login page" "302 ${BASE}/_gateway/login?logout" \
     "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "${WORK}/alice" -c "${WORK}/alice" "${BASE}/_gateway/logout")"
+check "after the logout the copy works on no replica (the cookie is the whole session)" "401 401 401 401 401 401 " "$(whoami_codes)"
 check "after logout the route asks for login again" "401" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/alice" "${BASE}/sso/group/get")"
 

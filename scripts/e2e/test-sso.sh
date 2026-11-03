@@ -157,9 +157,17 @@ check "external reload is blocked by nginx-lb" "403" \
     "$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/internal/routes/reload")"
 
 echo "== logout"
+# A copy of the cookie, kept like Postman keeps it. Before the logout it works on every
+# replica (and each one caches the session); after it, on none.
+copy="$(awk '$6 == "GW_SESSION" {print $7}' "${WORK}/alice")"
+whoami_codes() { for _ in 1 2 3 4 5 6; do printf '%s ' "$(curl -s -o /dev/null -w '%{http_code}' -H "Cookie: GW_SESSION=${copy}" "${BASE}/_gateway/whoami")"; done; }
+check "before the logout the copy works on every replica" "200 200 200 200 200 200 " "$(whoami_codes)"
 logout="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "${WORK}/alice" -c "${WORK}/alice" "${BASE}/_gateway/logout")"
 check "logout goes to Keycloak end-session" "302" "${logout%% *}"
-curl -s -L -o /dev/null -b "${WORK}/alice" -c "${WORK}/alice" "${logout#* }"
+landing="$(curl -s -L -o "${WORK}/landing" -w '%{http_code} %{url_effective}' -b "${WORK}/alice" -c "${WORK}/alice" "${logout#* }")"
+check "Keycloak sends the browser back to the gateway's logged-out page" "200 ${BASE}/_gateway/logged-out" "${landing}"
+check "the page says the session ended" "yes" "$(grep -q 'Sessão encerrada' "${WORK}/landing" && echo yes || echo no)"
+check "after the logout the copy works on no replica" "401 401 401 401 401 401 " "$(whoami_codes)"
 page="$(curl -s -L -b "${WORK}/alice" -c "${WORK}/alice" -H 'Accept: text/html' "${BASE}/sso/group/headers")"
 check "after logout the login form is back" "yes" "$(printf '%s' "${page}" | grep -q 'login-actions/authenticate' && echo yes || echo no)"
 

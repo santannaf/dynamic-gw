@@ -1,8 +1,10 @@
 package com.example.gateway.security.keycloak;
 
+import com.example.gateway.security.session.SessionRevocations;
 import com.example.gateway.access.AccessAttributes;
 import com.example.gateway.access.AccessProblem;
 import com.example.gateway.access.GatewayIdentity;
+import com.example.gateway.security.GatewayEndpointsController;
 import com.example.gateway.security.GatewaySecurityProperties;
 import com.example.gateway.security.session.GatewaySessionManager;
 import com.example.gateway.security.session.ProviderUnavailableException;
@@ -58,9 +60,12 @@ public class KeycloakSessionManager implements GatewaySessionManager {
     private final String endSessionUri;
     private final String clientId;
     private final String postLogoutRedirectUri;
+    private final SessionRevocations revocations;
+    private final Duration revokedFor;
 
     public KeycloakSessionManager(SessionCookieCodec codec,
                                   SessionCookies cookies,
+                                  SessionRevocations revocations,
                                   ReactiveJwtDecoder accessTokenDecoder,
                                   KeycloakTokenClient tokenClient,
                                   TokenIdentities identities,
@@ -68,6 +73,8 @@ public class KeycloakSessionManager implements GatewaySessionManager {
                                   Clock clock) {
         this.codec = codec;
         this.cookies = cookies;
+        this.revocations = revocations;
+        this.revokedFor = properties.getSession().getMaxAge();
         this.accessTokenDecoder = accessTokenDecoder;
         this.tokenClient = tokenClient;
         this.identities = identities;
@@ -76,7 +83,7 @@ public class KeycloakSessionManager implements GatewaySessionManager {
         this.cookieName = properties.getSession().getCookieName();
         this.endSessionUri = properties.getOidc().getIssuer() + "/protocol/openid-connect/logout";
         this.clientId = properties.getOidc().getClientId();
-        this.postLogoutRedirectUri = properties.getPublicBaseUrl() + "/";
+        this.postLogoutRedirectUri = properties.getPublicBaseUrl() + GatewayEndpointsController.LOGGED_OUT_PATH;
     }
 
     /** Called once the OIDC callback succeeded: caches the session and sets the cookie. */
@@ -105,6 +112,12 @@ public class KeycloakSessionManager implements GatewaySessionManager {
             return Mono.empty();
         }
         String sid = text(payload.get(), "sid");
+        if (revocations.isRevoked(sid)) {
+            cache.evict(sid);
+            cookies.expire(exchange, cookieName, "/");
+            exchange.getAttributes().put(AccessAttributes.PROBLEM, AccessProblem.SESSION_EXPIRED);
+            return Mono.empty();
+        }
         return cache.getOrLoad(sid, () -> refresh(exchange, payload.get()))
                 .map(CachedSession::identity)
                 .onErrorResume(SessionRejectedException.class, e -> {
@@ -138,8 +151,14 @@ public class KeycloakSessionManager implements GatewaySessionManager {
                     .ifPresent(idToken -> target.queryParam("id_token_hint", idToken));
             cache.evict(sid);
         }
-        return tokenClient.logout(text(payload.get(), "rt"))
+        Mono<Void> revoke = sid == null ? Mono.empty() : revocations.revoke(sid, clock.instant().plus(revokedFor));
+        return Mono.when(revoke, tokenClient.logout(text(payload.get(), "rt")))
                 .then(Mono.fromSupplier(() -> target.encode().build().toUri()));
+    }
+
+    @Override
+    public SessionRevocations revocations() {
+        return revocations;
     }
 
     private Mono<SessionCache.Loaded<CachedSession>> refresh(ServerWebExchange exchange, ObjectNode payload) {

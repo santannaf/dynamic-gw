@@ -18,6 +18,8 @@ public class GatewayRuntimeHints implements RuntimeHintsRegistrar {
 
     @Override
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+        // The favicon the gateway answers when no route serves one (Spring Boot's static resources).
+        hints.resources().registerPattern("static/favicon.ico");
         hints.reflection()
                 .registerType(RouteConfigSnapshot.class,
                         MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,

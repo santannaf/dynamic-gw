@@ -215,6 +215,8 @@ public class GatewaySecurityProperties {
         private int cacheMaxEntries = 10_000;
         /** Absolute lifetime of an LDAP session; Keycloak sessions follow the realm. */
         private Duration maxAge = Duration.ofHours(10);
+        /** host:port that resolves to every gateway replica (the headless Service), told about each logout. */
+        private String peers = "";
 
         public String getCookieName() { return cookieName; }
 
@@ -239,6 +241,10 @@ public class GatewaySecurityProperties {
         public Duration getMaxAge() { return maxAge; }
 
         public void setMaxAge(Duration maxAge) { this.maxAge = maxAge; }
+
+        public String getPeers() { return peers; }
+
+        public void setPeers(String peers) { this.peers = peers; }
 
         public static class Key {
             private String id;

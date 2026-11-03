@@ -45,6 +45,10 @@ gateway:
       # Tempo máximo de uma sessão LDAP (não existe sessão central para encerrar).
       max-age: 10h
       cache-max-entries: 10000
+      # O logout avisa as outras réplicas por aqui (Service headless, um endereço por pod),
+      # para a cópia do cookie parar de valer em todas na hora. Fora do Kubernetes, não resolve
+      # e o logout vale só nesta réplica: GATEWAY_SECURITY_SESSION_PEERS= desliga.
+      peers: dynamic-gateway-headless:8080
     ldap:
       url: ldap://openldap.platform.svc.cluster.local:389
       start-tls: false

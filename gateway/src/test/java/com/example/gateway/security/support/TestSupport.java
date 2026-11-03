@@ -1,5 +1,7 @@
 package com.example.gateway.security.support;
 
+import com.example.gateway.security.session.SessionCookieCodec;
+import com.example.gateway.security.GatewaySecurityProperties;
 import com.example.gateway.audit.AuditEvent;
 import com.example.gateway.audit.AuditEventSink;
 import org.springframework.http.ResponseCookie;
@@ -90,6 +92,27 @@ public final class TestSupport {
         public void clear() {
             events.clear();
         }
+    }
+
+    /** The session codec of the tests' configuration (key k1). */
+    public static SessionCookieCodec codec(String keyId, String secret) {
+        GatewaySecurityProperties.Session.Key key = new GatewaySecurityProperties.Session.Key();
+        key.setId(keyId);
+        key.setSecret(secret);
+        return new SessionCookieCodec(List.of(key));
+    }
+
+    public static String sidOf(String sessionCookie) {
+        return codec("k1", KEY_1).decode(sessionCookie).orElseThrow().get("sid").asString();
+    }
+
+    /** The notice a replica sends the others after a logout, written with the given key. */
+    public static String revocationNotice(SessionCookieCodec codec, String sid, Instant sentAt) {
+        return codec.encode(SessionCookieCodec.newPayload()
+                .put("t", "revoke")
+                .put("sid", sid)
+                .put("until", sentAt.plus(Duration.ofHours(1)).getEpochSecond())
+                .put("at", sentAt.getEpochSecond()));
     }
 
     /** Clock tests can move forward to expire cached sessions. */

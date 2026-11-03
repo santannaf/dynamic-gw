@@ -55,13 +55,14 @@ public final class KeycloakSecurity implements IdentityChannel {
         this.registrations = clientRegistrations(properties);
         this.accessTokenDecoder = accessTokenDecoder(properties.getOidc());
         this.identities = TokenIdentities.from(properties.getAuthorities(), properties.getOidc().getClientId());
-        this.sessionManager = new KeycloakSessionManager(session.codec(), session.cookies(), accessTokenDecoder,
+        this.sessionManager = new KeycloakSessionManager(session.codec(), session.cookies(), session.revocations(),
+                accessTokenDecoder,
                 tokenClient(properties.getOidc()), identities, properties, clock);
         this.browserLogin = new BrowserLoginHandler(session, loginPath(), new BearerChallengeHandler());
     }
 
     public static KeycloakSecurity create(GatewaySecurityProperties properties, Clock clock) {
-        BrowserSession session = BrowserSession.from(properties);
+        BrowserSession session = BrowserSession.from(properties, clock);
         GatewaySecurityProperties.Oidc oidc = properties.getOidc();
         SecurityChains.requireText(oidc.getIssuer(), "gateway.security.oidc.issuer");
         SecurityChains.requireText(oidc.getClientId(), "gateway.security.oidc.client-id");

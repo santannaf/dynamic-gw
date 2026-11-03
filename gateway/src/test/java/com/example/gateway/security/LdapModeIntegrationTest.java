@@ -267,6 +267,8 @@ class LdapModeIntegrationTest {
 
         assertThat(result.getResponseHeaders().getLocation()).hasToString("/_gateway/login?logout");
         assertThat(TestSupport.expires(result, "GW_SESSION")).isTrue();
+        // The cookie is the whole LDAP session: a copy kept from before the logout must not work.
+        client.get().uri("/_gateway/whoami").cookie("GW_SESSION", session).exchange().expectStatus().isUnauthorized();
     }
 
     private WebTestClient.ResponseSpec postLogin(String username, String password) {

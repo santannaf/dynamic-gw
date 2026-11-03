@@ -118,7 +118,10 @@ O prefixo `/_gateway/` é do gateway, e o operator rejeita rotas sob ele.
 |--------------------------------------------|----------------------------------------------------------------|
 | `GET /_gateway/whoami`                     | Identidade atual, ou 401                                       |
 | `GET /_gateway/login/start?returnTo=<url>` | Inicia o login e volta para `returnTo`. 404 em canal sem login |
-| `GET` ou `POST /_gateway/logout`           | Encerra a sessão. 404 em canal sem sessão                      |
+| `GET` ou `POST /_gateway/logout`           | Encerra a sessão (no Keycloak, também a de lá). 404 em canal sem sessão |
+| `GET /_gateway/logged-out`                 | Página de sessão encerrada, para onde o Keycloak devolve o browser depois do logout, com o link para entrar de novo. Fica fora da auditoria, porque o logout já foi auditado. 404 em canal sem sessão |
+
+**Logout em todas as réplicas.** Cada réplica guarda a sessão em cache, e a sessão do LDAP é só o cookie. Sem aviso, uma cópia do cookie continuaria valendo nas outras réplicas depois do logout. A réplica que atende o logout recusa a sessão e manda um aviso a todos os endereços de `gateway.security.session.peers` (o Service headless `dynamic-gateway-headless:8080`, um endereço por pod), em `POST /internal/sessions/revoked`. O aviso vai cifrado com a chave da sessão, então só uma réplica escreve um válido. O nginx-lb recusa esse caminho de fora, como o reload, e a auditoria registra `event.action=internal.sessions.revoke`. Uma réplica que sobe depois do logout não recebe o aviso: no Keycloak, quem recusa a sessão é o próprio Keycloak; no LDAP, a cópia do cookie vale nela até expirar.
 
 ### Auditoria
 
@@ -200,7 +203,7 @@ Não use `@ConditionalOnProperty` para escolher o canal: o AOT avalia a condiç�
 
 Para um gateway que já tem sessão, como o SACA ou o MIB:
 
-1. Implemente `GatewaySessionManager`. O `resolve` lê a sessão do canal e devolve a `GatewayIdentity`, e o `logout` encerra a sessão e diz para onde ir.
+1. Implemente `GatewaySessionManager`. O `resolve` lê a sessão do canal e devolve a `GatewayIdentity`, e o `logout` encerra a sessão e diz para onde ir. Use o `SessionRevocations` do `BrowserSession`: o `logout` chama `revoke`, e o `resolve` recusa o que `isRevoked` disser. É ele que faz o logout valer em todas as réplicas.
 2. No `configure`, use `.securityContextRepository(new SessionSecurityContextRepository(sessionManager))`.
 3. Em `gatewayCookieNames()`, liste os cookies que só o gateway lê.
 

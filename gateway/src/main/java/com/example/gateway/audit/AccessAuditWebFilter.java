@@ -57,7 +57,8 @@ public class AccessAuditWebFilter implements WebFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
-        if (path.startsWith("/actuator/health")) {
+        // The page after the logout is static; the logout itself is audited (auth.logout).
+        if (path.startsWith("/actuator/health") || path.equals("/_gateway/logged-out")) {
             return chain.filter(exchange);
         }
         Instant start = clock.instant();
@@ -68,7 +69,9 @@ public class AccessAuditWebFilter implements WebFilter, Ordered {
 
     private void emitSafely(ServerWebExchange exchange, Instant start, long durationNanos, SignalType signal) {
         boolean routed = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR) != null;
-        if (CorsUtils.isPreFlightRequest(exchange.getRequest()) && !routed) {
+        // A preflight, or the favicon the browser asks for on its own, says nothing about access.
+        if (!routed && (CorsUtils.isPreFlightRequest(exchange.getRequest())
+                || "/favicon.ico".equals(exchange.getRequest().getPath().value()))) {
             return;
         }
         try {
@@ -130,6 +133,9 @@ public class AccessAuditWebFilter implements WebFilter, Ordered {
         }
         if (path.startsWith("/_gateway/login")) {
             return "auth.login";
+        }
+        if (path.equals("/internal/sessions/revoked")) {
+            return "internal.sessions.revoke";
         }
         if (path.equals("/internal/routes/reload") && HttpMethod.POST.equals(request.getMethod())) {
             return "internal.routes.reload";

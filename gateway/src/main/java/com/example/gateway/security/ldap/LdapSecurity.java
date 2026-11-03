@@ -40,12 +40,13 @@ public final class LdapSecurity implements IdentityChannel {
         GatewaySecurityProperties.Ldap.LoginAttempts attempts = properties.getLdap().getLoginAttempts();
         this.limiter = new LoginAttemptLimiter(attempts.getMaxFailures(), attempts.getMaxFailuresPerClient(),
                 attempts.getWindow(), clock);
-        this.sessionManager = new LdapSessionManager(session.codec(), session.cookies(), directory, properties, clock);
+        this.sessionManager = new LdapSessionManager(session.codec(), session.cookies(), session.revocations(), directory,
+                properties, clock);
         this.browserLogin = new BrowserLoginHandler(session, LdapLogin.LOGIN_PATH, UnauthenticatedHandler.PLAIN_401);
     }
 
     public static LdapSecurity create(GatewaySecurityProperties properties, Clock clock) {
-        BrowserSession session = BrowserSession.from(properties);
+        BrowserSession session = BrowserSession.from(properties, clock);
         GatewaySecurityProperties.Ldap ldap = properties.getLdap();
         SecurityChains.requireText(ldap.getUrl(), "gateway.security.ldap.url");
         SecurityChains.requireText(ldap.getBindDn(), "gateway.security.ldap.bind-dn");

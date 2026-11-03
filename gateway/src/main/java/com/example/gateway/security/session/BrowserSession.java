@@ -1,5 +1,7 @@
 package com.example.gateway.security.session;
 
+import org.springframework.web.reactive.function.client.WebClient;
+import java.time.Clock;
 import com.example.gateway.security.GatewaySecurityProperties;
 import com.example.gateway.security.ReturnTargets;
 import com.example.gateway.security.SecurityChains;
@@ -16,7 +18,7 @@ import java.util.Set;
 
 /** What the channels with a browser session share: the session cookie and the URL saved before login. */
 public record BrowserSession(SessionCookieCodec codec, SessionCookies cookies, ServerRequestCache requestCache,
-                             ReturnTargets returnTargets, Set<String> cookieNames) {
+                             ReturnTargets returnTargets, Set<String> cookieNames, SessionRevocations revocations) {
 
     /** Name of the cookie {@link CookieServerRequestCache} uses for the URL saved before login. */
     private static final String SAVED_REQUEST_COOKIE = "REDIRECT_URI";
@@ -25,15 +27,17 @@ public record BrowserSession(SessionCookieCodec codec, SessionCookies cookies, S
     private static final String RETURN_TARGET_COOKIE = "GW_RETURN_TO";
     private static final URI DEFAULT_TARGET = URI.create("/");
 
-    public static BrowserSession from(GatewaySecurityProperties properties) {
+    public static BrowserSession from(GatewaySecurityProperties properties, Clock clock) {
         SecurityChains.requireText(properties.getPublicBaseUrl(), "gateway.security.public-base-url");
         GatewaySecurityProperties.Session session = properties.getSession();
         CookieServerRequestCache requestCache = new CookieServerRequestCache();
         boolean secure = session.isCookieSecure();
         requestCache.setCookieCustomizer(cookie -> cookie.secure(secure).sameSite("Lax"));
-        return new BrowserSession(new SessionCookieCodec(session.getKeys()), new SessionCookies(session), requestCache,
+        SessionCookieCodec codec = new SessionCookieCodec(session.getKeys());
+        return new BrowserSession(codec, new SessionCookies(session), requestCache,
                 new ReturnTargets(properties.trustedOrigins()),
-                Set.of(session.getCookieName(), session.getAuthzCookieName(), SAVED_REQUEST_COOKIE, RETURN_TARGET_COOKIE));
+                Set.of(session.getCookieName(), session.getAuthzCookieName(), SAVED_REQUEST_COOKIE, RETURN_TARGET_COOKIE),
+                new SessionRevocations(codec, session.getPeers(), session.getCacheMaxEntries(), clock, WebClient.create()));
     }
 
     public void saveReturnTarget(ServerWebExchange exchange, URI target) {

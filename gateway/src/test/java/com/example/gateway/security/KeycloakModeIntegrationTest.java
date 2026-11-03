@@ -1,5 +1,7 @@
 package com.example.gateway.security;
 
+import java.time.Instant;
+import com.example.gateway.security.session.SessionRevocations;
 import com.example.gateway.audit.AuditEvent;
 import com.example.gateway.security.support.EchoUpstream;
 import com.example.gateway.security.support.FakeKeycloak;
@@ -9,6 +11,7 @@ import com.example.gateway.security.support.TestSupport.RecordingSink;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.CacheControl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -283,11 +286,63 @@ class KeycloakModeIntegrationTest {
         assertThat(location).startsWith(FakeKeycloak.PUBLIC_ISSUER + "/protocol/openid-connect/logout?");
         Map<String, String> params = TestSupport.query(location);
         assertThat(params).containsEntry("client_id", FakeKeycloak.CLIENT_ID)
-                .containsEntry("post_logout_redirect_uri", "http://gateway.test/")
+                .containsEntry("post_logout_redirect_uri", "http://gateway.test/_gateway/logged-out")
                 .containsKey("id_token_hint");
         assertThat(TestSupport.expires(result, "GW_SESSION")).isTrue();
         assertThat(keycloak.logoutCalls()).isEqualTo(1);
         assertThat(audit.awaitPath("/_gateway/logout").action()).isEqualTo("auth.logout");
+        client.get().uri("/_gateway/whoami").cookie("GW_SESSION", session.cookie)
+                .exchange().expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void aLogoutOnAnotherReplicaEndsTheSessionHereToo() {
+        Session session = login(FakeKeycloak.User.of("alice", List.of("tools-httpbin"), List.of()), "/group/anything");
+        client.get().uri("/_gateway/whoami").cookie("GW_SESSION", session.cookie)
+                .exchange().expectStatus().isOk();
+
+        client.post().uri(SessionRevocations.NOTICE_PATH)
+                .contentType(MediaType.TEXT_PLAIN)
+                .bodyValue(TestSupport.revocationNotice(TestSupport.codec("k1", TestSupport.KEY_1),
+                        TestSupport.sidOf(session.cookie), Instant.now()))
+                .exchange()
+                .expectStatus().isNoContent();
+
+        client.get().uri("/_gateway/whoami").cookie("GW_SESSION", session.cookie)
+                .exchange().expectStatus().isUnauthorized();
+        assertThat(audit.awaitPath(SessionRevocations.NOTICE_PATH).action()).isEqualTo("internal.sessions.revoke");
+    }
+
+    @Test
+    void aNoticeWithoutTheSessionKeyIsRefused() {
+        client.post().uri(SessionRevocations.NOTICE_PATH)
+                .contentType(MediaType.TEXT_PLAIN)
+                .bodyValue(TestSupport.revocationNotice(TestSupport.codec("k2", TestSupport.KEY_2), "any", Instant.now()))
+                .exchange()
+                .expectStatus().isBadRequest();
+    }
+
+    @Test
+    void theGatewayAnswersTheFaviconWithoutAuditingIt() {
+        client.get().uri("/favicon.ico").exchange()
+                .expectStatus().isOk()
+                .expectHeader().value(HttpHeaders.CONTENT_TYPE, type -> assertThat(type).startsWith("image/"))
+                .expectBody().consumeWith(result -> assertThat(result.getResponseBody()).hasSize(170));
+        client.get().uri("/public/anything").exchange().expectStatus().isOk();
+
+        audit.awaitPath("/public/anything");
+        assertThat(audit.events()).noneMatch(event -> "/favicon.ico".equals(event.path()));
+    }
+
+    @Test
+    void afterTheLogoutTheBrowserLandsOnAPageOfTheGateway() {
+        client.get().uri("/_gateway/logged-out").header(HttpHeaders.ACCEPT, MediaType.TEXT_HTML_VALUE)
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_HTML)
+                .expectHeader().cacheControl(CacheControl.noStore())
+                .expectBody(String.class).value(page -> assertThat(page)
+                        .contains("Sessão encerrada", "/_gateway/login/start?returnTo=/_gateway/whoami"));
     }
 
     @Test

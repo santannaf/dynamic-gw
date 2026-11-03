@@ -182,6 +182,9 @@ class OAuthModeIntegrationTest {
                 .jsonPath("$.authorities[0]").isEqualTo("scope:orders.read");
 
         client.get().uri("/_gateway/logout").exchange().expectStatus().isNotFound();
+        client.get().uri("/_gateway/logged-out").exchange().expectStatus().isNotFound();
+        client.post().uri("/internal/sessions/revoked").contentType(MediaType.TEXT_PLAIN).bodyValue("x")
+                .exchange().expectStatus().isNotFound();
         client.get().uri("/_gateway/login/start").exchange().expectStatus().isNotFound();
         client.get().uri("/_gateway/login").accept(MediaType.TEXT_HTML).exchange().expectStatus().isNotFound();
     }

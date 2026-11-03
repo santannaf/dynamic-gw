@@ -4,6 +4,8 @@ import com.example.gateway.access.AccessAttributes;
 import com.example.gateway.access.GatewayIdentity;
 import com.example.gateway.security.session.GatewaySessionManager;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -28,6 +31,7 @@ public class GatewayEndpointsController {
 
     public static final String WHOAMI_ACTION = "auth.whoami";
     public static final String LOGOUT_ACTION = "auth.logout";
+    public static final String LOGGED_OUT_PATH = "/_gateway/logged-out";
 
     private final ActiveSecurity security;
 
@@ -68,6 +72,17 @@ public class GatewayEndpointsController {
         return login.startLogin(exchange, returnTo)
                 .map(target -> ResponseEntity.status(HttpStatus.FOUND).location(target).<Void>build())
                 .orElseGet(() -> ResponseEntity.badRequest().build());
+    }
+
+    @GetMapping("/logged-out")
+    public ResponseEntity<String> loggedOut() {
+        if (security.sessionManager() == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
+                .cacheControl(CacheControl.noStore())
+                .body(LoggedOutPage.HTML);
     }
 
     @RequestMapping(path = "/logout", method = {RequestMethod.GET, RequestMethod.POST})

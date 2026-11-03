@@ -1,5 +1,6 @@
 package com.example.gateway.security.ldap;
 
+import com.example.gateway.security.session.SessionRevocations;
 import com.example.gateway.access.AccessAttributes;
 import com.example.gateway.access.AccessProblem;
 import com.example.gateway.access.GatewayIdentity;
@@ -44,6 +45,7 @@ public class LdapSessionManager implements GatewaySessionManager {
 
     private final SessionCookieCodec codec;
     private final SessionCookies cookies;
+    private final SessionRevocations revocations;
     private final LdapDirectory directory;
     private final SessionCache<GatewayIdentity> cache;
     private final Clock clock;
@@ -51,10 +53,11 @@ public class LdapSessionManager implements GatewaySessionManager {
     private final Duration maxAge;
     private final Duration revalidateAfter;
 
-    public LdapSessionManager(SessionCookieCodec codec, SessionCookies cookies, LdapDirectory directory,
-                              GatewaySecurityProperties properties, Clock clock) {
+    public LdapSessionManager(SessionCookieCodec codec, SessionCookies cookies, SessionRevocations revocations,
+                              LdapDirectory directory, GatewaySecurityProperties properties, Clock clock) {
         this.codec = codec;
         this.cookies = cookies;
+        this.revocations = revocations;
         this.directory = directory;
         this.clock = clock;
         this.cache = new SessionCache<>(properties.getSession().getCacheMaxEntries(), clock);
@@ -96,6 +99,12 @@ public class LdapSessionManager implements GatewaySessionManager {
         String sid = text(payload.get(), "sid");
         String dn = text(payload.get(), "dn");
         Instant expiresAt = Instant.ofEpochSecond(payload.get().path("exp").asLong(0));
+        if (revocations.isRevoked(sid)) {
+            cache.evict(sid);
+            cookies.expire(exchange, cookieName, "/");
+            exchange.getAttributes().put(AccessAttributes.PROBLEM, AccessProblem.SESSION_EXPIRED);
+            return Mono.empty();
+        }
         if (!expiresAt.isAfter(clock.instant())) {
             cache.evict(sid);
             cookies.expire(exchange, cookieName, "/");
@@ -119,12 +128,24 @@ public class LdapSessionManager implements GatewaySessionManager {
 
     @Override
     public Mono<URI> logout(ServerWebExchange exchange) {
-        cookies.read(exchange, cookieName)
-                .flatMap(codec::decode)
-                .map(p -> text(p, "sid"))
-                .ifPresent(cache::evict);
+        Optional<ObjectNode> payload = cookies.read(exchange, cookieName).flatMap(codec::decode);
         cookies.expire(exchange, cookieName, "/");
-        return Mono.just(AFTER_LOGOUT);
+        String sid = payload.map(p -> text(p, "sid")).orElse(null);
+        if (sid == null) {
+            return Mono.just(AFTER_LOGOUT);
+        }
+        cache.evict(sid);
+        // The cookie carries the whole session: a copy of it stays valid until exp, unless refused.
+        Instant expiresAt = Instant.ofEpochSecond(payload.get().path("exp").asLong(0));
+        if (!expiresAt.isAfter(clock.instant())) {
+            return Mono.just(AFTER_LOGOUT);
+        }
+        return revocations.revoke(sid, expiresAt).thenReturn(AFTER_LOGOUT);
+    }
+
+    @Override
+    public SessionRevocations revocations() {
+        return revocations;
     }
 
     private Mono<SessionCache.Loaded<GatewayIdentity>> revalidate(String dn, String sid, Instant expiresAt) {

@@ -23,4 +23,7 @@ public interface GatewaySessionManager {
 
     /** Ends the session for this browser and returns where to send it next. */
     Mono<URI> logout(ServerWebExchange exchange);
+
+    /** Sessions ended by a logout here or on another replica. */
+    SessionRevocations revocations();
 }

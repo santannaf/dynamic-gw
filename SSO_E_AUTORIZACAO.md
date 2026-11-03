@@ -45,6 +45,7 @@ Onde fica a sessão:
 - **No Keycloak**, a sessão mestre (cookie `KEYCLOAK_SESSION`, path `/auth/realms/tools`).
 - **No browser**, o cookie `GW_SESSION` do gateway: cifrado (JWE), com o `sid` e o refresh token **dessa** sessão do Keycloak. Não existe sessão própria do gateway num banco ou num Redis.
 - **Em cada réplica do gateway**, um cache em memória com a identidade da Alice. Ele vale até o access token expirar (5 min). Depois disso, a réplica faz um refresh no Keycloak, e é aí que mudanças de grupo e desligamentos chegam ao gateway, sem novo login. O Keycloak guarda o que leu do diretório por até 1 min (*cache policy* `MAX_LIFESPAN`), então uma mudança no AD chega às rotas em até ~6 min.
+- **Logout pelo gateway** vale na hora em todas as réplicas: a que atende o logout avisa as outras (pelo Service headless, `gateway.security.session.peers`), e cada uma passa a recusar aquela sessão, mesmo que ela esteja no cache ou que alguém tenha guardado uma cópia do cookie.
 
 O que o gateway recebe do Keycloak é o access token. A parte que importa para a autorização:
 

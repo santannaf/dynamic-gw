@@ -76,6 +76,11 @@ data:
                 return 403;
             }
 
+            # Aviso de logout entre réplicas: só elas, de dentro do cluster.
+            location = /internal/sessions/revoked {
+                return 403;
+            }
+
             location = /lb/health {
                 access_log off;
                 return 200 "ok\n";

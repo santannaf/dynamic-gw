@@ -295,7 +295,7 @@ Para ver o efeito rápido, reduza antes o tempo de vida do access token. No admi
 
 ### 1.13 Logout pelo gateway
 
-🌐 `http://localhost:18080/_gateway/logout` encerra a sessão no gateway e no Keycloak. O browser passa pelo logout do Keycloak e volta para `http://localhost:18080/`, que dá 404 porque não existe rota na raiz (esperado). Se o Keycloak pedir confirmação, é porque a réplica que atendeu o logout não tinha o ID token em cache. Abrir `/sso/group/headers` de novo pede senha.
+🌐 `http://localhost:18080/_gateway/logout` encerra a sessão no gateway e no Keycloak. O browser passa pelo logout do Keycloak e volta para `http://localhost:18080/_gateway/logged-out`, uma página do gateway que diz que a sessão foi encerrada e tem o botão "Entrar de novo" (ele faz o login e mostra o `/_gateway/whoami`). Se o Keycloak pedir confirmação, é porque a réplica que atendeu o logout não tinha o ID token em cache. Abrir `/sso/group/headers` de novo pede senha. Uma cópia do cookie `GW_SESSION` guardada antes do logout (no Postman, por exemplo) também para de valer, em todas as réplicas.
 
 ### 1.14 Borda
 
