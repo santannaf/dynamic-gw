@@ -8,6 +8,10 @@ plugins {
 ext {
     set('springBootVersion', '4.1.2')
     set('fabric8Version', '8.0.0')
+    // A Fabric8 8.0.0 traz o Vert.x 5.2.0 (CVE-2026-102476, CVE-2026-102479 e CVE-2026-102467
+    // no vertx-core, CVE-2026-118489 no vertx-web-client). Tire o override quando uma
+    // versão da Fabric8 trouxer o Vert.x 5.2.3 ou mais novo.
+    set('vertxVersion', '5.2.3')
     // Fabric8 8 é feito sobre Jackson 3.2 (anotações 2.22) e o Boot 4.1.2 ainda
     // gerencia 3.1.x/2.21: sobrescreve os dois BOMs até um Boot que traga 3.2.
     // O BOM do Jackson 2 entra porque é ele que fixa a versão de jackson-annotations.
@@ -41,6 +45,21 @@ dependencyManagement {
         mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
         mavenBom "io.fabric8:kubernetes-client-bom:${fabric8Version}"
         mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
+    }
+    // Módulo a módulo, e não pelo BOM do Vert.x: ele também gerencia Netty e Jackson,
+    // que ficam com o Boot.
+    dependencies {
+        dependencySet(group: 'io.vertx', version: vertxVersion) {
+            entry 'vertx-core'
+            entry 'vertx-core-logging'
+            entry 'vertx-web-client'
+            entry 'vertx-web-common'
+            entry 'vertx-auth-common'
+            entry 'vertx-uri-template'
+            entry 'vertx-web'
+            entry 'vertx-bridge-common'
+            entry 'vertx-eventbus-bridge-common'
+        }
     }
 }
 
