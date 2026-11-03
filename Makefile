@@ -1,4 +1,4 @@
-.PHONY: cluster down clean-build jars images load-images bootstrap deploy \
+.PHONY: lab linux mac cluster down clean-build jars images load-images bootstrap deploy \
         standalone-up standalone-down nginx-lb-up nginx-lb-down nginx-lb-pf \
         sso-up sso-down sso-test ldap-up ldap-test keycloak-reset keycloak-db-shell \
         oauth-up oauth-down oauth-test frontend-test \
@@ -6,7 +6,27 @@
         standalone-sso-up standalone-sso-down standalone-sso-test \
         s3-sso-up s3-sso-down s3-sso-test \
         test restart-test large-snapshot-test route-propagation-test \
-        stress-test dump-snapshot policies-test clean
+        stress-test dump-snapshot policies-test \
+        jsonplaceholder-up jsonplaceholder-down jsonplaceholder-test clean
+
+# ──────────────────────────────────────────────────────────────────────────
+# Lab completo num comando
+# ──────────────────────────────────────────────────────────────────────────
+
+# Cria o cluster k3d, compila o gateway e o operator em imagem nativa, importa no
+# cluster e sobe a plataforma v2 com SSO (Keycloak sobre PostgreSQL). Rodar de novo
+# reusa o cluster.
+#   make lab linux   nativeCompile no host (GraalVM 25)
+#   make lab mac     nativeCompile dentro de um container Linux, para a arquitetura do Docker
+#   make lab         escolhe pelo sistema
+# Variáveis: HOST_PORT, KEYCLOAK_DB=oracle, PROVIDER=ldap|oauth, MODE=s3|standalone e
+# SKIP_BUILD=1 (veja o cabeçalho de scripts/platform/lab.sh).
+lab:
+	./scripts/platform/lab.sh $(filter linux mac,$(MAKECMDGOALS))
+
+# Só servem de argumento para o lab: make lab linux, make lab mac.
+linux mac:
+	@:
 
 # ──────────────────────────────────────────────────────────────────────────
 # Cluster e build
@@ -168,6 +188,17 @@ sso-test:
 # no v2 aplica k8s/samples/routes-policies.yaml; no v1 usa as rotas da imagem.
 policies-test:
 	./scripts/e2e/test-policies.sh
+
+# Rotas de verdade contra o JSONPlaceholder (https://jsonplaceholder.typicode.com),
+# uma por política. O make lab já as aplica; o e2e confere cada uma e as deixa no cluster.
+jsonplaceholder-up:
+	kubectl apply -f k8s/samples/routes-jsonplaceholder.yaml
+
+jsonplaceholder-down:
+	kubectl delete -f k8s/samples/routes-jsonplaceholder.yaml --ignore-not-found
+
+jsonplaceholder-test:
+	./scripts/e2e/test-jsonplaceholder.sh
 
 # Zera o banco do Keycloak: o realm volta a ser o do JSON e todas as sessões caem.
 keycloak-reset:

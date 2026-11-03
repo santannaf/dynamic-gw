@@ -154,10 +154,13 @@ class GatewayProfilesTest {
         RouteStoreProperties routes = bindStrictly(environment(List.of("standalone"), Map.of()),
                 "gateway.routes.store", RouteStoreProperties.class);
 
-        assertThat(routes.getProperties().getRoutes()).hasSize(11).allSatisfy(route ->
+        assertThat(routes.getProperties().getRoutes()).hasSize(18).allSatisfy(route ->
                 assertThat(RoutePolicyRules.validate(route, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX))
                         .as(route.id()).isEmpty());
-        assertThat(routes.getProperties().getRoutes()).filteredOn(route -> route.aggregate() != null).hasSize(2);
+        assertThat(routes.getProperties().getRoutes()).filteredOn(route -> route.aggregate() != null).hasSize(4);
+        assertThat(routes.getProperties().getRoutes()).filteredOn(route -> route.id().equals("jp-artigos")).singleElement()
+                .satisfies(route -> assertThat(route.transform().mapping()).as("map keys keep their case")
+                        .containsEntry("userId", "autorId"));
     }
 
     @Test
@@ -168,7 +171,9 @@ class GatewayProfilesTest {
                 "gateway.routes.store", RouteStoreProperties.class);
 
         assertThat(security.isEnabled()).isTrue();
-        assertThat(routes.getProperties().getRoutes()).hasSize(4);
+        assertThat(routes.getProperties().getRoutes()).hasSize(15).allSatisfy(route ->
+                assertThat(RoutePolicyRules.validate(route, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX))
+                        .as(route.id()).isEmpty());
     }
 
     private static ConfigurableEnvironment environment(List<String> profiles, Map<String, Object> variables) {

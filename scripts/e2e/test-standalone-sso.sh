@@ -87,8 +87,8 @@ check "carol does not operate the gateway" "403" "$(status -b "${WORK}/carol" "$
 echo "== dave (gateway-admins)"
 check "dave reaches the authenticated route" "200" "$(login dave "${WORK}/dave" /me/headers)"
 check "dave is not a tool admin" "403" "$(status -b "${WORK}/dave" "${BASE}/admin/headers")"
-check "dave reads the v1 route table" "4" \
-    "$(curl -s -b "${WORK}/dave" "${BASE}/internal/routes" | jq '[.routes[] | select(.access != null or .id == "me-route")] | length')"
+check "dave reads the v1 route table" "15" \
+    "$(curl -s -b "${WORK}/dave" "${BASE}/internal/routes" | jq '.routes | length')"
 
 if [[ "${PROVIDER}" == "keycloak" ]]; then
     echo "== service account (tools-cli)"

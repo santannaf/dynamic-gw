@@ -1,0 +1,1004 @@
+{
+  "info": {
+    "_postman_id": "3207a438-25ff-512d-8d50-e21d6b42517f",
+    "name": "Dynamic Gateway: políticas de rota (JSONPlaceholder)",
+    "description": "Rotas `/jp/...` do gateway contra a API pública do [JSONPlaceholder](https://jsonplaceholder.typicode.com), uma por política: rate limit, throttling, filtros, mapping e agregação. O guia está em `POLITICAS_DE_ROTA.md`.\n\n**Antes de rodar**\n- `baseUrl`: `http://localhost:<HOST_PORT>` do lab (`make lab`), ou `http://localhost:8080` para o gateway fora do cluster (`./gradlew :gateway:bootRun --args='--spring.profiles.active=standalone'`).\n- Pasta 1: não precisa de mais nada.\n- Pasta 2 (SSO ligado): preencha `cliSecret` com `kubectl -n platform get secret sso-secrets -o jsonpath='{.data.tools-cli-client-secret}' | base64 -d` e rode primeiro \"Token do tools-cli\".\n- Pasta 3 (SSO ligado): abra no navegador `{{baseUrl}}/jp/privado/posts/1`, que leva ao login, e entre como alice, bob ou carol (a senha sai no fim do `make lab`). Depois copie o valor do cookie `GW_SESSION` (DevTools > Application > Cookies) para `sessionCookie`.\n\nOs limites contam por réplica do gateway: os testes de rate limit e throttling disparam várias chamadas e funcionam com 1 ou 2 réplicas. Sem SSO, as pastas 2 e 3 não se aplicam.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Públicas",
+      "description": "Sem login. Funcionam no v1 e no v2, dentro ou fora do cluster.",
+      "item": [
+        {
+          "name": "Post 1 (a API como ela é)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 com o post 1 de verdade\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const post = pm.response.json();",
+                  "    pm.expect(post.id).to.eql(1);",
+                  "    pm.expect(post.userId).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/posts/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "posts",
+                "1"
+              ]
+            },
+            "description": "Proxy simples: `/jp/posts/1` vira `/posts/1` no JSONPlaceholder."
+          },
+          "response": []
+        },
+        {
+          "name": "Todos os posts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 com os 100 posts\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json()).to.have.length(100);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "posts"
+              ]
+            },
+            "description": "A lista inteira, sem política nenhuma."
+          },
+          "response": []
+        },
+        {
+          "name": "Rate limit: 3 a cada 10s por X-Api-Key",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"apiKey\", \"postman-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"a primeira passa, com os headers RateLimit-*\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get(\"RateLimit-Limit\")).to.eql(\"3\");",
+                  "    pm.expect(pm.response.headers.get(\"RateLimit-Policy\")).to.eql(\"3;w=10\");",
+                  "});",
+                  "// Mais 6 chamadas com a mesma chave: até 3 passam em cada réplica do gateway,",
+                  "// então com 1 ou 2 réplicas pelo menos uma recebe 429.",
+                  "const key = pm.collectionVariables.get(\"apiKey\");",
+                  "const target = pm.variables.get(\"baseUrl\") + \"/jp/limitado/posts/1\";",
+                  "const statuses = [pm.response.code];",
+                  "function next(left) {",
+                  "    if (left === 0) {",
+                  "        pm.test(\"o excesso recebe 429: \" + statuses.join(\" \"), () => pm.expect(statuses).to.include(429));",
+                  "        return;",
+                  "    }",
+                  "    pm.sendRequest({ url: target, method: \"GET\", header: { \"X-Api-Key\": key } }, (err, res) => {",
+                  "        statuses.push(err ? 0 : res.code);",
+                  "        if (res && res.code === 429) {",
+                  "            pm.test(\"o 429 traz Retry-After\", () => pm.expect(res.headers.get(\"Retry-After\")).to.match(/^\\d+$/));",
+                  "        }",
+                  "        next(left - 1);",
+                  "    });",
+                  "}",
+                  "next(6);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/limitado/posts/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "limitado",
+                "posts",
+                "1"
+              ]
+            },
+            "description": "Cada `X-Api-Key` tem 3 requisições a cada 10 segundos. O script de teste faz mais 6 chamadas com a mesma chave e confere o 429. A chave muda a cada execução, para o orçamento começar cheio."
+          },
+          "response": []
+        },
+        {
+          "name": "Throttling: 1 por vez, 1 na fila",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"sozinha, a chamada passa\", () => pm.response.to.have.status(200));",
+                  "// 7 chamadas ao mesmo tempo: cada réplica deixa 1 rodando e 1 na fila, e recusa o resto com 503.",
+                  "const target = pm.variables.get(\"baseUrl\") + \"/jp/lento/comments\";",
+                  "const statuses = [];",
+                  "for (let i = 0; i < 7; i++) {",
+                  "    pm.sendRequest({ url: target, method: \"GET\" }, (err, res) => {",
+                  "        statuses.push(err ? 0 : res.code);",
+                  "        if (statuses.length === 7) {",
+                  "            pm.test(\"ao mesmo tempo, o excesso recebe 503: \" + statuses.sort().join(\" \"), () => {",
+                  "                pm.expect(statuses).to.include(200);",
+                  "                pm.expect(statuses).to.include(503);",
+                  "            });",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/lento/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "lento",
+                "comments"
+              ]
+            },
+            "description": "Só uma requisição roda por vez, e uma espera na fila por até 5 segundos. O script de teste dispara 7 chamadas juntas e confere os 503."
+          },
+          "response": []
+        },
+        {
+          "name": "Fachada: artigo 1 (RewritePath, mapping e headers)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 com os campos renomeados\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const artigo = pm.response.json();",
+                  "    pm.expect(artigo).to.have.all.keys(\"autorId\", \"id\", \"titulo\", \"conteudo\");",
+                  "});",
+                  "pm.test(\"X-Fachada acrescentado, X-Powered-By da API escondido\", () => {",
+                  "    pm.expect(pm.response.headers.get(\"X-Fachada\")).to.eql(\"artigos\");",
+                  "    pm.expect(pm.response.headers.has(\"X-Powered-By\")).to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/artigos/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "artigos",
+                "1"
+              ]
+            },
+            "description": "`/jp/artigos/1` vira `/posts/1`; a resposta troca `userId`, `title` e `body` por `autorId`, `titulo` e `conteudo`."
+          },
+          "response": []
+        },
+        {
+          "name": "Fachada: lista de artigos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"os 100, todos renomeados\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const artigos = pm.response.json();",
+                  "    pm.expect(artigos).to.have.length(100);",
+                  "    artigos.forEach(artigo => pm.expect(artigo).to.have.property(\"titulo\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/artigos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "artigos"
+              ]
+            },
+            "description": "O mapping vale para cada objeto da lista."
+          },
+          "response": []
+        },
+        {
+          "name": "Fachada: criar artigo (POST)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201, e a resposta da API também vem renomeada\", () => {",
+                  "    pm.response.to.have.status(201);",
+                  "    const artigo = pm.response.json();",
+                  "    pm.expect(artigo.titulo).to.eql(\"Olá\");",
+                  "    pm.expect(artigo.autorId).to.eql(7);",
+                  "    pm.expect(artigo.id).to.eql(101);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/artigos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "artigos"
+              ]
+            },
+            "description": "A API finge criar o post e devolve `id: 101`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Olá\",\n  \"body\": \"teste\",\n  \"userId\": 7\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Fachada: corpo acima de 1KB (413)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"bigBody\", JSON.stringify({ title: \"a\".repeat(2048) }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"413: o corpo nem chega à API\", () => pm.response.to.have.status(413));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/artigos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "artigos"
+              ]
+            },
+            "description": "O filtro `RequestSize` recusa corpo maior que 1KB. O script de pré-requisição monta um corpo de 2KB.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{bigBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Meus posts (query fixa e allow)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"os 10 posts do usuário 1, só com id e título\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const posts = pm.response.json();",
+                  "    pm.expect(posts).to.have.length(10);",
+                  "    posts.forEach(post => pm.expect(post).to.have.all.keys(\"id\", \"title\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/meus-posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "meus-posts"
+              ]
+            },
+            "description": "`SetPath /posts` e `AddRequestParameter userId=1`: o gateway chama `/posts?userId=1` e deixa só `id` e `title`."
+          },
+          "response": []
+        },
+        {
+          "name": "Agregação: post e comentários",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"uma resposta com as duas chamadas\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get(\"X-Gateway-Completed\")).to.eql(\"true\");",
+                  "    const painel = pm.response.json();",
+                  "    pm.expect(painel.post).to.have.all.keys(\"id\", \"title\", \"body\");",
+                  "    pm.expect(painel.comentarios).to.have.length(5);",
+                  "    painel.comentarios.forEach(c => pm.expect(c).to.have.all.keys(\"name\", \"email\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/post-completo/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "post-completo",
+                "1"
+              ]
+            },
+            "description": "Chama `/posts/1` e `/posts/1/comments` em paralelo; cada resposta entra reduzida sob a sua chave."
+          },
+          "response": []
+        },
+        {
+          "name": "Agregação parcial",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 só com o post, e a resposta avisa que está incompleta\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get(\"X-Gateway-Completed\")).to.eql(\"false\");",
+                  "    pm.expect(pm.response.json()).to.have.all.keys(\"post\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/post-parcial/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "post-parcial",
+                "1"
+              ]
+            },
+            "description": "O segundo backend não existe (404): ele fica de fora e `X-Gateway-Completed` vem `false`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Privadas com token (tools-cli)",
+      "description": "Conta de serviço com client credentials. Rode primeiro \"Token do tools-cli\".",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Token do tools-cli (client credentials)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"cliSecret preenchido\", () => pm.expect(pm.variables.get(\"cliSecret\")).to.not.be.empty);",
+                  "pm.test(\"200 com o access token\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.collectionVariables.set(\"token\", pm.response.json().access_token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/realms/tools/protocol/openid-connect/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "realms",
+                "tools",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Guarda o token na variável `token`, usada pelas outras requisições desta pasta. O token vive pouco: rode de novo quando as outras derem 401.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "tools-cli",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{cliSecret}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sem login: 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401 para quem chega sem identidade\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/privado/posts/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "privado",
+                "posts",
+                "1"
+              ]
+            },
+            "description": "A mesma rota privada, sem token.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Privado: qualquer identidade passa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 com o token da conta de serviço\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"rate limit por identidade\", () => pm.expect(pm.response.headers.get(\"RateLimit-Limit\")).to.eql(\"5\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/privado/posts/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "privado",
+                "posts",
+                "1"
+              ]
+            },
+            "description": "Rota sem `access`: vale o default, qualquer autenticado. 5 requisições a cada 10s para cada identidade."
+          },
+          "response": []
+        },
+        {
+          "name": "Usuários: sem o grupo tools-httpbin (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403: a conta de serviço não tem o grupo\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/jp/usuarios/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "usuarios",
+                "1"
+              ]
+            },
+            "description": "Só o grupo `tools-httpbin` lê os usuários."
+          },
+          "response": []
+        },
+        {
+          "name": "Gestão: escrita sem tools-admins (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"403: escrever pede tools-admins\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/gestao/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "gestao",
+                "posts"
+              ]
+            },
+            "description": "POST, PUT, PATCH e DELETE em `/jp/gestao` são só do grupo `tools-admins`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Operação: tabela de rotas (/internal/routes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 com as rotas /jp e as políticas de cada uma\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    const limitado = pm.response.json().routes.find(route => route.id === \"jp-limitado\");",
+                  "    pm.expect(limitado.rateLimit.requests).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/internal/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "routes"
+              ]
+            },
+            "description": "O `tools-cli` tem a role `gateway-admin`, que opera o gateway (e não abre ferramenta nenhuma)."
+          },
+          "response": []
+        },
+        {
+          "name": "Quem sou eu (/_gateway/whoami)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 com a identidade que o gateway viu\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/_gateway/whoami",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "_gateway",
+                "whoami"
+              ]
+            },
+            "description": "Mostra a identidade da conta de serviço como o gateway a enxerga."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Privadas como usuário (cookie do navegador)",
+      "description": "Cole em `sessionCookie` o cookie `GW_SESSION` de alice (tools-httpbin), bob (sem grupo) ou carol (tools-admins e tools-httpbin) e rode a pasta com cada um.",
+      "item": [
+        {
+          "name": "Quem sou eu (/_gateway/whoami)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 com o usuário do cookie\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    console.log(\"usuário:\", pm.response.json().user);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "GW_SESSION={{sessionCookie}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/_gateway/whoami",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "_gateway",
+                "whoami"
+              ]
+            },
+            "description": "Confere de quem é o cookie colado em `sessionCookie`."
+          },
+          "response": []
+        },
+        {
+          "name": "Privado: qualquer usuário logado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 para alice, bob ou carol\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "GW_SESSION={{sessionCookie}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/privado/posts/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "privado",
+                "posts",
+                "1"
+              ]
+            },
+            "description": "5 requisições a cada 10s para cada usuário."
+          },
+          "response": []
+        },
+        {
+          "name": "Usuários: alice e carol leem, bob não",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 sem dados pessoais (alice, carol) ou 403 (bob)\", () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 403]);",
+                  "    if (pm.response.code === 200) {",
+                  "        pm.expect(pm.response.json()).to.not.have.any.keys(\"address\", \"phone\", \"company\");",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "GW_SESSION={{sessionCookie}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/usuarios/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "usuarios",
+                "1"
+              ]
+            },
+            "description": "Grupo `tools-httpbin`: o usuário 1 chega sem `address`, `phone` e `company`."
+          },
+          "response": []
+        },
+        {
+          "name": "Gestão: leitura (alice e carol)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 (tools-httpbin ou tools-admins) ou 403 (bob)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "GW_SESSION={{sessionCookie}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/gestao/posts/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "gestao",
+                "posts",
+                "1"
+              ]
+            },
+            "description": "GET e HEAD para `tools-httpbin` ou `tools-admins`."
+          },
+          "response": []
+        },
+        {
+          "name": "Gestão: escrita (só carol)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 (carol, tools-admins) ou 403 (alice, bob)\", () => pm.expect(pm.response.code).to.be.oneOf([201, 403]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "GW_SESSION={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/jp/gestao/posts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "jp",
+                "gestao",
+                "posts"
+              ]
+            },
+            "description": "A mesma URL, outra regra para POST, PUT, PATCH e DELETE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "description": "http://localhost:<HOST_PORT> do lab"
+    },
+    {
+      "key": "cliSecret",
+      "value": "",
+      "description": "segredo do tools-cli, do Secret sso-secrets (nunca versione)"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "description": "preenchido por \"Token do tools-cli\""
+    },
+    {
+      "key": "sessionCookie",
+      "value": "",
+      "description": "valor do cookie GW_SESSION, copiado do navegador"
+    },
+    {
+      "key": "apiKey",
+      "value": "postman",
+      "description": "trocada a cada execução do rate limit"
+    }
+  ]
+}

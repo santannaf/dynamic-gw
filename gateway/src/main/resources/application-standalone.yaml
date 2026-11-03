@@ -166,3 +166,113 @@ gateway:
               - name: RequestSize
                 args:
                   maxSize: 1KB
+          # --- API de verdade: JSONPlaceholder (as mesmas rotas de
+          # k8s/samples/routes-jsonplaceholder.yaml; make jsonplaceholder-test). Precisam
+          # de saída para a internet; os limites contam por réplica.
+          - id: jp-posts
+            path: /jp/posts/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 1
+            team: platform-team
+            description: JSONPlaceholder as it is - /jp/posts/1 is /posts/1.
+            access:
+              mode: public
+          - id: jp-limitado
+            path: /jp/limitado/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 2
+            team: platform-team
+            description: Three requests every 10 seconds for each X-Api-Key - /jp/limitado/posts/1 is /posts/1.
+            access:
+              mode: public
+            rate-limit:
+              requests: 3
+              period: 10s
+              key: header:X-Api-Key
+          - id: jp-lento
+            path: /jp/lento/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 2
+            team: platform-team
+            description: One request at a time, one more waiting for up to 5 seconds - /jp/lento/comments is /comments.
+            access:
+              mode: public
+            throttle:
+              max-concurrent: 1
+              max-queue: 1
+              max-wait: 5s
+          - id: jp-artigos
+            path: /jp/artigos/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 1
+            team: platform-team
+            description: Facade in Portuguese - /jp/artigos/1 is /posts/1, with the fields renamed.
+            access:
+              mode: public
+            filters:
+              - name: RewritePath
+                args:
+                  regexp: /artigos(?<resto>.*)
+                  replacement: /posts$\{resto}
+              - name: RemoveResponseHeader
+                args:
+                  name: X-Powered-By
+              - name: AddResponseHeader
+                args:
+                  name: X-Fachada
+                  value: artigos
+              - name: RequestSize
+                args:
+                  maxSize: 1KB
+            transform:
+              mapping:
+                userId: autorId
+                title: titulo
+                body: conteudo
+          - id: jp-meus-posts
+            path: /jp/meus-posts
+            target-uri: https://jsonplaceholder.typicode.com
+            team: platform-team
+            description: The posts of user 1, only id and title - /posts?userId=1.
+            access:
+              mode: public
+            filters:
+              - name: SetPath
+                args:
+                  template: /posts
+              - name: AddRequestParameter
+                args:
+                  name: userId
+                  value: "1"
+            transform:
+              allow: [id, title]
+          - id: jp-post-completo
+            path: /jp/post-completo/{id}
+            team: platform-team
+            description: One answer with the post and its comments.
+            access:
+              mode: public
+            aggregate:
+              timeout: 5s
+              backends:
+                - url: https://jsonplaceholder.typicode.com/posts/{id}
+                  group: post
+                  transform:
+                    allow: [id, title, body]
+                - url: https://jsonplaceholder.typicode.com/posts/{id}/comments
+                  group: comentarios
+                  transform:
+                    allow: [name, email]
+          - id: jp-post-parcial
+            path: /jp/post-parcial/{id}
+            team: platform-team
+            description: One of the two backends does not exist - the answer is partial and says so.
+            access:
+              mode: public
+            aggregate:
+              timeout: 5s
+              backends:
+                - url: https://jsonplaceholder.typicode.com/posts/{id}
+                  group: post
+                - url: https://jsonplaceholder.typicode.com/nao-existe/{id}
+                  group: extra

@@ -161,6 +161,152 @@ Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não t
 
 > **Princípio do projeto:** os pods do gateway **não são expostos diretamente**. Quem vem de fora (k3d Traefik, port-forward de teste, k6) sempre passa pelo **`nginx-lb`** — um Deployment dentro do cluster que faz round-robin entre as réplicas do gateway via headless service. Tanto `standalone-up` quanto `bootstrap` já aplicam o nginx-lb por default; o Ingress aponta pra ele, não pro service do gateway.
 
+**Lab completo num comando** (cluster, gateway e operator em imagem nativa, plataforma v2, SSO com Keycloak e rotas de verdade):
+
+```bash
+make lab linux                                      # nativeCompile no host Linux, com o GraalVM 25 dele
+make lab mac                                        # nativeCompile dentro de um container Linux (arm64 no Apple Silicon)
+make lab                                            # escolhe linux ou mac pelo sistema
+HOST_PORT=18080 KEYCLOAK_DB=oracle make lab linux   # outra porta, com o Keycloak sobre Oracle 26ai Free
+```
+
+O `make lab` cria o cluster k3d, compila o gateway e o operator com `nativeCompile`, importa as imagens e sobe o operator, o gateway com SSO, o Keycloak com o banco, o OpenLDAP, o nginx-lb e as rotas de exemplo, inclusive as que chamam a API pública do JSONPlaceholder (`/jp/...`, uma por política; `make jsonplaceholder-test` confere todas). Essas rotas também vêm nos profiles v1 (`standalone` e `standalone-sso`): com o gateway rodando fora do cluster, `LOCAL=1 make jsonplaceholder-test` as confere. Para o Postman, há uma coleção pronta em [`postman/`](postman/dynamic-gateway-jsonplaceholder.postman_collection.json). No Linux, `make lab linux` compila no host, que precisa do GraalVM 25, do `gcc` e dos headers da zlib. No Mac, o GraalVM gera binário de macOS, que não roda no cluster, então o `make lab mac` compila dentro de um container Linux, para a arquitetura do Docker: dê ao Docker Desktop uns 8 GB de memória. Na primeira vez, leva de 5 a 15 minutos, conforme a máquina: a maior parte é a compilação nativa e o download das imagens. Rodar de novo reusa o cluster, na porta em que ele foi criado, e mantém o banco do Keycloak; `SKIP_BUILD=1` pula a compilação. `PROVIDER=ldap` ou `oauth` e `MODE=s3` ou `standalone` trocam o cenário: o cabeçalho de [`scripts/platform/lab.sh`](scripts/platform/lab.sh) lista as opções. No fim, ele mostra os usuários, a senha e os testes do cenário. Para apagar tudo: `make down`.
+
+**v1 standalone**                            | **v2 com operator**                                                    |
+|-------------------------------------|----------------------------------------------|------------------------------------------------------------------------|
+| Rotas declaradas em                 | `application.yaml` do gateway                | CRDs `GatewayRoute` no cluster                                         |
+| CRD instalado                       | ❌                                           | ✅                                                                     |
+| Operator deployado                  | ❌                                           | ✅                                                                     |
+| RBAC pra `ConfigMap`-watch          | ❌ não precisa                               | ✅                                                                     |
+| Trocar rota sem restart             | ❌ exige rollout                             | ✅ ~250 ms via watcher                                                 |
+| Multi-time (cada um aplicando CRDs) | ❌                                           | ✅                                                                     |
+| Manifests deployados                | `k8s/gateway-standalone/`                    | `k8s/namespace.yaml` + `k8s/crd/` + `k8s/operator/` + `k8s/gateway/`   |
+| Guia detalhado                      | [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md) | [`TESTE_CONFIGMAP.md`](TESTE_CONFIGMAP.md)                             |
+| Hot-reload via S3                   | –                                            | [`TESTE_S3.md`](TESTE_S3.md), [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) |
+
+Os dois modos compartilham 100% do pipeline downstream (`RouteConfigEntry` → `RouteDefinitionMapper` → `FastRouteCompiler` → `InMemoryDynamicRouteLocator`). Só a fonte do snapshot muda — `PropertiesRouteConfigProvider` vs `ConfigMapRouteConfigProvider` vs `S3RouteConfigProvider`.
+
+---
+
+## Arquitetura
+
+O diagrama abaixo descreve o fluxo da **v2** (com operator + CRD). Na v1, salta direto do `application.yaml` empacotado para o `PropertiesRouteConfigProvider` — o resto do pipeline é idêntico.
+
+```
+Platform user
+   |
+   v  kubectl apply GatewayRoute (CRD)
+Kubernetes API
+   |
+   v  ADDED / MODIFIED / DELETED informer events
+gateway-route-operator (Fabric8 informer + debounced reconciler)
+   |
+   v  RouteConfigPublisher.publish(snapshot)
+ConfigMap  platform/gateway-routes  (binaryData.routes.yaml.gz, ~20× compressão)
+   |
+   v  POST /internal/routes/reload   (best-effort signal)
+dynamic-gateway (Spring Cloud Gateway, reactive, native image)
+   |
+   v  RouteConfigProvider.load() -> RouteDefinitionMapper -> InMemoryDynamicRouteLocator.replaceAll(...)
+   |
+   v  RefreshRoutesEvent
+In-memory routes, ready to serve traffic
+```
+
+Diagrama interativo (Excalidraw): https://excalidraw.com/#json=6kDnSH7P21tm-Wb_Tt0zS,xCs6nkUE7mbTF8o4Tp2m1g
+
+Três responsabilidades explicitamente separadas:
+
+| Responsabilidade              | Implementação                                                              |
+|-------------------------------|----------------------------------------------------------------------------|
+| Fonte da verdade declarativa  | CRDs `GatewayRoute` no namespace `platform` (v2) / `application.yaml` (v1) |
+| Estado materializado (hoje)   | YAML gzipado em `ConfigMap platform/gateway-routes` (v2) / properties (v1) |
+| Estado materializado (futuro) | YAML em S3 — mesma interface, plug-in (`S3RouteConfigProvider`)            |
+| Estado em runtime             | Mapa de `Route`s na memória do pod do gateway                              |
+
+O sinal HTTP (`POST /internal/routes/reload`) é **best-effort**. Ele **não é** a fonte da verdade — o bootstrap runner do gateway lê o snapshot mais recente no startup do pod, então um sinal perdido se cura no próximo restart ou no próximo reconcile bem-sucedido.
+
+---
+
+## Layout dos módulos
+
+```
+shared/    # modelo storage-agnostic: RouteConfigSnapshot, RouteConfigEntry, SnapshotCodec
+gateway/   # Spring Cloud Gateway + providers (ConfigMap / S3 / Properties)
+operator/  # Fabric8 informer + reconciler + publisher (ConfigMap / S3)
+k8s/       # namespace, CRD, RBAC, Deployments, Services, Ingress, samples
+scripts/   # por componente: cluster/, platform/, sso/, keycloak/, db/, ldap/, s3/, e2e/, load/
+openspec/  # propostas de mudança e specs por capability
+```
+
+O módulo `shared` propositadamente **não depende** de nada Kubernetes- ou AWS-específico — essa invariante é amarrada por testes (`StorageAbstractionLeakTest`) em `gateway` e `operator`.
+
+---
+
+## Stack e versões
+
+Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`. O OSV não liga as CVEs do Vert.x nem as do Bouncy Castle aos pacotes Maven: elas estão no NVD (as do Vert.x também nos advisories do projeto), e o Vert.x 5.2.3 e o Bouncy Castle 1.86 ficam fora das faixas afetadas.
+
+| Componente                         | Versão                                                        | Observação                                                             |
+|------------------------------------|---------------------------------------------------------------|------------------------------------------------------------------------|
+| Java                               | 25                                                            | toolchain do Gradle                                                    |
+| Gradle                             | 9.5.1                                                         | wrapper                                                                |
+| Spring Boot                        | 4.1.2                                                         | plugin no `build.gradle` raiz e BOM nos módulos                        |
+| Spring Cloud                       | 2025.1.4                                                      | Spring Cloud Gateway Server WebFlux 5.0.4                              |
+| Spring Framework / Spring Security | 7.0.10 / 7.1.2                                                | pelo BOM do Boot                                                       |
+| Netty                              | 4.2.19                                                        | pelo BOM do Boot; o binário nativo precisa de `-H:+SharedArenaSupport` |
+| Jackson                            | 3.2.4 (anotações 2.22)                                        | sobrescreve o BOM do Boot (3.1) porque a Fabric8 8 exige 3.2           |
+| Fabric8 Kubernetes Client          | 8.0.0                                                         | gateway e operator; cliente HTTP Vert.x 5                              |
+| Vert.x                             | 5.2.3                                                         | sobrescreve o 5.2.0 da Fabric8 8.0.0, afetado por CVEs                 |
+| Bouncy Castle                      | 1.86                                                          | sobrescreve o 1.85.2 do Spring Cloud no gateway, afetado por CVEs      |
+| AWS SDK v2                         | 2.57.4                                                        | S3 com `url-connection-client`                                         |
+| UnboundID LDAP SDK                 | 7.0.5                                                         | pelo BOM do Boot (provider `ldap`)                                     |
+| GraalVM Native Build Tools         | 1.1.17                                                        | plugin Gradle                                                          |
+| Spring Dependency Management       | 1.1.7                                                         | plugin Gradle                                                          |
+| Testes                             | JUnit 6.0.3, Mockito 5.24.0, AssertJ 3.27.7, Awaitility 4.3.0 | JUnit e AssertJ pelo BOM do Boot; o `shared` fixa as mesmas            |
+
+| Imagem                                        | Versão                 | Uso                                                         |
+|-----------------------------------------------|------------------------|-------------------------------------------------------------|
+| `ghcr.io/graalvm/native-image-community`      | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway                        |
+| `debian:stable-slim`                          | 13                     | runtime do gateway (build com `--pull`)                     |
+| `eclipse-temurin`                             | 25-jre (25.0.4)        | runtime do operator (build com `--pull`)                    |
+| `quay.io/keycloak/keycloak`                   | 26.1                   | IdP do lab (`k8s/sso/`), em modo produção                   |
+| `keycloak-oracle:local`                       | 26.1 + ojdbc11 23.6    | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
+| `postgres`                                    | 17.5-alpine            | banco do Keycloak (default)                                 |
+| `container-registry.oracle.com/database/free` | 23.26.0.0-lite (26ai)  | banco do Keycloak com `KEYCLOAK_DB=oracle`                  |
+| `osixia/openldap`                             | 1.5.0                  | diretório do lab, no lugar do AD                            |
+| `bitnamilegacy/minio`                         | 2025.5.24              | S3 local do lab                                             |
+| `nginx`                                       | 1.27-alpine            | nginx-lb, a borda                                           |
+| `mccutchen/go-httpbin`                        | latest                 | backend de exemplo                                          |
+
+---
+
+## Pré-requisitos
+
+- JDK 25 (testado com GraalVM Community 25.0.2)
+- Docker
+- `k3d` (cluster local de Kubernetes)
+- `kubectl`
+- Porta `8080` livre no host (e `18000` se for rodar o cenário de carga)
+- Opcional: `make` (o `Makefile` é wrapper fino sobre os scripts)
+- Opcional: `k6` (cenário de carga sustentada)
+- Opcional: `metrics-server` instalado no cluster (`scripts/load/measure-gateway-memory.sh` depende disso)
+
+---
+
+## Quick start
+
+> **Princípio do projeto:** os pods do gateway **não são expostos diretamente**. Quem vem de fora (k3d Traefik, port-forward de teste, k6) sempre passa pelo **`nginx-lb`** — um Deployment dentro do cluster que faz round-robin entre as réplicas do gateway via headless service. Tanto `standalone-up` quanto `bootstrap` já aplicam o nginx-lb por default; o Ingress aponta pra ele, não pro service do gateway.
+
+**Lab completo num comando** (cluster, imagens compiladas, plataforma v2 e SSO com Keycloak):
+
+```bash
+make lab                                      # http://localhost:8080, Keycloak sobre PostgreSQL
+HOST_PORT=18080 KEYCLOAK_DB=oracle make lab   # outra porta, com o Keycloak sobre Oracle 26ai Free
+```
+
+O `make lab` cria o cluster k3d, compila o gateway (imagem nativa) e o operator, importa as imagens e sobe o operator, o gateway com SSO, o Keycloak com o banco, o OpenLDAP, o nginx-lb e as rotas de exemplo. A primeira vez leva uns __LAB_MINUTES__ minutos, a maior parte na compilação nativa. Rodar de novo reusa o cluster, na porta em que ele foi criado, e `SKIP_BUILD=1` pula a compilação. `PROVIDER=ldap` ou `oauth` e `MODE=s3` ou `standalone` trocam o cenário: o cabeçalho de [`scripts/platform/lab.sh`](scripts/platform/lab.sh) lista as opções. No fim, ele mostra os usuários, a senha e os testes do cenário. Para apagar tudo: `make down`.
+
 **v1 standalone** (mais simples — sem operator, rotas no `application.yaml`):
 
 ```bash
@@ -657,6 +803,8 @@ rules:
 ### Rodando local (k3d)
 
 ```bash
+HOST_PORT=18080 make lab            # tudo de uma vez: cluster, imagens, plataforma v2 e o SSO com keycloak
+# ou passo a passo:
 HOST_PORT=18080 make cluster        # a porta precisa estar livre: é ela que entra no issuer e no redirect
 make load-images && make deploy     # plataforma v2
 HOST_PORT=18080 make sso-up         # OpenLDAP + PostgreSQL + Keycloak (realm tools) federando por LDAPS + gateway com provider=keycloak

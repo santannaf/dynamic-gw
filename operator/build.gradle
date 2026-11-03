@@ -84,6 +84,10 @@ graalvmNative {
             buildArgs.addAll(
                     '--no-fallback',
                     '--enable-url-protocols=http,https',
+                    '--enable-native-access=ALL-UNNAMED',
+                    // Netty 4.2.19+ (via Vert.x, no cliente da Fabric8) no Java 25 libera buffers diretos
+                    // fechando um Arena.ofShared(); sem isto o binário derruba a conexão com UnsupportedFeatureError.
+                    '-H:+SharedArenaSupport',
                     '-H:+AddAllCharsets',                    // snakeyaml-engine (via Fabric8) precisa de UTF-32BE etc.
                     '-H:+ReportExceptionStackTraces'
             )

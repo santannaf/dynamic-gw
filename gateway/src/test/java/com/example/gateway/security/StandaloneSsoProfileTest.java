@@ -59,6 +59,12 @@ class StandaloneSsoProfileTest {
         assertThat(routes.get("me-route").access()).isNull();
         assertThat(routes.get("admin-route").access())
                 .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), true));
-        assertThat(routeLocator.size()).isEqualTo(4);
+        assertThat(routes.get("jp-posts").access()).isEqualTo(new RouteAccess("public", null, null));
+        assertThat(routes.get("jp-privado").access()).isNull();
+        assertThat(routes.get("jp-usuarios").access())
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), null));
+        assertThat(routes.get("jp-gestao-escrita").access())
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), null));
+        assertThat(routeLocator.size()).isEqualTo(15);
     }
 }

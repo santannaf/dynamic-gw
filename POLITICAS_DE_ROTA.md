@@ -10,7 +10,7 @@ Cada rota pode declarar, além do `access`, cinco políticas: `rateLimit`, `thro
 | enxugar, renomear ou embrulhar os campos da resposta JSON         | [`transform`](#4-transformação)        | —                          |
 | montar uma resposta só a partir de vários backends                | [`aggregate`](#5-agregação)            | 502 ou 504, se todos falham |
 
-**Sumário:** [Como declarar](#como-declarar) · [1. Rate limit](#1-rate-limit) · [2. Throttling](#2-throttling) · [3. Filtros](#3-filtros) · [4. Transformação](#4-transformação) · [5. Agregação](#5-agregação) · [Combinando políticas](#combinando-políticas) · [Tetos globais](#tetos-globais) · [Auditoria](#auditoria) · [Problemas comuns](#problemas-comuns) · [Onde cada coisa roda](#onde-cada-coisa-roda)
+**Sumário:** [Como declarar](#como-declarar) · [1. Rate limit](#1-rate-limit) · [2. Throttling](#2-throttling) · [3. Filtros](#3-filtros) · [4. Transformação](#4-transformação) · [5. Agregação](#5-agregação) · [Contra uma API de verdade](#contra-uma-api-de-verdade-jsonplaceholder) · [Combinando políticas](#combinando-políticas) · [Tetos globais](#tetos-globais) · [Auditoria](#auditoria) · [Problemas comuns](#problemas-comuns) · [Onde cada coisa roda](#onde-cada-coisa-roda)
 
 ---
 
@@ -599,6 +599,103 @@ curl -s "$GW/pol/painel/42?origem=app" | jq '.pedido.url, .cliente.url'   # a qu
 
 - **Tempo:** cada chamada tem o `timeout` inteiro, e todas correm em paralelo. A rota responde em até `timeout`, mais o tempo de montar a resposta.
 - **Cliente HTTP:** os backends são chamados pelo próprio gateway, com o mesmo cliente HTTP das rotas comuns (pool, timeouts e TLS).
+
+---
+
+## Contra uma API de verdade: JSONPlaceholder
+
+As rotas `/jp/...` chamam a API pública do [JSONPlaceholder](https://jsonplaceholder.typicode.com), que serve posts, comentários e usuários de mentira em JSON. Cada rota mostra uma política. No v2, elas estão em [`k8s/samples/routes-jsonplaceholder.yaml`](k8s/samples/routes-jsonplaceholder.yaml): o `make lab` já as aplica, e `make jsonplaceholder-up` e `make jsonplaceholder-down` aplicam e tiram. No v1, as mesmas rotas vêm nos profiles `standalone` e `standalone-sso`. O gateway precisa de saída para a internet.
+
+| Rota                     | O que mostra                                                                                                   |
+|--------------------------|----------------------------------------------------------------------------------------------------------------|
+| `/jp/posts/**`           | a API como ela é: `/jp/posts/1` é `/posts/1`                                                                   |
+| `/jp/limitado/**`        | rate limit: 3 requisições a cada 10s para cada `X-Api-Key`                                                     |
+| `/jp/lento/**`           | throttling: 1 por vez, 1 na fila                                                                               |
+| `/jp/artigos/**`         | fachada em português: `RewritePath` para `/posts`, `mapping` dos campos, `X-Powered-By` da API escondido, `X-Fachada` acrescentado e corpo de até 1KB |
+| `/jp/meus-posts`         | `SetPath /posts`, `AddRequestParameter userId=1` e `allow: [id, title]`                                        |
+| `/jp/post-completo/{id}` | agregação: o post e os comentários numa resposta só, cada um reduzido                                          |
+| `/jp/post-parcial/{id}`  | agregação com um backend que não existe: resposta parcial                                                      |
+
+As rotas acima são públicas. Estas pedem login, com o SSO ligado, e usam os usuários do diretório do lab: alice (`tools-httpbin`), bob (sem grupo) e carol (`tools-admins` e `tools-httpbin`). A senha de todos sai no fim do `make lab`.
+
+| Rota                       | Quem entra                                    | O que mostra                                                               |
+|----------------------------|-----------------------------------------------|----------------------------------------------------------------------------|
+| `/jp/privado/**`           | qualquer usuário logado (rota sem `access`)   | rate limit por usuário: 5 requisições a cada 10s para cada um (`key: user`) |
+| `/jp/usuarios/**`          | grupo `tools-httpbin`                         | `transform` com `deny: [address, phone, company]`: os dados pessoais não saem |
+| `/jp/gestao/**`, GET e HEAD | `tools-httpbin` ou `tools-admins`            | leitura                                                                    |
+| `/jp/gestao/**`, POST, PUT, PATCH e DELETE | só `tools-admins`             | escrita: a mesma URL, outra regra por método                               |
+
+Nenhuma rota privada usa `forwardToken`: o token do usuário não sai para uma API de terceiros. No v1, as privadas estão só no profile `standalone-sso`, porque sem SSO o gateway não confere o `access`.
+
+Para testar no navegador, abra `http://localhost:8080/jp/usuarios/1` (a porta do seu `HOST_PORT`) e entre como alice: o usuário 1 chega sem `address`, `phone` e `company`. Entre como bob numa janela anônima: a mesma URL dá 403. Uma conta de serviço também passa, com token: o `tools-cli` (client credentials, segredo no Secret `sso-secrets`) lê `/jp/privado`, mas não tem grupo para `/jp/usuarios`.
+
+### Subir só o gateway, com properties
+
+As rotas `/jp/...` não dependem de nada do cluster, então dá para testar o gateway na própria máquina, com o profile `standalone`:
+
+```bash
+./gradlew :gateway:bootRun --args='--spring.profiles.active=standalone'   # JVM, em http://localhost:8080
+# ou o binário nativo:
+./gradlew :gateway:nativeCompile
+gateway/build/native/nativeCompile/dynamic-gateway --spring.profiles.active=standalone
+
+LOCAL=1 make jsonplaceholder-test        # confere cada política nesse gateway
+```
+
+As outras rotas do profile apontam para o go-httpbin de dentro do cluster e, fora dele, não respondem.
+
+### O que o cliente recebe
+
+```bash
+GW=http://localhost:8080
+
+curl -s -i $GW/jp/artigos/1
+```
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+X-Fachada: artigos
+
+{"autorId":1,"id":1,"titulo":"sunt aut facere repellat provident occaecati excepturi optio reprehenderit","conteudo":"quia et suscipit\nsuscipit recusandae consequuntur expedita et cum\nreprehenderit molestiae ut ut quas totam\nnostrum rerum est autem sunt rem eveniet architecto"}
+```
+
+A API manda `userId`, `title`, `body` e `X-Powered-By: Express`; o cliente recebe `autorId`, `titulo`, `conteudo` e `X-Fachada`. O mesmo vale para a lista (`/jp/artigos`) e para a resposta do `POST /jp/artigos`, em que a API finge criar o post e devolve `id: 101`.
+
+```bash
+curl -s $GW/jp/meus-posts | jq -c '.[0:2]'
+# [{"id":1,"title":"sunt aut facere repellat provident occaecati excepturi optio reprehenderit"},{"id":2,"title":"qui est esse"}]
+# são os 10 posts do usuário 1, só com id e título
+
+for i in 1 2 3 4; do curl -s -o /dev/null -w '%{http_code} ' -H 'X-Api-Key: minha-chave' $GW/jp/limitado/posts/1; done; echo
+# 200 200 200 429
+```
+
+Com duas réplicas do gateway, passam até 6 chamadas (3 em cada uma), numa ordem que depende do balanceamento, por exemplo `200 200 200 200 429 200 200`: os limites contam por réplica.
+
+```bash
+curl -s -i $GW/jp/post-completo/1
+```
+
+```
+HTTP/1.1 200 OK
+X-Gateway-Completed: true
+
+{
+  "post": {"id": 1, "title": "sunt aut facere repellat provident occaecati excepturi optio reprehenderit", "body": "quia et suscipit\n..."},
+  "comentarios": [
+    {"name": "id labore ex et quam laborum", "email": "Eliseo@gardner.biz"},
+    {"name": "quo vero reiciendis velit similique earum", "email": "Jayne_Kuhic@sydney.com"},
+    ...
+  ]
+}
+```
+
+O post 1 tem 5 comentários; cada um chega só com `name` e `email`. `GET /jp/post-parcial/1` devolve só o post, com `X-Gateway-Completed: false`, porque o segundo backend responde 404.
+
+No Postman, importe [`postman/dynamic-gateway-jsonplaceholder.postman_collection.json`](postman/dynamic-gateway-jsonplaceholder.postman_collection.json). São três pastas: as rotas públicas, as privadas com o token do `tools-cli` e as privadas com o cookie `GW_SESSION` copiado do navegador. Cada requisição tem testes, e a descrição da coleção diz o que preencher. O Runner roda tudo de uma vez, e o rate limit e o throttling disparam as chamadas extras por script.
+
+`make jsonplaceholder-test` confere tudo isso. Com o SSO ligado, ele também faz login como alice, bob e carol, testa as rotas privadas e o token do `tools-cli` e confere a auditoria (`rate_limited`, `throttled`, `unauthenticated`, `forbidden`). No cluster, ele deixa as rotas lá para você testar na mão.
 
 ---
 
