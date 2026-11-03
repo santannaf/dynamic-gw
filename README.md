@@ -128,19 +128,19 @@ Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não t
 | Spring Dependency Management       | 1.1.7                                                         | plugin Gradle                                                          |
 | Testes                             | JUnit 6.0.3, Mockito 5.24.0, AssertJ 3.27.7, Awaitility 4.3.0 | JUnit e AssertJ pelo BOM do Boot; o `shared` fixa as mesmas            |
 
-| Imagem                                   | Versão                 | Uso                                      |
-|------------------------------------------|------------------------|------------------------------------------|
-| `ghcr.io/graalvm/native-image-community` | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway     |
-| `debian:stable-slim`                     | 13                     | runtime do gateway (build com `--pull`)  |
-| `eclipse-temurin`                        | 25-jre (25.0.4)        | runtime do operator (build com `--pull`) |
-| `quay.io/keycloak/keycloak`              | 26.1                   | IdP do lab (`k8s/sso/`), em modo produção |
-| `keycloak-oracle:local`                  | 26.1 + ojdbc11 23.6    | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
-| `postgres`                               | 17.5-alpine            | banco do Keycloak (default)              |
-| `container-registry.oracle.com/database/free` | 23.26.0.0-lite (26ai) | banco do Keycloak com `KEYCLOAK_DB=oracle` |
-| `osixia/openldap`                        | 1.5.0                  | diretório do lab, no lugar do AD         |
-| `bitnamilegacy/minio`                    | 2025.5.24              | S3 local do lab                          |
-| `nginx`                                  | 1.27-alpine            | nginx-lb, a borda                        |
-| `mccutchen/go-httpbin`                   | latest                 | backend de exemplo                       |
+| Imagem                                        | Versão                 | Uso                                                         |
+|-----------------------------------------------|------------------------|-------------------------------------------------------------|
+| `ghcr.io/graalvm/native-image-community`      | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway                        |
+| `debian:stable-slim`                          | 13                     | runtime do gateway (build com `--pull`)                     |
+| `eclipse-temurin`                             | 25-jre (25.0.4)        | runtime do operator (build com `--pull`)                    |
+| `quay.io/keycloak/keycloak`                   | 26.1                   | IdP do lab (`k8s/sso/`), em modo produção                   |
+| `keycloak-oracle:local`                       | 26.1 + ojdbc11 23.6    | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
+| `postgres`                                    | 17.5-alpine            | banco do Keycloak (default)                                 |
+| `container-registry.oracle.com/database/free` | 23.26.0.0-lite (26ai)  | banco do Keycloak com `KEYCLOAK_DB=oracle`                  |
+| `osixia/openldap`                             | 1.5.0                  | diretório do lab, no lugar do AD                            |
+| `bitnamilegacy/minio`                         | 2025.5.24              | S3 local do lab                                             |
+| `nginx`                                       | 1.27-alpine            | nginx-lb, a borda                                           |
+| `mccutchen/go-httpbin`                        | latest                 | backend de exemplo                                          |
 
 ---
 
@@ -591,13 +591,13 @@ Este gateway é o exemplo para os outros gateways de borda: [`GATEWAY_DE_BORDA.m
 
 Cada canal descobre quem está chamando do seu jeito, e todos normalizam o resultado em permissões `<tipo>:<nome>`. A rota declara quais aceita, e o tipo é aberto: `group:`, `role:`, `scope:` ou qualquer outro que o gateway produza. No tools, a permissão vive em **grupos do AD** (uma OU por aplicação, grupos de leitura/escrita por ferramenta). Trocar de provedor não muda nenhuma `GatewayRoute`.
 
-| `gateway.security.provider` | `keycloak` (default)                                          | `ldap`                                     | `oauth`                                  |
-|-----------------------------|---------------------------------------------------------------|--------------------------------------------|------------------------------------------|
-| Login                       | tela do Keycloak (OIDC code + PKCE)                           | tela do gateway em `/_gateway/login`       | não tem: sem token válido, 401           |
+| `gateway.security.provider` | `keycloak` (default)                                          | `ldap`                                     | `oauth`                                       |
+|-----------------------------|---------------------------------------------------------------|--------------------------------------------|-----------------------------------------------|
+| Login                       | tela do Keycloak (OIDC code + PKCE)                           | tela do gateway em `/_gateway/login`       | não tem: sem token válido, 401                |
 | Papel do Keycloak           | ponte para o AD (LDAP federation + group mapper) e IdP        | não existe                                 | emissor no lab; serve qualquer servidor OAuth |
-| Permissões vêm de           | claims do access token                                        | busca direta no diretório                  | claims do access token                   |
-| APIs / contas de serviço    | bearer JWT (client credentials), validado local via JWKS      | não nesta versão                           | bearer JWT, validado local via JWKS      |
-| Sessão                      | cookie JWE com o refresh token; Keycloak é a fonte da verdade | cookie JWE com o DN; revalida no diretório | não tem                                  |
+| Permissões vêm de           | claims do access token                                        | busca direta no diretório                  | claims do access token                        |
+| APIs / contas de serviço    | bearer JWT (client credentials), validado local via JWKS      | não nesta versão                           | bearer JWT, validado local via JWKS           |
+| Sessão                      | cookie JWE com o refresh token; Keycloak é a fonte da verdade | cookie JWE com o DN; revalida no diretório | não tem                                       |
 
 Claims de outros tipos entram por `gateway.security.authorities.claims` (`scope: [scope]`). Só esse mapeamento separa texto por espaço, como o `scope` do OAuth: um grupo como `Domain Admins` continua sendo um valor único.
 
@@ -691,11 +691,11 @@ make standalone-sso-down            # volta o v1 sem SSO
 
 A configuração já vem pronta em profiles embarcados na imagem e combináveis: um de provedor (`application-keycloak.yaml`, `application-ldap.yaml`, `application-oauth.yaml`) e, quando o store não é o default, um de cenário. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
 
-| Cenário de rotas | Rotas vêm de | Keycloak | LDAP | Guia |
-|---|---|---|---|---|
-| CRD (v2) | `GatewayRoute` → ConfigMap | `keycloak` | `ldap` | [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md) |
-| S3 (v2) | `GatewayRoute` → objeto S3 | `s3,keycloak` | `s3,ldap` | [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md) |
-| Properties (v1) | `application-standalone-sso.yaml`, na imagem | `standalone-sso,keycloak` | `standalone-sso,ldap` | [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md) |
+| Cenário de rotas | Rotas vêm de                                 | Keycloak                  | LDAP                  | Guia                                                     |
+|------------------|----------------------------------------------|---------------------------|-----------------------|----------------------------------------------------------|
+| CRD (v2)         | `GatewayRoute` → ConfigMap                   | `keycloak`                | `ldap`                | [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md)               |
+| S3 (v2)          | `GatewayRoute` → objeto S3                   | `s3,keycloak`             | `s3,ldap`             | [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md)                 |
+| Properties (v1)  | `application-standalone-sso.yaml`, na imagem | `standalone-sso,keycloak` | `standalone-sso,ldap` | [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md) |
 
 Usuários do diretório do lab (OpenLDAP no lugar do AD, o mesmo para o Keycloak e para o provider `ldap`): `alice` (tools-httpbin), `bob` (sem grupo), `carol` (tools-admins, tools-httpbin) e `dave` (gateway-admins: opera o gateway, sem acesso às ferramentas). A senha é gerada no Secret `sso-secrets` e impressa pelo `sso-up`. No Keycloak, nenhuma pessoa é cadastrada no realm: ficam a conta de serviço `tools-cli` e a role `gateway-admin`, do client `tools-gateway` (nunca do realm), dada ao grupo `gateway-admins`. O modelo e o porquê estão em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#6-modelo-de-roles-operar-o-gateway-não-é-usar-as-ferramentas); o passo a passo manual, em [`TESTE_SSO.md`](TESTE_SSO.md).
 
@@ -746,7 +746,7 @@ spec:
   transform: {deny: [senha], mapping: {nome: name}}          # resposta JSON
 ```
 
-Uma rota com `aggregate` (no lugar de `targetUri`) chama vários backends em paralelo e devolve uma resposta só. Os limites contam **por réplica**, em memória, sem Redis. A referência completa, com o catálogo de filtros e os tetos globais, está em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md); o e2e é `make policies-test`.
+Uma rota com `aggregate` (no lugar de `targetUri`) chama vários backends em paralelo e devolve uma resposta só. Os limites contam **por réplica**, em memória, sem Redis. O guia de uso, com cada política passo a passo, as respostas que o cliente recebe e os problemas comuns, está em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md); o e2e é `make policies-test`.
 
 ---
 
@@ -754,7 +754,7 @@ Uma rota com `aggregate` (no lugar de `targetUri`) chama vários backends em par
 
 Este POC **explicitamente não implementa**:
 
-- Rate limiting, circuit breakers, retries, timeouts por rota, TLS.
+- Circuit breakers, retries, timeout por rota e TLS. O rate limit e o throttling existem, mas contam por réplica, sem estado compartilhado ([`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md)).
 - Suporte multi-namespace ou multi-gateway.
 - CRD `status.conditions` (`Accepted`, `Invalid`, `Published`, `FailedToReload`). Feedback de validação fica só nos logs do operator.
 - Rollback de snapshot, assinatura/checksum.
