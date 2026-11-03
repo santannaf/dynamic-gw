@@ -267,7 +267,7 @@ Para conferir sem a POC: `make sso-test` roda no lab as mesmas verificações (u
 
 ## 9. Tela de login e "Entrar com Microsoft"
 
-A tela de login do realm `tools` usa o tema `tools` (`k8s/sso/theme/tools`): o `keycloak.v2` com as cores e o cartão das páginas do gateway, em português, no claro e no escuro. O `keycloak.sh` publica o tema no ConfigMap `keycloak-theme-tools`, montado em `/opt/keycloak/themes/tools`. Mudar só o tema reinicia o Keycloak sem zerar o banco.
+A tela de login do realm `tools` usa o tema `tools` (`k8s/sso/theme/tools`), com as cores e o cartão das páginas do gateway, em português, no claro e no escuro. Ela tem só os campos de usuário e senha e dois botões: **Entrar** e **Entrar com Microsoft**. O `login.ftl` do tema é próprio por isso (o do `keycloak.v2` traz o botão de mostrar a senha); o resto das páginas continua o `keycloak.v2` com as cores do tema. O `keycloak.sh` publica o tema no ConfigMap `keycloak-theme-tools`, montado em `/opt/keycloak/themes/tools`. Mudar só o tema reinicia o Keycloak sem zerar o banco.
 
 O botão **Entrar com Microsoft** é o provedor de identidade `microsoft` do realm, por OIDC, e não LDAP:
 

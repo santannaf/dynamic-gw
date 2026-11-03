@@ -314,7 +314,7 @@ make sso-test     # passed=44 failed=0
 
 ### 1.16 Entrar com Microsoft (simulado)
 
-A tela de login já aparece com o tema `tools`, em português. 🌐 Numa janela anônima, abra `http://localhost:18080/sso/group/headers` e clique em **Entrar com Microsoft**. Na tela "Microsoft (simulado)", entre como alice, com a senha do diretório. A volta é na rota, como alice, com `X-Auth-Request-Groups: tools-httpbin`: a conta "da Microsoft" foi associada à alice do diretório pelo e-mail. Como eve, que só existe na Microsoft, o Keycloak recusa. Para o Entra ID de verdade, veja a seção 9 do [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md).
+A tela de login já aparece com o tema `tools`, em português: usuário, senha, **Entrar** e **Entrar com Microsoft**. 🌐 Numa janela anônima, abra `http://localhost:18080/sso/group/headers` e clique em **Entrar com Microsoft**. Na tela "Microsoft (simulado)", entre como alice, com a senha do diretório. A volta é na rota, como alice, com `X-Auth-Request-Groups: tools-httpbin`: a conta "da Microsoft" foi associada à alice do diretório pelo e-mail. Como eve, que só existe na Microsoft, o Keycloak recusa. Para o Entra ID de verdade, veja a seção 9 do [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md).
 
 ## 2. Provider `ldap` (v2)
 

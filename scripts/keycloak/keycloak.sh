@@ -225,7 +225,8 @@ setup_microsoft() {
 publish_theme() {
     local files=("${THEME_DIR}/theme.properties" "${THEME_DIR}/resources/css/tools.css"
         "${THEME_DIR}/resources/img/logo.svg" "${THEME_DIR}/messages/messages_pt_BR.properties"
-        gateway/src/main/resources/static/favicon.ico "${THEME_DIR}/resources/img/microsoft.svg")
+        gateway/src/main/resources/static/favicon.ico "${THEME_DIR}/resources/img/microsoft.svg"
+        "${THEME_DIR}/login.ftl")
     kubectl -n "${NAMESPACE}" create configmap keycloak-theme-tools \
         --from-file=theme.properties="${files[0]}" \
         --from-file=tools.css="${files[1]}" \
@@ -233,6 +234,7 @@ publish_theme() {
         --from-file=messages_pt_BR.properties="${files[3]}" \
         --from-file=favicon.ico="${files[4]}" \
         --from-file=microsoft.svg="${files[5]}" \
+        --from-file=login.ftl="${files[6]}" \
         --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     THEME_CHECKSUM="$(cat "${files[@]}" | sha256sum | cut -c1-16)"
 }

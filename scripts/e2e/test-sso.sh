@@ -98,6 +98,9 @@ login_page="$(curl -s -L -c "${WORK}/probe" -b "${WORK}/probe" -H 'Accept: text/
 check "the login page uses the tools theme, in Portuguese" "yes yes" \
     "$(grep -q 'login/tools/css/tools.css' <<<"${login_page}" && echo yes || echo no) $(grep -q 'Entrar' <<<"${login_page}" && echo yes || echo no)"
 check "the Microsoft button is on the page" "yes" "$(grep -q 'id="social-microsoft"' <<<"${login_page}" && echo yes || echo no)"
+fields="$(grep -o '<input[^>]*>' <<<"${login_page}" | grep -vc 'type="hidden"')"
+buttons="$(grep -o -E '<button[^>]*>|<a [^>]*class="[^"]*tools-button' <<<"${login_page}" | wc -l | tr -d ' ')"
+check "the login page has only the user and password fields, and two buttons" "2 2" "${fields} ${buttons}"
 # Login pelo botão: o realm microsoft-sim faz o papel do Entra ID, e o Keycloak associa a
 # conta ao usuário do diretório com o mesmo e-mail. Imprime o status final da rota.
 microsoft_login() {

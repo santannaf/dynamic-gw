@@ -146,6 +146,7 @@ spec:
             name: keycloak-theme-tools
             items:
               - {key: theme.properties, path: login/theme.properties}
+              - {key: login.ftl, path: login/login.ftl}
               - {key: tools.css, path: login/resources/css/tools.css}
               - {key: logo.svg, path: login/resources/img/logo.svg}
               - {key: favicon.ico, path: login/resources/img/favicon.ico}
