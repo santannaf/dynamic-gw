@@ -1,0 +1,220 @@
+# Rotas de exemplo das políticas (ETT-988): rate limit, throttling, filtros,
+# transformação e agregação. Todas apontam para o go-httpbin, que devolve o que
+# recebeu, e são públicas para o e2e (scripts/e2e/test-policies.sh) não
+# depender do SSO. Os limites contam em cada réplica do gateway.
+#
+#   /pol/limited/**     5 requisições a cada 10s para todos juntos (429 acima)
+#   /pol/per-client/**  2 requisições a cada 10s por X-Api-Key
+#   /pol/throttled/**   1 por vez, 1 na fila por até 5s (503 acima)
+#   /pol/filters/**     cabeçalhos e path mexidos por filtros do catálogo
+#   /pol/rewrite/**     path reescrito, header trocado e parâmetro removido
+#   /pol/setpath/**     path fixo, header da resposta removido, corpo até 1KB
+#   /pol/transform/**   resposta JSON reduzida, renomeada e agrupada
+#   /pol/painel/{id}    duas chamadas viram uma resposta
+#   /pol/parcial/{id}   um backend falha: resposta parcial sinalizada
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-limited
+  namespace: platform
+spec:
+  path: /pol/limited/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Five requests every 10 seconds for all callers together.
+  access:
+    mode: public
+  rateLimit:
+    requests: 5
+    period: 10s
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-per-client
+  namespace: platform
+spec:
+  path: /pol/per-client/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Two requests every 10 seconds for each X-Api-Key.
+  access:
+    mode: public
+  rateLimit:
+    requests: 2
+    period: 10s
+    key: header:X-Api-Key
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-throttled
+  namespace: platform
+spec:
+  path: /pol/throttled/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: One request at a time, one more waiting for up to 5 seconds.
+  access:
+    mode: public
+  throttle:
+    maxConcurrent: 1
+    maxQueue: 1
+    maxWait: 5s
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-filters
+  namespace: platform
+spec:
+  path: /pol/filters/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Catalog filters - request and response headers, path and query.
+  access:
+    mode: public
+  filters:
+    - name: PrefixPath
+      args:
+        prefix: /anything
+    - name: AddRequestHeader
+      args:
+        name: X-Source
+        value: gateway
+    - name: RemoveRequestHeader
+      args:
+        name: X-Debug
+    - name: AddRequestParameter
+      args:
+        name: origem
+        value: borda
+    - name: AddResponseHeader
+      args:
+        name: X-Policy
+        value: filters
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-transform
+  namespace: platform
+spec:
+  path: /pol/transform/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: JSON response reduced to two fields, one renamed, under one key.
+  access:
+    mode: public
+  filters:
+    - name: PrefixPath
+      args:
+        prefix: /anything
+  transform:
+    allow: [method, url]
+    mapping:
+      url: endereco
+    group: eco
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-painel
+  namespace: platform
+spec:
+  path: /pol/painel/{id}
+  team: platform-team
+  description: One answer built from two backends, each under its own key.
+  access:
+    mode: public
+  aggregate:
+    timeout: 3s
+    backends:
+      - url: http://go-httpbin.platform.svc.cluster.local:8080/anything/pedidos/{id}
+        group: pedido
+        transform:
+          allow: [url]
+      - url: http://go-httpbin.platform.svc.cluster.local:8080/anything/clientes/{id}
+        group: cliente
+        transform:
+          allow: [url, method]
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-parcial
+  namespace: platform
+spec:
+  path: /pol/parcial/{id}
+  team: platform-team
+  description: One of the two backends fails - the answer is partial and says so.
+  access:
+    mode: public
+  aggregate:
+    timeout: 3s
+    backends:
+      - url: http://go-httpbin.platform.svc.cluster.local:8080/anything/pedidos/{id}
+        group: pedido
+        transform:
+          allow: [url]
+      - url: http://go-httpbin.platform.svc.cluster.local:8080/status/503
+        group: estoque
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-rewrite
+  namespace: platform
+spec:
+  path: /pol/rewrite/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Catalog filters - path rewritten, request header replaced, query parameter removed.
+  access:
+    mode: public
+  filters:
+    - name: RewritePath
+      args:
+        regexp: /(?<resto>.*)
+        replacement: /anything/reescrito/$\{resto}
+    - name: SetRequestHeader
+      args:
+        name: X-Canal
+        value: borda
+    - name: RemoveRequestParameter
+      args:
+        name: debug
+    - name: SetResponseHeader
+      args:
+        name: X-Policy
+        value: rewrite
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-setpath
+  namespace: platform
+spec:
+  path: /pol/setpath/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Catalog filters - fixed path, response header removed, request body up to 1KB.
+  access:
+    mode: public
+  filters:
+    - name: SetPath
+      args:
+        template: /response-headers
+    - name: RemoveResponseHeader
+      args:
+        name: X-Interno
+    - name: RequestSize
+      args:
+        maxSize: 1KB

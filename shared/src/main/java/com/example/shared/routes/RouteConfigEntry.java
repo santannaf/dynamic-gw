@@ -16,6 +16,9 @@ import java.util.List;
  * - {@code access}: who may use the route. {@code null} means "not declared"
  *   (the gateway applies its default access). Enforced by the gateway, never
  *   by the matcher, and part of the snapshot hash.
+ * - {@code rateLimit, throttle, filters, transform, aggregate}: the route's
+ *   policies ({@link RoutePolicyRules} validates them). {@code null} means not
+ *   declared. A route declares either {@code targetUri} or {@code aggregate}.
  */
 public record RouteConfigEntry(
         String id,
@@ -26,9 +29,15 @@ public record RouteConfigEntry(
         Boolean enabled,
         String team,
         String description,
-        RouteAccess access
+        RouteAccess access,
+        RouteRateLimit rateLimit,
+        RouteThrottle throttle,
+        List<RouteFilter> filters,
+        RouteTransform transform,
+        RouteAggregate aggregate
 ) {
     public RouteConfigEntry {
         methods = methods == null ? null : List.copyOf(methods);
+        filters = filters == null ? null : List.copyOf(filters);
     }
 }

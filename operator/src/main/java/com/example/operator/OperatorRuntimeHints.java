@@ -5,8 +5,14 @@ import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteList;
 import com.example.operator.crd.GatewayRouteSpec;
 import com.example.shared.routes.RouteAccess;
+import com.example.shared.routes.RouteAggregate;
+import com.example.shared.routes.RouteBackend;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
+import com.example.shared.routes.RouteFilter;
+import com.example.shared.routes.RouteRateLimit;
+import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTransform;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -19,6 +25,12 @@ public class OperatorRuntimeHints implements RuntimeHintsRegistrar {
                 RouteConfigSnapshot.class,
                 RouteConfigEntry.class,
                 RouteAccess.class,
+                RouteRateLimit.class,
+                RouteThrottle.class,
+                RouteFilter.class,
+                RouteTransform.class,
+                RouteAggregate.class,
+                RouteBackend.class,
                 GatewayRoute.class,
                 GatewayRouteSpec.class,
                 GatewayRouteAccess.class,

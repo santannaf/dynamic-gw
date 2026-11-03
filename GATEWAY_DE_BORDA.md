@@ -33,6 +33,8 @@ spec:
 
 Permissão por método usa duas rotas com o mesmo `path` e `methods` diferentes, como `/sso/rw/**` em `k8s/samples/routes-sso.yaml`.
 
+A rota também pode declarar políticas: `rateLimit`, `throttle`, `filters`, `transform` e `aggregate` (no lugar de `targetUri`). O formato, a semântica e os tetos globais estão em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md). Um gateway de outra stack que leia o snapshot precisa aplicá-las ou recusar a rota que as declara: servir sem a política que a rota pediu é pior que não servir.
+
 Cada gateway tem seu namespace, seu operator e seu snapshot. Uma rota exposta em dois gateways vira dois recursos `GatewayRoute`. O exemplo está em `k8s/second-gateway/`.
 
 ### Tabela de decisão
@@ -125,7 +127,7 @@ Cada decisão gera uma linha JSON no logger `AUDIT`. Esse formato é consumido p
 | Campo                                     | Conteúdo                                                                                                           |
 |-------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
 | `event.action`                            | `route.access`, `auth.login`, `auth.logout` e outros                                                               |
-| `event.outcome` e `event.reason`          | `success` ou `failure`, e o motivo (`allowed`, `forbidden`, `unauthenticated`, `invalid_token`, `session_expired`) |
+| `event.outcome` e `event.reason`          | `success` ou `failure`, e o motivo (`allowed`, `forbidden`, `unauthenticated`, `invalid_token`, `session_expired`, `rate_limited`, `throttled`) |
 | `user.id`, `user.name`, `user.email`      | Quem chamou                                                                                                        |
 | `gateway.auth.method`                     | `session`, `bearer` ou `none`                                                                                      |
 | `gateway.route.id` e `gateway.route.team` | A rota                                                                                                             |
@@ -133,6 +135,8 @@ Cada decisão gera uma linha JSON no logger `AUDIT`. Esse formato é consumido p
 | `gateway.access.matched`                  | A permissão que liberou o acesso                                                                                   |
 
 Nunca registre token, cookie, `Authorization`, senha ou query string. Preflight de CORS respondido pelo gateway não gera evento, porque não chega a uma rota. Já uma chamada de origem recusada gera evento com `event.reason=forbidden`.
+
+`rate_limited` (429) e `throttled` (503 em rota) vêm das políticas da rota. `throttled` já existia para o limite de tentativas de login do canal LDAP (429, `event.action=auth.login`): use o `event.action` e o status para separar os dois.
 
 ## Modelos de integração de front-end
 

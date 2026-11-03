@@ -1,9 +1,7 @@
 package com.example.operator.reconcile;
 
 import com.example.operator.crd.GatewayRoute;
-import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteSpec;
-import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
 import org.slf4j.Logger;
@@ -40,35 +38,13 @@ public class SnapshotBuilder {
                 log.warn("GatewayRoute {} is invalid: {}", routeName(route), error.get());
                 continue;
             }
-            entries.add(toEntry(route));
+            entries.add(RouteEntries.toEntry(route));
         }
         entries.sort(Comparator.comparing(RouteConfigEntry::id));
 
         Instant now = clock.instant();
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot(now.toString(), now, entries);
         return new Result(snapshot, total, entries.size(), disabled, invalid);
-    }
-
-    private static RouteConfigEntry toEntry(GatewayRoute route) {
-        GatewayRouteSpec spec = route.getSpec();
-        return new RouteConfigEntry(
-                route.getMetadata().getName(),
-                spec.getPath(),
-                spec.getTargetUri(),
-                spec.getStripPrefix(),
-                spec.getMethods(),
-                Boolean.TRUE,
-                spec.getTeam(),
-                spec.getDescription(),
-                toAccess(spec.getAccess())
-        );
-    }
-
-    private static RouteAccess toAccess(GatewayRouteAccess access) {
-        if (access == null) {
-            return null;
-        }
-        return new RouteAccess(access.getMode(), access.getAnyOf(), access.getForwardToken());
     }
 
     private static String routeName(GatewayRoute route) {

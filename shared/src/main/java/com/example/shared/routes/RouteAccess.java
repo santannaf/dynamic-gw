@@ -1,5 +1,6 @@
 package com.example.shared.routes;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
@@ -12,6 +13,7 @@ import java.util.List;
  * gateway decides which types exist. {@code forwardToken == null} means
  * {@code false}.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record RouteAccess(
         String mode,
         List<String> anyOf,

@@ -1,7 +1,9 @@
 package com.example.operator.crd;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class GatewayRouteAccess {
 
     private String mode;

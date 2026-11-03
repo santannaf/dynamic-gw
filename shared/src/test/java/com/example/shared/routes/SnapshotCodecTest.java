@@ -28,7 +28,7 @@ class SnapshotCodecTest {
                 "platform-team",
                 "Echoes the request via httpbin for smoke testing.",
                 new RouteAccess("authenticated", List.of("group:tools-httpbin", "role:gateway-admin"), true)
-        );
+        , null, null, null, null, null);
         RouteConfigEntry echo = new RouteConfigEntry(
                 "echo-route",
                 "/echo/**",
@@ -39,7 +39,7 @@ class SnapshotCodecTest {
                 null,
                 null,
                 null
-        );
+        , null, null, null, null, null);
         RouteConfigSnapshot original = new RouteConfigSnapshot(
                 "2026-06-13T10:00:00Z",
                 Instant.parse("2026-06-13T10:00:00Z"),
@@ -155,11 +155,11 @@ class SnapshotCodecTest {
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot(
                 "v1",
                 Instant.now(),
-                List.of(new RouteConfigEntry("a", "/a", "http://a", 1, null, true, null, null, null))
+                List.of(new RouteConfigEntry("a", "/a", "http://a", 1, null, true, null, null, null, null, null, null, null, null))
         );
 
         assertThatThrownBy(() -> snapshot.routes().add(
-                new RouteConfigEntry("b", "/b", "http://b", 1, null, true, null, null, null)
+                new RouteConfigEntry("b", "/b", "http://b", 1, null, true, null, null, null, null, null, null, null, null)
         )).isInstanceOf(UnsupportedOperationException.class);
     }
 
@@ -168,7 +168,7 @@ class SnapshotCodecTest {
         RouteConfigEntry entry = new RouteConfigEntry(
                 "a", "/a", "http://a", 1, List.of("GET"), true, null, null,
  null
-        );
+        , null, null, null, null, null);
 
         assertThatThrownBy(() -> entry.methods().add("POST"))
                 .isInstanceOf(UnsupportedOperationException.class);

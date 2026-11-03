@@ -38,3 +38,131 @@ gateway:
             enabled: true
             team: platform-team
             description: Baseline route used by the k6 stress scenario alongside /httpbin.
+          # --- Políticas (as mesmas rotas de k8s/samples/routes-policies.yaml, para o
+          # scripts/e2e/test-policies.sh rodar igual no v1 e no v2). Contam por réplica.
+          - id: policy-limited
+            path: /pol/limited/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: Five requests every 10 seconds for all callers together.
+            rate-limit:
+              requests: 5
+              period: 10s
+          - id: policy-per-client
+            path: /pol/per-client/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: Two requests every 10 seconds for each X-Api-Key.
+            rate-limit:
+              requests: 2
+              period: 10s
+              key: header:X-Api-Key
+          - id: policy-throttled
+            path: /pol/throttled/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: One request at a time, one more waiting for up to 5 seconds.
+            throttle:
+              max-concurrent: 1
+              max-queue: 1
+              max-wait: 5s
+          - id: policy-filters
+            path: /pol/filters/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: Catalog filters - request and response headers, path and query.
+            filters:
+              - name: PrefixPath
+                args:
+                  prefix: /anything
+              - name: AddRequestHeader
+                args:
+                  name: X-Source
+                  value: gateway
+              - name: RemoveRequestHeader
+                args:
+                  name: X-Debug
+              - name: AddRequestParameter
+                args:
+                  name: origem
+                  value: borda
+              - name: AddResponseHeader
+                args:
+                  name: X-Policy
+                  value: filters
+          - id: policy-transform
+            path: /pol/transform/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: JSON response reduced to two fields, one renamed, under one key.
+            filters:
+              - name: PrefixPath
+                args:
+                  prefix: /anything
+            transform:
+              allow: [method, url]
+              mapping:
+                url: endereco
+              group: eco
+          - id: policy-painel
+            path: /pol/painel/{id}
+            description: One answer built from two backends, each under its own key.
+            aggregate:
+              timeout: 3s
+              backends:
+                - url: http://go-httpbin.platform.svc.cluster.local:8080/anything/pedidos/{id}
+                  group: pedido
+                  transform:
+                    allow: [url]
+                - url: http://go-httpbin.platform.svc.cluster.local:8080/anything/clientes/{id}
+                  group: cliente
+                  transform:
+                    allow: [url, method]
+          - id: policy-parcial
+            path: /pol/parcial/{id}
+            description: One of the two backends fails - the answer is partial and says so.
+            aggregate:
+              timeout: 3s
+              backends:
+                - url: http://go-httpbin.platform.svc.cluster.local:8080/anything/pedidos/{id}
+                  group: pedido
+                  transform:
+                    allow: [url]
+                - url: http://go-httpbin.platform.svc.cluster.local:8080/status/503
+                  group: estoque
+          - id: policy-rewrite
+            path: /pol/rewrite/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: Catalog filters - path rewritten, request header replaced, query parameter removed.
+            filters:
+              - name: RewritePath
+                args:
+                  regexp: /(?<resto>.*)
+                  replacement: /anything/reescrito/$\{resto}
+              - name: SetRequestHeader
+                args:
+                  name: X-Canal
+                  value: borda
+              - name: RemoveRequestParameter
+                args:
+                  name: debug
+              - name: SetResponseHeader
+                args:
+                  name: X-Policy
+                  value: rewrite
+          - id: policy-setpath
+            path: /pol/setpath/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: Catalog filters - fixed path, response header removed, request body up to 1KB.
+            filters:
+              - name: SetPath
+                args:
+                  template: /response-headers
+              - name: RemoveResponseHeader
+                args:
+                  name: X-Interno
+              - name: RequestSize
+                args:
+                  maxSize: 1KB

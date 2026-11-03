@@ -1,6 +1,7 @@
 package com.example.gateway;
 
 import com.example.gateway.routes.store.RouteStoreProperties;
+import com.example.shared.routes.RoutePolicyRules;
 import com.example.gateway.security.GatewaySecurityProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -146,6 +147,17 @@ class GatewayProfilesTest {
         assertThat(s3.getRegion()).isEqualTo("us-east-1");
         assertThat(s3.getPollInterval()).isEqualTo(Duration.ofSeconds(15));
         assertThat(s3.getEndpoint()).isNull();
+    }
+
+    @Test
+    void standaloneSampleRoutesBindStrictlyAndFollowThePolicyRules() {
+        RouteStoreProperties routes = bindStrictly(environment(List.of("standalone"), Map.of()),
+                "gateway.routes.store", RouteStoreProperties.class);
+
+        assertThat(routes.getProperties().getRoutes()).hasSize(11).allSatisfy(route ->
+                assertThat(RoutePolicyRules.validate(route, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX))
+                        .as(route.id()).isEmpty());
+        assertThat(routes.getProperties().getRoutes()).filteredOn(route -> route.aggregate() != null).hasSize(2);
     }
 
     @Test

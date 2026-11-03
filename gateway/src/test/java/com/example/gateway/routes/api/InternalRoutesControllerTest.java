@@ -5,6 +5,9 @@ import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteDefinitionMapper;
 import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
+import com.example.shared.routes.RouteRateLimit;
+import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTransform;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.route.Route;
@@ -71,7 +74,7 @@ class InternalRoutesControllerTest {
     void getListsCurrentRoutesAndDoesNotReload() {
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
                 "httpbin-route", "/httpbin/**", "http://httpbin.org", 1, List.of("GET", "POST"), true,
-                "platform-team", "Smoke-test route via httpbin.", null));
+                "platform-team", "Smoke-test route via httpbin.", null, null, null, null, null, null));
         routeLocator.replaceAll(
                 List.of(Route.async(rd).asyncPredicate(e -> Mono.just(true)).build()),
                 List.of(rd));
@@ -116,12 +119,35 @@ class InternalRoutesControllerTest {
     }
 
     @Test
+    void getExposesRoutePoliciesWhenDeclared() {
+        RouteDefinition limited = mapper.toDefinition(new RouteConfigEntry(
+                "limited", "/l/**", "http://l", 1, null, true, null, null, null,
+                new RouteRateLimit(5, "10s", null, "ip"), new RouteThrottle(2, 1, "1s"), null,
+                new RouteTransform(null, List.of("senha"), null, null, null), null));
+        routeLocator.replaceAll(List.of(Route.async(limited).asyncPredicate(e -> Mono.just(true)).build()),
+                List.of(limited));
+        InternalRoutesController controller = new InternalRoutesController(
+                mock(GatewayRouteReloadService.class), routeLocator);
+
+        WebTestClient.bindToController(controller).build()
+                .get().uri("/internal/routes")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes[0].rateLimit.requests").isEqualTo(5)
+                .jsonPath("$.routes[0].rateLimit.key").isEqualTo("ip")
+                .jsonPath("$.routes[0].throttle.maxConcurrent").isEqualTo(2)
+                .jsonPath("$.routes[0].transform.deny[0]").isEqualTo("senha")
+                .jsonPath("$.routes[0].aggregate").doesNotExist();
+    }
+
+    @Test
     void getExposesAccessPolicyWhenDeclared() {
         RouteDefinition restricted = mapper.toDefinition(new RouteConfigEntry(
                 "restricted", "/r/**", "http://r", 1, null, true, null, null,
-                new RouteAccess(null, List.of("group:tools-httpbin"), true)));
+                new RouteAccess(null, List.of("group:tools-httpbin"), true), null, null, null, null, null));
         RouteDefinition open = mapper.toDefinition(new RouteConfigEntry(
-                "open", "/o/**", "http://o", 1, null, true, null, null, null));
+                "open", "/o/**", "http://o", 1, null, true, null, null, null, null, null, null, null, null));
         routeLocator.replaceAll(
                 List.of(Route.async(restricted).asyncPredicate(e -> Mono.just(true)).build(),
                         Route.async(open).asyncPredicate(e -> Mono.just(true)).build()),

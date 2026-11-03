@@ -11,6 +11,7 @@ public enum AccessDecision {
     INVALID_TOKEN("invalid_token", false),
     SESSION_EXPIRED("session_expired", false),
     THROTTLED("throttled", false),
+    RATE_LIMITED("rate_limited", false),
     NO_ROUTE("no_route", false),
     ERROR("error", false);
 

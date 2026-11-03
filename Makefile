@@ -6,7 +6,7 @@
         standalone-sso-up standalone-sso-down standalone-sso-test \
         s3-sso-up s3-sso-down s3-sso-test \
         test restart-test large-snapshot-test route-propagation-test \
-        stress-test dump-snapshot clean
+        stress-test dump-snapshot policies-test clean
 
 # ──────────────────────────────────────────────────────────────────────────
 # Cluster e build
@@ -163,6 +163,11 @@ sso-down:
 
 sso-test:
 	./scripts/e2e/test-sso.sh
+
+# Políticas de rota (rate limit, throttling, filtros, transformação, agregação):
+# no v2 aplica k8s/samples/routes-policies.yaml; no v1 usa as rotas da imagem.
+policies-test:
+	./scripts/e2e/test-policies.sh
 
 # Zera o banco do Keycloak: o realm volta a ser o do JSON e todas as sessões caem.
 keycloak-reset:

@@ -1,5 +1,7 @@
 package com.example.gateway.routes;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.example.gateway.routes.store.RouteConfigChangeListener;
 import com.example.gateway.routing.FastRouteCompiler;
 import com.example.gateway.routing.RouteCompiler;
@@ -17,11 +19,15 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Configuration
 public class GatewayRoutesConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayRoutesConfiguration.class);
 
     @Bean
     public RouteConfigChangeWatcher routeConfigChangeWatcher(RouteConfigChangeListener listener,
@@ -43,11 +49,37 @@ public class GatewayRoutesConfiguration {
                 (List) gatewayFilterFactories,
                 gatewayProperties,
                 configurationService);
-        return definitions -> {
+        Function<List<RouteDefinition>, List<Route>> compile = definitions -> {
             input.set(definitions);
             List<Route> result = internal.getRoutes().collectList().block();
             return result == null ? List.of() : result;
         };
+        return definitions -> {
+            try {
+                return compile.apply(definitions);
+            } catch (RuntimeException batchFailure) {
+                // One definition that does not compile fails the whole batch. Compile
+                // them one by one instead: the bad one is not served, the rest are.
+                List<Route> routes = new ArrayList<>(definitions.size());
+                for (RouteDefinition definition : definitions) {
+                    try {
+                        routes.addAll(compile.apply(List.of(definition)));
+                    } catch (RuntimeException failure) {
+                        log.warn("Route {} could not be compiled and will not be served: {}",
+                                definition.getId(), rootMessage(failure));
+                    }
+                }
+                return routes;
+            }
+        };
+    }
+
+    private static String rootMessage(Throwable failure) {
+        Throwable root = failure;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root.getClass().getSimpleName() + ": " + root.getMessage();
     }
 
     @Bean

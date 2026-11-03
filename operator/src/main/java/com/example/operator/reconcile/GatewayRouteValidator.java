@@ -3,6 +3,7 @@ package com.example.operator.reconcile;
 import com.example.operator.crd.GatewayRoute;
 import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteSpec;
+import com.example.shared.routes.RoutePolicyRules;
 
 import java.util.Optional;
 import java.util.Set;
@@ -39,9 +40,6 @@ public class GatewayRouteValidator {
         if (spec.getPath().startsWith(RESERVED_PATH_PREFIX)) {
             return Optional.of("spec.path must not start with the reserved prefix " + RESERVED_PATH_PREFIX);
         }
-        if (spec.getTargetUri() == null || spec.getTargetUri().isBlank()) {
-            return Optional.of("spec.targetUri is required");
-        }
         if (spec.getStripPrefix() != null && spec.getStripPrefix() < 0) {
             return Optional.of("spec.stripPrefix must be >= 0");
         }
@@ -52,7 +50,15 @@ public class GatewayRouteValidator {
                 }
             }
         }
-        return validateAccess(spec.getAccess());
+        Optional<String> access = validateAccess(spec.getAccess());
+        if (access.isPresent()) {
+            return access;
+        }
+        // Target (targetUri or aggregate) and policies: the same rules the
+        // gateway applies to routes declared in properties.
+        return RoutePolicyRules.validate(RouteEntries.toEntry(resource),
+                        RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX)
+                .map(problem -> "spec." + problem);
     }
 
     private static Optional<String> validateAccess(GatewayRouteAccess access) {

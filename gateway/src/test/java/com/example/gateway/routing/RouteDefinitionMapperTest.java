@@ -27,7 +27,7 @@ class RouteDefinitionMapperTest {
                 null,
                 null,
                 null
-        );
+        , null, null, null, null, null);
 
         RouteDefinition rd = mapper.toDefinition(entry);
 
@@ -55,7 +55,7 @@ class RouteDefinitionMapperTest {
                 null,
                 null,
                 null
-        );
+        , null, null, null, null, null);
 
         RouteDefinition rd = mapper.toDefinition(entry);
 
@@ -77,7 +77,7 @@ class RouteDefinitionMapperTest {
                 null,
                 null,
                 null
-        );
+        , null, null, null, null, null);
 
         RouteDefinition rd = mapper.toDefinition(entry);
 
@@ -97,7 +97,7 @@ class RouteDefinitionMapperTest {
                 null,
                 null,
                 null
-        );
+        , null, null, null, null, null);
 
         RouteDefinition rd = mapper.toDefinition(entry);
 
@@ -109,7 +109,7 @@ class RouteDefinitionMapperTest {
     void accessTravelsAsMetadataOnly() {
         RouteAccess access = new RouteAccess("authenticated", List.of("group:tools-httpbin"), null);
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
-                "restricted", "/foo/**", "http://upstream", null, null, true, null, null, access));
+                "restricted", "/foo/**", "http://upstream", null, null, true, null, null, access, null, null, null, null, null));
 
         assertThat(rd.getMetadata()).containsEntry(RouteDefinitionMapper.ACCESS_METADATA_KEY, access);
         assertThat(rd.getFilters()).extracting(FilterDefinition::getName).containsExactly("StripPrefix");
@@ -118,7 +118,7 @@ class RouteDefinitionMapperTest {
     @Test
     void entryWithoutAccessHasNoAccessMetadata() {
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
-                "open", "/foo/**", "http://upstream", null, null, true, null, null, null));
+                "open", "/foo/**", "http://upstream", null, null, true, null, null, null, null, null, null, null, null));
 
         assertThat(rd.getMetadata()).doesNotContainKey(RouteDefinitionMapper.ACCESS_METADATA_KEY);
     }

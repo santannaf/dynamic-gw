@@ -24,9 +24,10 @@ O backend de persistência neste POC é um `ConfigMap` do Kubernetes (com gzip +
 14. [Otimização: detectar snapshots iguais sem ocupar memória](#otimização-detectar-snapshots-iguais-sem-ocupar-memória)
 15. [Otimização: 60 mil rotas num `ConfigMap` de 1 MiB](#otimização-60-mil-rotas-num-configmap-de-1-mib)
 16. [SSO, autorização por rota e auditoria](#sso-autorização-por-rota-e-auditoria)
-17. [Limitações conhecidas](#limitações-conhecidas)
-18. [Próximos passos](#próximos-passos)
-19. [Licença](#licença)
+17. [Políticas de rota: rate limit, throttling, filtros, transformação e agregação](#políticas-de-rota-rate-limit-throttling-filtros-transformação-e-agregação)
+18. [Limitações conhecidas](#limitações-conhecidas)
+19. [Próximos passos](#próximos-passos)
+20. [Licença](#licença)
 
 ---
 
@@ -727,6 +728,25 @@ gateway:
 ```
 
 O filtro `1.2.840.113556.1.4.1941` resolve grupos aninhados no AD. A base de grupos restrita à OU da aplicação limita as autoridades ao que o IDM mapeou. O limite de tentativas de login (`ldap.login-attempts`) é por réplica: com N réplicas, um usuário pode errar até N × `max-failures` vezes na janela antes do 429. A política de lockout do AD continua valendo por cima.
+
+---
+
+## Políticas de rota: rate limit, throttling, filtros, transformação e agregação
+
+Cada rota declara, ao lado do `access`, as políticas que precisar. Os mesmos nomes valem no `GatewayRoute` (v2) e nas rotas do properties (v1). Os tetos de todas as rotas juntas ficam em `gateway.traffic.*`.
+
+```yaml
+spec:
+  path: /pedidos/**
+  targetUri: http://pedidos.svc:8080
+  rateLimit: {requests: 100, period: 1s, key: ip}           # 429 acima, com Retry-After e RateLimit-*
+  throttle: {maxConcurrent: 50, maxQueue: 100, maxWait: 200ms}   # 503 acima
+  filters:
+    - {name: AddRequestHeader, args: {name: X-Source, value: gateway}}
+  transform: {deny: [senha], mapping: {nome: name}}          # resposta JSON
+```
+
+Uma rota com `aggregate` (no lugar de `targetUri`) chama vários backends em paralelo e devolve uma resposta só. Os limites contam **por réplica**, em memória, sem Redis. A referência completa, com o catálogo de filtros e os tetos globais, está em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md); o e2e é `make policies-test`.
 
 ---
 

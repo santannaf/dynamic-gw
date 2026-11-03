@@ -55,7 +55,7 @@ class S3RouteConfigPublisherTest {
                 true,
                 null,
                 null,
-                null);
+                null, null, null, null, null, null);
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot(
                 "v1", Instant.parse("2026-01-01T00:00:00Z"), List.of(entry));
 

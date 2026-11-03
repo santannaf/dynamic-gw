@@ -16,6 +16,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -60,6 +61,12 @@ public class InternalRoutesController {
                 .map(routes -> Map.of("routes", routes));
     }
 
+    private static final List<String> POLICY_KEYS = List.of(
+            RouteDefinitionMapper.RATE_LIMIT_METADATA_KEY,
+            RouteDefinitionMapper.THROTTLE_METADATA_KEY,
+            RouteDefinitionMapper.TRANSFORM_METADATA_KEY,
+            RouteDefinitionMapper.AGGREGATE_METADATA_KEY);
+
     private static Map<String, Object> view(RouteDefinition rd) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", rd.getId());
@@ -84,6 +91,13 @@ public class InternalRoutesController {
         }
         if (rd.getMetadata().get(RouteDefinitionMapper.ACCESS_METADATA_KEY) instanceof RouteAccess access) {
             map.put("access", accessView(access));
+        }
+        // Catalog filters are not repeated here: they already show under "filters".
+        for (String policy : POLICY_KEYS) {
+            Object declared = rd.getMetadata().get(policy);
+            if (declared != null) {
+                map.put(policy, declared);
+            }
         }
         return map;
     }

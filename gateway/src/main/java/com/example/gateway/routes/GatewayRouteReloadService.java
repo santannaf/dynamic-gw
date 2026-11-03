@@ -7,8 +7,11 @@ import com.example.gateway.routes.store.RouteConfigProvider;
 import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
+import com.example.shared.routes.RoutePolicyRules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
 import org.springframework.cloud.gateway.route.Route;
 import org.springframework.cloud.gateway.route.RouteDefinition;
@@ -18,19 +21,26 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
+import tools.jackson.databind.json.JsonMapper;
 
 @Service
 public class GatewayRouteReloadService {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayRouteReloadService.class);
+    // Policies go into the hash as JSON: records serialize their components in
+    // declaration order, so the same policy always yields the same bytes.
+    private static final JsonMapper POLICY_JSON = JsonMapper.builder().build();
 
     private final RouteConfigProvider provider;
     private final RouteDefinitionMapper mapper;
     private final InMemoryDynamicRouteLocator routeLocator;
     private final RouteCompiler routeCompiler;
     private final ApplicationEventPublisher events;
+    private final String identityHeaderPrefix;
     // Mantemos só o hash SHA-256 do último snapshot, não a lista inteira de
     // RouteConfigEntry. Para 60k rotas, segurar a List<RouteConfigEntry>
     // ocupava ~50 MiB de heap continuamente só para suportar o early-return
@@ -44,11 +54,23 @@ public class GatewayRouteReloadService {
                                      InMemoryDynamicRouteLocator routeLocator,
                                      RouteCompiler routeCompiler,
                                      ApplicationEventPublisher events) {
+        this(provider, mapper, routeLocator, routeCompiler, events, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX);
+    }
+
+    @Autowired
+    public GatewayRouteReloadService(RouteConfigProvider provider,
+                                     RouteDefinitionMapper mapper,
+                                     InMemoryDynamicRouteLocator routeLocator,
+                                     RouteCompiler routeCompiler,
+                                     ApplicationEventPublisher events,
+                                     @Value("${gateway.security.identity-headers.prefix:X-Auth-Request-}")
+                                     String identityHeaderPrefix) {
         this.provider = provider;
         this.mapper = mapper;
         this.routeLocator = routeLocator;
         this.routeCompiler = routeCompiler;
         this.events = events;
+        this.identityHeaderPrefix = identityHeaderPrefix;
     }
 
     // Serialized: the store watcher and the operator's reload signal can arrive together, and
@@ -71,7 +93,11 @@ public class GatewayRouteReloadService {
         log.info("Route config snapshot loaded version={} snapshotRoutes={} elapsedMs={}",
                 snapshot.version(), snapshotRoutes, loadMs);
 
+        // The operator already drops invalid GatewayRoutes; routes declared in
+        // properties (v1) get the same rules here. An invalid route is not
+        // served at all, rather than served without the policy it asked for.
         List<RouteDefinition> definitions = snapshot.routes().stream()
+                .filter(this::isValid)
                 .map(this::mapAndLog)
                 .toList();
         long mapEndMs = elapsedMs(startNs);
@@ -117,6 +143,12 @@ public class GatewayRouteReloadService {
         return ids;
     }
 
+    private boolean isValid(RouteConfigEntry entry) {
+        Optional<String> problem = RoutePolicyRules.validate(entry, identityHeaderPrefix);
+        problem.ifPresent(p -> log.warn("Route {} is invalid and will not be served: {}", entry.id(), p));
+        return problem.isEmpty();
+    }
+
     private RouteDefinition mapAndLog(RouteConfigEntry entry) {
         if (log.isDebugEnabled()) {
             log.debug("Route loaded id={} path={} targetUri={}",
@@ -160,6 +192,11 @@ public class GatewayRouteReloadService {
                 // access muda a postura de segurança da rota: alterar só ela
                 // precisa disparar reload. Ver hashAccess pro layout.
                 hashAccess(md, e.access());
+                // Políticas (rateLimit, throttle, filters, transform,
+                // aggregate) também mudam o comportamento da rota. Entram
+                // depois do access, como JSON; snapshots sem elas geram
+                // "[null,null,null,null,null]".
+                updatePolicies(md, e);
                 md.update((byte) '\n');
             }
             return HexFormat.of().formatHex(md.digest());
@@ -192,6 +229,12 @@ public class GatewayRouteReloadService {
         }
         md.update((byte) 0);
         md.update((byte) (access.forwardToken() == null ? -1 : access.forwardToken() ? 1 : 0));
+    }
+
+    private static void updatePolicies(MessageDigest md, RouteConfigEntry e) {
+        md.update(POLICY_JSON.writeValueAsBytes(
+                Arrays.asList(e.rateLimit(), e.throttle(), e.filters(), e.transform(), e.aggregate())));
+        md.update((byte) 0);
     }
 
     private static void updateUtf8(MessageDigest md, String s) {
