@@ -3,9 +3,9 @@
 # baseline de segurança (public access block) e versionamento opcional.
 #
 # Uso:
-#   ./scripts/create-s3-bucket.sh
-#   S3_REGION=sa-east-1 ./scripts/create-s3-bucket.sh
-#   S3_BUCKET=meu-nome-custom ./scripts/create-s3-bucket.sh
+#   ./scripts/s3/create-s3-bucket.sh
+#   S3_REGION=sa-east-1 ./scripts/s3/create-s3-bucket.sh
+#   S3_BUCKET=meu-nome-custom ./scripts/s3/create-s3-bucket.sh
 #
 # Variáveis (todas opcionais; se não setadas, derivam de aws sts):
 #   S3_BUCKET   — nome do bucket (default: dynamic-gateway-routes-poc-<accountId>)
@@ -43,7 +43,7 @@ Configure ANTES de rodar o script de uma das formas:
   3) Profile do ~/.aws/credentials:
        export AWS_PROFILE=<seu-profile>
 
-Depois rode de novo: ./scripts/create-s3-bucket.sh
+Depois rode de novo: ./scripts/s3/create-s3-bucket.sh
 EOF
     exit 1
 fi

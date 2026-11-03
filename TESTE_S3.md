@@ -44,7 +44,7 @@ aws sts get-caller-identity
 ### Criar o bucket S3 com o script do projeto
 
 ```bash
-./scripts/create-s3-bucket.sh
+./scripts/s3/create-s3-bucket.sh
 
 # Sai algo como:
 #   Bucket    : dynamic-gateway-routes-poc-123456789012
@@ -94,7 +94,7 @@ As janelas B/C/D só ficam úteis depois da Fase 6.
 ## Fase 0 — Tear down (se vier de outra demo)
 
 ```bash
-./scripts/delete-cluster.sh
+./scripts/cluster/delete-cluster.sh
 
 # Limpa objetos antigos do bucket pra começar do zero (CUIDADO se for bucket
 # compartilhado — confine ao prefixo snapshots/):
@@ -106,7 +106,7 @@ aws s3 rm s3://$S3_BUCKET/snapshots/ --recursive
 ## Fase 1 — Cluster e namespace
 
 ```bash
-./scripts/create-cluster.sh
+./scripts/cluster/create-cluster.sh
 kubectl apply -f k8s/namespace.yaml
 kubectl get ns platform
 ```
@@ -523,7 +523,7 @@ operator passa a escrever de novo na ConfigMap `gateway-routes`.
 
 ```bash
 # Cluster:
-./scripts/delete-cluster.sh
+./scripts/cluster/delete-cluster.sh
 
 # Bucket (opcional, se quiser deixar limpo):
 aws s3 rm s3://$S3_BUCKET/snapshots/ --recursive

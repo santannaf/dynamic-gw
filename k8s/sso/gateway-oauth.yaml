@@ -1,6 +1,6 @@
 # Cenário CRDs (v2: GatewayRoute -> operator -> ConfigMap) com o canal OAuth: API
 # pública sem sessão, que só valida tokens. Substitui k8s/gateway/deployment.yaml.
-# Aplicado por scripts/deploy-sso.sh (MODE=v2 PROVIDER=oauth), que troca __HOST_PORT__.
+# Aplicado por scripts/sso/deploy-sso.sh (MODE=v2 PROVIDER=oauth), que troca __HOST_PORT__.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -1,10 +1,16 @@
-# Keycloak local (modo dev, H2 em disco efêmero) para o provedor `keycloak`
-# do gateway. Aplicado por scripts/deploy-sso.sh, que troca __HOST_PORT__
-# pela porta do k3d e cria o ConfigMap do realm e o Secret `sso-secrets`.
+# Keycloak do lab para o provedor `keycloak` do gateway: modo produção (`start`)
+# sobre PostgreSQL (k8s/sso/keycloak-postgres.yaml) ou Oracle
+# (k8s/sso/keycloak-oracle.yaml, com KEYCLOAK_DB=oracle). Aplicado por
+# scripts/keycloak/keycloak.sh, que troca __HOST_PORT__ e __KEYCLOAK_IMAGE__ e
+# cria o ConfigMap do realm. A conexão com o banco vem do ConfigMap e do Secret
+# `keycloak-db`, que o script do banco (scripts/db/) publica.
 #
 # Usuários e grupos vêm do diretório (User federation, somente leitura, por
 # LDAPS): OpenLDAP do lab ou o AD da POC. No realm só ficam a conta de serviço
 # e as roles do client tools-gateway.
+#
+# Ainda é lab: http em localhost e uma réplica. Em produção, TLS de verdade no
+# hostname e duas ou mais réplicas sobre o mesmo banco.
 #
 # Um único issuer público para browser e pods: KC_HOSTNAME fixa o `iss`
 # (http://localhost:<porta>/auth/realms/tools) e BACKCHANNEL_DYNAMIC deixa
@@ -28,15 +34,17 @@ spec:
         app.kubernetes.io/name: keycloak
         app.kubernetes.io/part-of: dynamic-gateway-control-plane
       annotations:
-        # O modo dev só importa o realm no boot e perde as sessões ao reiniciar:
-        # o pod só é recriado quando o realm-tools.json muda.
+        # O realm só é importado quando não existe no banco. Quando o JSON ou o
+        # diretório mudam, scripts/keycloak/keycloak.sh zera o banco e este
+        # checksum recria o pod, que importa o realm de novo.
         platform.saca.pags/realm-checksum: "__REALM_CHECKSUM__"
     spec:
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.1
+          # quay.io/keycloak/keycloak:26.1, ou keycloak-oracle:local (com o driver da Oracle).
+          image: __KEYCLOAK_IMAGE__
           imagePullPolicy: IfNotPresent
-          args: ["start-dev", "--import-realm"]
+          args: ["start", "--import-realm"]
           ports:
             - name: http
               containerPort: 8080
@@ -49,6 +57,7 @@ spec:
               value: http://localhost:__HOST_PORT__/auth
             - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
               value: "true"
+            # http só no lab (localhost); em produção, TLS no Keycloak ou no ingress.
             - name: KC_HTTP_ENABLED
               value: "true"
             - name: KC_HEALTH_ENABLED
@@ -57,6 +66,7 @@ spec:
             # metade da trilha de auditoria (o gateway loga o `sid`).
             - name: KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL
               value: info
+            # O admin só é criado quando o banco ainda não tem nenhum.
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: admin
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
@@ -72,8 +82,8 @@ spec:
               valueFrom:
                 secretKeyRef: {name: sso-secrets, key: tools-cli-client-secret}
             # Federação do diretório (placeholders ${LDAP_*} do realm): os valores vêm
-            # do ConfigMap e do Secret `keycloak-ldap`, que o deploy-sso.sh monta para o
-            # OpenLDAP do lab (DIRECTORY=openldap) ou para o AD da POC (DIRECTORY=ad).
+            # do ConfigMap e do Secret `keycloak-ldap`, que o scripts/keycloak/keycloak.sh
+            # monta para o OpenLDAP do lab (DIRECTORY=openldap) ou para o AD da POC (DIRECTORY=ad).
             - name: LDAP_BIND_PASSWORD
               valueFrom:
                 secretKeyRef: {name: keycloak-ldap, key: bind-password}
@@ -83,6 +93,11 @@ spec:
           envFrom:
             - configMapRef:
                 name: keycloak-ldap
+            # KC_DB e KC_DB_URL; KC_DB_USERNAME e KC_DB_PASSWORD no Secret.
+            - configMapRef:
+                name: keycloak-db
+            - secretRef:
+                name: keycloak-db
           readinessProbe:
             httpGet:
               path: /auth/realms/tools/.well-known/openid-configuration
@@ -90,7 +105,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 5
             failureThreshold: 60
-          # start-dev reaugmenta o Quarkus no boot: abaixo de ~2 GiB o pod morre por OOM.
+          # Sem imagem otimizada, o `start` faz o build do Quarkus no boot: abaixo de ~2 GiB o pod morre por OOM.
           resources:
             requests:
               cpu: 250m

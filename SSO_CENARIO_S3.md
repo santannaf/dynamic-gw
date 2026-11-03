@@ -85,7 +85,7 @@ O script sobe o MinIO e gera o Secret `minio-credentials`. Aplica o operator e *
 Com `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` exportados no shell, como no [`TESTE_S3.md`](TESTE_S3.md):
 
 ```bash
-./scripts/create-s3-bucket.sh        # cria o bucket e imprime os export S3_BUCKET/S3_REGION
+./scripts/s3/create-s3-bucket.sh        # cria o bucket e imprime os export S3_BUCKET/S3_REGION
 export S3_BUCKET=<bucket> S3_REGION=us-east-1
 kubectl -n platform create secret generic aws-credentials \
   --from-literal=AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \

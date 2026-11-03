@@ -4,7 +4,7 @@
 # ConfigMap, o que funciona com ou sem SSO no gateway da plataforma.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
 HOST_PORT="${HOST_PORT:-8080}"

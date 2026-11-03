@@ -17,7 +17,7 @@
 #         make nginx-lb-pf
 #
 # Uso:
-#   scripts/k6/run-load-scenario.sh
+#   scripts/load/k6/run-load-scenario.sh
 #
 # Env vars (todas opcionais):
 #   DURATION       Default 5m   (passada pro k6)
@@ -25,12 +25,12 @@
 #   SCHEDULE       Default "60 180 270"  (offsets em segundos dos pushes)
 #   BASE_URL       Default http://localhost:18000  (LB nginx)
 #   WORK_DIR       Default /tmp/dyngw-load-scenario  (logs + JSON + relatório)
-#   K6_SCRIPT      Default scripts/k6/load-during-large-snapshot.js
-#   PUSH_SCRIPT    Default scripts/test-large-snapshot.sh
+#   K6_SCRIPT      Default scripts/load/k6/load-during-large-snapshot.js
+#   PUSH_SCRIPT    Default scripts/load/test-large-snapshot.sh
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "${ROOT}"
 
 DURATION="${DURATION:-5m}"
@@ -39,8 +39,8 @@ TEAMS="${TEAMS:-1}"
 SCHEDULE="${SCHEDULE:-60 180 270}"
 BASE_URL="${BASE_URL:-http://localhost:18000}"
 WORK_DIR="${WORK_DIR:-/tmp/dyngw-load-scenario}"
-K6_SCRIPT="${K6_SCRIPT:-scripts/k6/load-during-large-snapshot.js}"
-PUSH_SCRIPT="${PUSH_SCRIPT:-scripts/test-large-snapshot.sh}"
+K6_SCRIPT="${K6_SCRIPT:-scripts/load/k6/load-during-large-snapshot.js}"
+PUSH_SCRIPT="${PUSH_SCRIPT:-scripts/load/test-large-snapshot.sh}"
 
 mkdir -p "${WORK_DIR}"
 K6_LOG="${WORK_DIR}/k6.log"

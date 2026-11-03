@@ -146,7 +146,7 @@ Vale em segundos, sem restart. O operator publica um snapshot novo e sinaliza o 
 
 Os profiles apontam para o lab. Fora dele, sobrescreva por variável de ambiente no Deployment, sem rebuild:
 
-O Keycloak federa o AD com as mesmas configurações do realm do lab. Para a POC no lab, com o AD de verdade: `DIRECTORY=ad LDAP_URL=ldaps://… make sso-up`, passo a passo em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#7-keycloak-com-o-ad-de-verdade-poc). No gateway:
+O Keycloak federa o AD com as mesmas configurações do realm do lab. Para a POC no lab, com o AD de verdade: `DIRECTORY=ad LDAP_URL=ldaps://… make sso-up`, passo a passo em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#8-keycloak-com-o-ad-de-verdade-poc). No gateway:
 
 ```bash
 # Keycloak

@@ -1,6 +1,6 @@
 # Cenário S3 (v2: GatewayRoute -> operator -> objeto S3) com SSO pelo Keycloak (OIDC).
 # Substitui k8s/gateway/deployment.yaml (mesmas réplicas e limites; só o store
-# muda). Aplicado por scripts/deploy-sso.sh (MODE=s3 PROVIDER=keycloak), que
+# muda). Aplicado por scripts/sso/deploy-sso.sh (MODE=s3 PROVIDER=keycloak), que
 # troca os placeholders: porta, bucket, região, endpoint e o Secret com
 # AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY. Doc: SSO_CENARIO_S3.md
 apiVersion: apps/v1

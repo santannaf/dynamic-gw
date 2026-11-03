@@ -12,17 +12,17 @@
 #      Lista as classes que mais consomem heap.
 #
 # Uso:
-#   scripts/measure-gateway-memory.sh                       # modo 1, 5min @ 5s
-#   INTERVAL=2 DURATION=120 scripts/measure-gateway-memory.sh
-#   scripts/measure-gateway-memory.sh --histogram           # tenta modo 2
-#   scripts/measure-gateway-memory.sh --histogram --top 30  # top 30 classes
+#   scripts/load/measure-gateway-memory.sh                       # modo 1, 5min @ 5s
+#   INTERVAL=2 DURATION=120 scripts/load/measure-gateway-memory.sh
+#   scripts/load/measure-gateway-memory.sh --histogram           # tenta modo 2
+#   scripts/load/measure-gateway-memory.sh --histogram --top 30  # top 30 classes
 #
 # Receita pra confirmar o ganho do lastLoadedRoutes -> hash:
 #   1) Antes da mudança, com o cluster idle (~2 rotas):
-#      scripts/measure-gateway-memory.sh --duration 30      # baseline
+#      scripts/load/measure-gateway-memory.sh --duration 30      # baseline
 #   2) make large-snapshot-test (push de 60k)
 #   3) Aguarda o snapshot convergir e o operator restaurar o snapshot real:
-#      scripts/measure-gateway-memory.sh --duration 60      # pós-stress
+#      scripts/load/measure-gateway-memory.sh --duration 60      # pós-stress
 #   4) Aplica o patch do hash, rebuilda nativo, redeploya
 #   5) Repete 1-3 — compare os RSS
 

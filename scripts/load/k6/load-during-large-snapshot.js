@@ -14,10 +14,10 @@
 //     kubectl port-forward -n platform pod/<pod-2> 18081:8080
 //
 //   Terminal B – sobe o nginx LB (round-robin entre 18080 e 18081):
-//     scripts/k6/start-nginx-lb.sh
+//     scripts/load/k6/start-nginx-lb.sh
 //
 //   Terminal C – dispara o k6 (default já bate em http://localhost:18000):
-//     k6 run scripts/k6/load-during-large-snapshot.js
+//     k6 run scripts/load/k6/load-during-large-snapshot.js
 //
 //   Terminal D – durante o teste, sobe o snapshot pesado:
 //     ROUTES=30000 make large-snapshot-test
@@ -139,7 +139,7 @@ export function setup() {
     if (lbHealth.status !== 200) {
         throw new Error(
             `Pré-condição falhou: nginx LB em ${BASE_URL} respondeu HTTP ${lbHealth.status} ` +
-            `no /lb/health (esperado 200). Suba com scripts/k6/start-nginx-lb.sh ` +
+            `no /lb/health (esperado 200). Suba com scripts/load/k6/start-nginx-lb.sh ` +
             `e confirme os port-forwards 18080/18081 dos pods.`
         );
     }

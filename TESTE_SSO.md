@@ -73,11 +73,11 @@ echo "usuarios: $PASSWORD   admin do Keycloak: $KC_ADMIN"
 
 As pessoas vivem só no diretório: o Keycloak confere a senha com um bind e importa o usuário no primeiro login. No realm ficam a conta de serviço, a role `gateway-admin` do client `tools-gateway` e o grupo `gateway-admins`, que a recebe. O modelo está em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#6-modelo-de-roles-operar-o-gateway-não-é-usar-as-ferramentas).
 
-Para **recomeçar do zero sem recriar o cluster** (o realm é reimportado e todas as sessões caem):
+O Keycloak roda em modo produção, com banco (PostgreSQL por default; `KEYCLOAK_DB=oracle make sso-up` usa Oracle). Reiniciar o pod não perde sessões nem configuração. Para **recomeçar do zero sem recriar o cluster** (o banco é zerado, o realm volta a ser o do JSON e todas as sessões caem):
 
 ```bash
-kubectl -n platform rollout restart deployment/keycloak
-kubectl -n platform rollout status deployment/keycloak
+make keycloak-reset
+make keycloak-db-shell       # psql ou sqlplus no banco do Keycloak, para olhar as tabelas
 ```
 
 ### 0.4 Conferência
@@ -392,9 +392,10 @@ kubectl config use-context k3d-lab         # se o `make cluster` tiver trocado s
 | Sintoma                                   | Causa                                                                                                              | O que fazer                                                                                                                 |
 |-------------------------------------------|--------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
 | "Login failed." depois de digitar a senha | O login começou em `127.0.0.1` e voltou em `localhost` (cookies são por host), ou passou de 5 min na tela de login | Recomece pela URL protegida usando sempre `localhost`                                                                       |
-| Voltou para o login sem ter feito logout  | O Keycloak reiniciou (modo dev perde as sessões) ou a sessão foi derrubada                                         | Esperado: faça login de novo                                                                                                |
+| Voltou para o login sem ter feito logout  | A sessão foi derrubada no Keycloak, ou o banco foi zerado (`make keycloak-reset`)                                  | Esperado: faça login de novo                                                                                                |
 | Página em branco                          | É um 403 (sem corpo)                                                                                               | Confira o status no DevTools → Network                                                                                      |
 | Usuário "errado" numa janela anônima      | No Firefox as janelas anônimas compartilham cookies                                                                | Feche todas antes de trocar de usuário                                                                                      |
 | `ImagePullBackOff` no gateway/operator    | Imagem não chegou ao k3d                                                                                           | `make deploy` de novo; o build já usa `--provenance=false`, sem o qual o `k3d image import` descarta a imagem nesta máquina |
-| Keycloak em `OOMKilled`                   | Modo dev precisa de ~2 GiB                                                                                         | Já configurado em `k8s/sso/keycloak.yaml`; confira a memória livre do Docker                                                |
+| Keycloak em `OOMKilled`                   | O build do Quarkus no boot precisa de ~2 GiB                                                                       | Já configurado em `k8s/sso/keycloak.yaml`; confira a memória livre do Docker                                                |
+| Keycloak reinicia em loop logo após subir | O banco ainda não está pronto (Oracle leva minutos no primeiro boot)                                               | `kubectl -n platform get pods -l app.kubernetes.io/name=keycloak-oracle`; o `sso-up` já espera o banco                      |
 | `kubectl` mexendo no cluster errado       | Contexto padrão é outro                                                                                            | `export KUBECONFIG=$(k3d kubeconfig write dynamic-gateway-lab)` no terminal do teste                                        |

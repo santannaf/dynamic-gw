@@ -12,7 +12,7 @@
 # reporta estatísticas + veredito vs SLO_MS.
 #
 # Pode rodar isolado (em cluster idle) OU em paralelo com
-# `scripts/k6/run-load-scenario.sh` em outro terminal — esse é o jeito de
+# `scripts/load/k6/run-load-scenario.sh` em outro terminal — esse é o jeito de
 # medir propagação SOB carga. Use LOCAL_PORT_BASE diferente do
 # test-large-snapshot.sh (19080) pra evitar colisão.
 #
@@ -27,18 +27,18 @@
 #   HTTPBIN_URI     Default http://go-httpbin.platform.svc.cluster.local:8080
 #
 # Uso:
-#   scripts/test-route-propagation.sh                          # 5 iter, SLO 5s
-#   ITERATIONS=10 SLO_MS=2000 scripts/test-route-propagation.sh
-#   CLEANUP=0 scripts/test-route-propagation.sh                # deixa rotas
+#   scripts/load/test-route-propagation.sh                          # 5 iter, SLO 5s
+#   ITERATIONS=10 SLO_MS=2000 scripts/load/test-route-propagation.sh
+#   CLEANUP=0 scripts/load/test-route-propagation.sh                # deixa rotas
 #
 # Em paralelo com cenário de carga:
-#   # terminal 1: TEAMS=3 ROUTES=20000 scripts/k6/run-load-scenario.sh
+#   # terminal 1: TEAMS=3 ROUTES=20000 scripts/load/k6/run-load-scenario.sh
 #   # terminal 2 (após pre-flight do orquestrador subir o k6):
-#   scripts/test-route-propagation.sh
+#   scripts/load/test-route-propagation.sh
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
 NAMESPACE="${NAMESPACE:-platform}"

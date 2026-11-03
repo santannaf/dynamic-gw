@@ -1,6 +1,6 @@
 # Operator do cenário S3 (publica o snapshot no objeto S3 em vez da ConfigMap).
 # Mesmo conteúdo de k8s/s3/operator-deployment.yaml, com os __PLACEHOLDERS__
-# que o scripts/deploy-sso.sh (MODE=s3) troca, inclusive endpoint/path-style
+# que o scripts/sso/deploy-sso.sh (MODE=s3) troca, inclusive endpoint/path-style
 # para o MinIO local. O operator não tem SSO: só o gateway muda de profile.
 # Doc: SSO_CENARIO_S3.md
 apiVersion: apps/v1

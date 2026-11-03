@@ -1,6 +1,6 @@
 .PHONY: cluster down clean-build jars images load-images bootstrap deploy \
         standalone-up standalone-down nginx-lb-up nginx-lb-down nginx-lb-pf \
-        sso-up sso-down sso-test ldap-up ldap-test \
+        sso-up sso-down sso-test ldap-up ldap-test keycloak-reset keycloak-db-shell \
         oauth-up oauth-down oauth-test frontend-test \
         second-gateway-up second-gateway-down second-gateway-test \
         standalone-sso-up standalone-sso-down standalone-sso-test \
@@ -13,10 +13,10 @@
 # ──────────────────────────────────────────────────────────────────────────
 
 cluster:
-	./scripts/create-cluster.sh
+	./scripts/cluster/create-cluster.sh
 
 down:
-	./scripts/delete-cluster.sh
+	./scripts/cluster/delete-cluster.sh
 
 clean-build:
 	./gradlew clean build -x test
@@ -45,11 +45,11 @@ load-images: images
 # v2 step-by-step: CRD, operator, samples, gateway. Roteiro com diagnóstico
 # em cada fase. Aplica também o nginx-lb porque ele é o entry point externo.
 bootstrap: load-images
-	./scripts/bootstrap-platform.sh
+	./scripts/platform/bootstrap-platform.sh
 
 # v2 one-shot: build + import + apply de tudo via deploy-all.sh.
 deploy:
-	./scripts/deploy-all.sh
+	./scripts/platform/deploy-all.sh
 
 # v1 standalone: gateway com rotas em properties (sem operator/CRD/operator).
 # Inclui o nginx-lb porque ele é o único ponto de exposição externo (princípio
@@ -106,32 +106,32 @@ nginx-lb-down:
 
 # Smoke test do ciclo CRUD via CRD (v2).
 test:
-	./scripts/test-routes.sh
+	./scripts/e2e/test-routes.sh
 
 # Valida restart-recovery: aplica rota, mata pod do gateway, confirma que
 # o snapshot do ConfigMap repõe as rotas no pod novo.
 restart-test:
-	./scripts/restart-gateway-test.sh
+	./scripts/e2e/restart-gateway-test.sh
 
 # Push direto de N rotas no ConfigMap binaryData/gzip (60k default).
 # Mede tempo de reload por pod.
 large-snapshot-test:
-	./scripts/test-large-snapshot.sh
+	./scripts/load/test-large-snapshot.sh
 
 # Mede tempo de propagação ponta-a-ponta: do `kubectl apply` de uma
 # GatewayRoute até o primeiro 200 em cada pod do gateway. Roda isolado
 # em cluster idle ou em paralelo com large-snapshot-test pra medir sob carga.
 route-propagation-test:
-	./scripts/test-route-propagation.sh
+	./scripts/load/test-route-propagation.sh
 
 # Cenário de carga sustentada (20k req/min) durante múltiplos pushes
 # pesados de 60k rotas. Default: 3 times × 20k rotas, 5min.
 stress-test:
-	TEAMS=3 ROUTES=20000 scripts/k6/run-load-scenario.sh
+	TEAMS=3 ROUTES=20000 scripts/load/k6/run-load-scenario.sh
 
 # Dump o ConfigMap consolidado pra inspeção manual.
 dump-snapshot:
-	./scripts/dump-snapshot.sh
+	./scripts/platform/dump-snapshot.sh
 
 # ──────────────────────────────────────────────────────────────────────────
 # Clean
@@ -147,38 +147,48 @@ clean:
 # porta usada no `make cluster`: o issuer do Keycloak e o redirect do login
 # dependem dela.
 
-# Keycloak como ponte/IdP (provider=keycloak).
+# Keycloak como ponte/IdP (provider=keycloak): OpenLDAP, banco do Keycloak,
+# Keycloak e gateway. As peças ficam em scripts/ldap, scripts/db e scripts/keycloak.
+# KEYCLOAK_DB=oracle troca o PostgreSQL pelo Oracle 26ai Free.
 sso-up:
-	PROVIDER=keycloak ./scripts/deploy-sso.sh
+	PROVIDER=keycloak ./scripts/sso/deploy-sso.sh
 
 # Gateway direto no diretório (provider=ldap, OpenLDAP no lugar do AD).
 ldap-up:
-	PROVIDER=ldap ./scripts/deploy-sso.sh
+	PROVIDER=ldap ./scripts/sso/deploy-sso.sh
 
-# Volta o gateway sem SSO e remove Keycloak/OpenLDAP (mantém o Secret sso-secrets).
+# Volta o gateway sem SSO e remove Keycloak, banco e OpenLDAP (mantém os Secrets).
 sso-down:
-	./scripts/deploy-sso.sh down
+	./scripts/sso/deploy-sso.sh down
 
 sso-test:
-	./scripts/test-sso.sh
+	./scripts/e2e/test-sso.sh
+
+# Zera o banco do Keycloak: o realm volta a ser o do JSON e todas as sessões caem.
+keycloak-reset:
+	./scripts/keycloak/keycloak.sh reset
+
+# Console do banco do Keycloak (psql ou sqlplus, conforme KEYCLOAK_DB).
+keycloak-db-shell:
+	./scripts/db/$${KEYCLOAK_DB:-postgres}.sh shell
 
 ldap-test:
-	./scripts/test-ldap.sh
+	./scripts/e2e/test-ldap.sh
 
 # Canal de exemplo sem sessão (provider=oauth): API pública, só tokens. O Keycloak
 # local faz o papel do authorization server.
 oauth-up:
-	PROVIDER=oauth ./scripts/deploy-sso.sh
+	PROVIDER=oauth ./scripts/sso/deploy-sso.sh
 
 oauth-down:
-	./scripts/deploy-sso.sh down
+	./scripts/sso/deploy-sso.sh down
 
 oauth-test:
-	./scripts/test-oauth.sh
+	./scripts/e2e/test-oauth.sh
 
 # Modelos de integração de front-end (pré-requisito: make sso-up).
 frontend-test:
-	./scripts/test-frontend-models.sh
+	./scripts/e2e/test-frontend-models.sh
 
 # Segundo gateway de borda no mesmo cluster, com namespace, operator e snapshot próprios.
 second-gateway-up:
@@ -190,27 +200,27 @@ second-gateway-down:
 	kubectl delete namespace borda-exemplo --ignore-not-found
 
 second-gateway-test:
-	./scripts/test-second-gateway.sh
+	./scripts/e2e/test-second-gateway.sh
 
 # v1 standalone com SSO (profile standalone-sso): rotas com `access` embarcadas
 # na imagem, sem operator/CRD. PROVIDER=ldap troca o Keycloak pelo diretório.
 standalone-sso-up:
-	MODE=standalone PROVIDER=$${PROVIDER:-keycloak} ./scripts/deploy-sso.sh
+	MODE=standalone PROVIDER=$${PROVIDER:-keycloak} ./scripts/sso/deploy-sso.sh
 
 standalone-sso-down:
-	MODE=standalone ./scripts/deploy-sso.sh down
+	MODE=standalone ./scripts/sso/deploy-sso.sh down
 
 standalone-sso-test:
-	./scripts/test-standalone-sso.sh
+	./scripts/e2e/test-standalone-sso.sh
 
 # Cenário S3 com SSO: CRD -> operator -> objeto S3. S3_BACKEND=minio (default,
 # MinIO no cluster) ou S3_BACKEND=aws S3_BUCKET=... (Secret aws-credentials).
 s3-sso-up:
-	MODE=s3 PROVIDER=$${PROVIDER:-keycloak} ./scripts/deploy-sso.sh
+	MODE=s3 PROVIDER=$${PROVIDER:-keycloak} ./scripts/sso/deploy-sso.sh
 
 s3-sso-down:
-	MODE=s3 ./scripts/deploy-sso.sh down
+	MODE=s3 ./scripts/sso/deploy-sso.sh down
 
 s3-sso-test:
-	@if [ "$${PROVIDER:-keycloak}" = "ldap" ]; then ./scripts/test-ldap.sh; else ./scripts/test-sso.sh; fi
+	@if [ "$${PROVIDER:-keycloak}" = "ldap" ]; then ./scripts/e2e/test-ldap.sh; else ./scripts/e2e/test-sso.sh; fi
 

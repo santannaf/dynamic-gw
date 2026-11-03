@@ -1,5 +1,5 @@
 # Cenário CRDs (v2: GatewayRoute -> operator -> ConfigMap) com login direto no diretório (OpenLDAP local no lugar do AD).
-# Substitui k8s/gateway/deployment.yaml. Aplicado por scripts/deploy-sso.sh
+# Substitui k8s/gateway/deployment.yaml. Aplicado por scripts/sso/deploy-sso.sh
 # (MODE=v2 PROVIDER=ldap), que troca __HOST_PORT__. Doc: SSO_CENARIO_CRD.md
 apiVersion: apps/v1
 kind: Deployment

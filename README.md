@@ -97,7 +97,7 @@ shared/    # modelo storage-agnostic: RouteConfigSnapshot, RouteConfigEntry, Sna
 gateway/   # Spring Cloud Gateway + providers (ConfigMap / S3 / Properties)
 operator/  # Fabric8 informer + reconciler + publisher (ConfigMap / S3)
 k8s/       # namespace, CRD, RBAC, Deployments, Services, Ingress, samples
-scripts/   # cluster + bootstrap + deploy + carga + propagação + memória
+scripts/   # por componente: cluster/, platform/, sso/, keycloak/, db/, ldap/, s3/, e2e/, load/
 openspec/  # propostas de mudança e specs por capability
 ```
 
@@ -107,7 +107,7 @@ O módulo `shared` propositadamente **não depende** de nada Kubernetes- ou AWS-
 
 ## Stack e versões
 
-Versões declaradas nos `build.gradle` (out/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`.
+Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`. O OSV não liga as CVEs do Vert.x nem as do Bouncy Castle aos pacotes Maven: elas estão no NVD (as do Vert.x também nos advisories do projeto), e o Vert.x 5.2.3 e o Bouncy Castle 1.86 ficam fora das faixas afetadas.
 
 | Componente                         | Versão                                                        | Observação                                                             |
 |------------------------------------|---------------------------------------------------------------|------------------------------------------------------------------------|
@@ -119,6 +119,8 @@ Versões declaradas nos `build.gradle` (out/2026). Nessa data, a base OSV não t
 | Netty                              | 4.2.19                                                        | pelo BOM do Boot; o binário nativo precisa de `-H:+SharedArenaSupport` |
 | Jackson                            | 3.2.4 (anotações 2.22)                                        | sobrescreve o BOM do Boot (3.1) porque a Fabric8 8 exige 3.2           |
 | Fabric8 Kubernetes Client          | 8.0.0                                                         | gateway e operator; cliente HTTP Vert.x 5                              |
+| Vert.x                             | 5.2.3                                                         | sobrescreve o 5.2.0 da Fabric8 8.0.0, afetado por CVEs                 |
+| Bouncy Castle                      | 1.86                                                          | sobrescreve o 1.85.2 do Spring Cloud no gateway, afetado por CVEs      |
 | AWS SDK v2                         | 2.57.4                                                        | S3 com `url-connection-client`                                         |
 | UnboundID LDAP SDK                 | 7.0.5                                                         | pelo BOM do Boot (provider `ldap`)                                     |
 | GraalVM Native Build Tools         | 1.1.17                                                        | plugin Gradle                                                          |
@@ -130,7 +132,10 @@ Versões declaradas nos `build.gradle` (out/2026). Nessa data, a base OSV não t
 | `ghcr.io/graalvm/native-image-community` | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway     |
 | `debian:stable-slim`                     | 13                     | runtime do gateway (build com `--pull`)  |
 | `eclipse-temurin`                        | 25-jre (25.0.4)        | runtime do operator (build com `--pull`) |
-| `quay.io/keycloak/keycloak`              | 26.1                   | IdP do lab (`k8s/sso/`)                  |
+| `quay.io/keycloak/keycloak`              | 26.1                   | IdP do lab (`k8s/sso/`), em modo produção |
+| `keycloak-oracle:local`                  | 26.1 + ojdbc11 23.6    | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
+| `postgres`                               | 17.5-alpine            | banco do Keycloak (default)              |
+| `container-registry.oracle.com/database/free` | 23.26.0.0-lite (26ai) | banco do Keycloak com `KEYCLOAK_DB=oracle` |
 | `osixia/openldap`                        | 1.5.0                  | diretório do lab, no lugar do AD         |
 | `bitnamilegacy/minio`                    | 2025.5.24              | S3 local do lab                          |
 | `nginx`                                  | 1.27-alpine            | nginx-lb, a borda                        |
@@ -147,7 +152,7 @@ Versões declaradas nos `build.gradle` (out/2026). Nessa data, a base OSV não t
 - Porta `8080` livre no host (e `18000` se for rodar o cenário de carga)
 - Opcional: `make` (o `Makefile` é wrapper fino sobre os scripts)
 - Opcional: `k6` (cenário de carga sustentada)
-- Opcional: `metrics-server` instalado no cluster (`scripts/measure-gateway-memory.sh` depende disso)
+- Opcional: `metrics-server` instalado no cluster (`scripts/load/measure-gateway-memory.sh` depende disso)
 
 ---
 
@@ -257,7 +262,7 @@ curl http://localhost:8080/httpbin/get                                  # ainda 
 curl http://localhost:8080/internal/routes                              # lista httpbin-route
 ```
 
-`./scripts/restart-gateway-test.sh` automatiza essa sequência. O gateway recupera do **`ConfigMap`**, não de um evento em memória — por isso sobrevive a restart de pod mesmo quando o pod do operator também está sendo reciclado.
+`./scripts/e2e/restart-gateway-test.sh` automatiza essa sequência. O gateway recupera do **`ConfigMap`**, não de um evento em memória — por isso sobrevive a restart de pod mesmo quando o pod do operator também está sendo reciclado.
 
 ---
 
@@ -306,13 +311,13 @@ kubectl logs -n platform deployment/gateway-route-operator --tail=200 -f
 
 - `Reconcile started id=…` / `Reconcile id=… listed N GatewayRoutes (V valid, D disabled, I invalid)` / `Reconcile id=… snapshot published to backend` / `Reconcile id=… reload signal sent`.
 
-**Medição de memória sob carga:** `scripts/measure-gateway-memory.sh` (depende de `metrics-server` no cluster).
+**Medição de memória sob carga:** `scripts/load/measure-gateway-memory.sh` (depende de `metrics-server` no cluster).
 
 ---
 
 ## Stress tests
 
-Dois cenários, dependendo do modo em que o gateway está rodando. Ambos usam o mesmo script k6 (`scripts/k6/load-during-large-snapshot.js`) batendo 20k req/min nas rotas baseline `/httpbin/get` e `/anything/load-test` via o `nginx-lb`.
+Dois cenários, dependendo do modo em que o gateway está rodando. Ambos usam o mesmo script k6 (`scripts/load/k6/load-during-large-snapshot.js`) batendo 20k req/min nas rotas baseline `/httpbin/get` e `/anything/load-test` via o `nginx-lb`.
 
 ### v2 com operator — cenário completo (carga + reloads pesados)
 
@@ -326,7 +331,7 @@ make bootstrap               # cluster + operator + gateway + nginx-lb
 make nginx-lb-pf
 
 # Terminal 2 — orquestrador (5min, 3 pushes de 60k rotas)
-make stress-test             # = TEAMS=3 ROUTES=20000 scripts/k6/run-load-scenario.sh
+make stress-test             # = TEAMS=3 ROUTES=20000 scripts/load/k6/run-load-scenario.sh
 ```
 
 O orquestrador valida pre-flight, sobe o k6 em background, agenda 3 pushes de snapshot grande nos tempos `60 180 270`s, espera tudo terminar e gera **relatório markdown** em `/tmp/dyngw-load-scenario/report.md` com latências p95/p99, contagem de 5xx/4xx, tempo de reload por pod e veredito ✅/❌ por critério.
@@ -336,11 +341,11 @@ Variações comuns (rodando o script direto em vez do alias `make stress-test`):
 ```bash
 # 10min, 5 pushes
 DURATION=10m SCHEDULE="60 180 300 420 540" TEAMS=3 ROUTES=20000 \
-    scripts/k6/run-load-scenario.sh
+    scripts/load/k6/run-load-scenario.sh
 
 # 1 push só, pra observar um único reload pesado
 SCHEDULE="60" DURATION=3m TEAMS=3 ROUTES=20000 \
-    scripts/k6/run-load-scenario.sh
+    scripts/load/k6/run-load-scenario.sh
 ```
 
 ### v1 standalone — só carga sustentada
@@ -357,7 +362,7 @@ make nginx-lb-pf
 # Terminal 2 — k6 sustentado direto, sem orquestrador
 DURATION=5m BASE_URL=http://localhost:18000 \
     k6 run --summary-export=/tmp/k6-standalone.json \
-    scripts/k6/load-during-large-snapshot.js
+    scripts/load/k6/load-during-large-snapshot.js
 ```
 
 O `setup()` do script já confere `/lb/health` + as 2 rotas baseline antes de começar — passa direto em standalone porque tudo já está em pé. Sumário sai no console + `/tmp/k6-standalone.json`.
@@ -653,7 +658,8 @@ rules:
 ```bash
 HOST_PORT=18080 make cluster        # a porta precisa estar livre: é ela que entra no issuer e no redirect
 make load-images && make deploy     # plataforma v2
-HOST_PORT=18080 make sso-up         # OpenLDAP + Keycloak (realm tools) federando por LDAPS + gateway com provider=keycloak
+HOST_PORT=18080 make sso-up         # OpenLDAP + PostgreSQL + Keycloak (realm tools) federando por LDAPS + gateway com provider=keycloak
+KEYCLOAK_DB=oracle HOST_PORT=18080 make sso-up   # o mesmo, com o Keycloak sobre Oracle 26ai Free
 HOST_PORT=18080 make sso-test       # e2e: federação, login, operação x negócio, bearer, multi-réplica, logout, auditoria
 
 HOST_PORT=18080 make ldap-up        # OpenLDAP no lugar do AD + gateway com provider=ldap
@@ -703,7 +709,7 @@ Usuários do diretório do lab (OpenLDAP no lugar do AD, o mesmo para o Keycloak
   LDAP_CA_FILE=./ca-corporativa.pem HOST_PORT=18080 make sso-up
   ```
 
-  Os grupos chegam no claim `groups`; nada muda no gateway. Configuração, checklist com o IDM e Kerberos em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#7-keycloak-com-o-ad-de-verdade-poc).
+  Os grupos chegam no claim `groups`; nada muda no gateway. Configuração, checklist com o IDM e Kerberos em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#8-keycloak-com-o-ad-de-verdade-poc).
 - **Direto** (`provider=ldap`):
 
 ```yaml

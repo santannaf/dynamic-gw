@@ -210,7 +210,22 @@ As regras que o realm segue, e por quê:
 
 ---
 
-## 7. Keycloak com o AD de verdade (POC)
+## 7. Onde o Keycloak guarda os dados
+
+O Keycloak roda em modo produção, com banco. No banco ficam o realm, os clients, as roles, a cópia dos usuários importados do diretório (com o vínculo da federação), as sessões e os eventos. Senha e grupos continuam no AD. Reiniciar o pod do Keycloak não perde sessão nem configuração.
+
+| Banco               | Como subir                                    | Peça                    | Console                     |
+|---------------------|-----------------------------------------------|-------------------------|-----------------------------|
+| PostgreSQL 17       | `make sso-up` (default)                       | `scripts/db/postgres.sh` | `make keycloak-db-shell`   |
+| Oracle 26ai Free    | `KEYCLOAK_DB=oracle make sso-up`              | `scripts/db/oracle.sh`  | `KEYCLOAK_DB=oracle make keycloak-db-shell` |
+
+No Oracle, o Keycloak usa o usuário `KEYCLOAK` do PDB `FREEPDB1`, só com permissão de criar objetos no próprio schema (`CREATE SESSION, TABLE, SEQUENCE, VIEW, PROCEDURE, TRIGGER, SYNONYM` e cota no tablespace `USERS`). O driver JDBC da Oracle não vem no Keycloak (licença), por isso esse caminho usa a imagem `keycloak-oracle:local`, montada de `docker/keycloak-oracle/Dockerfile` com o `ojdbc11` e o `orai18n` do Maven Central. Num Oracle da empresa, peça ao DBA um usuário com essas permissões e troque o `KC_DB_URL` (`jdbc:oracle:thin:@//<host>:1521/<service>`).
+
+O realm é importado do `realm-tools.json` só quando ainda não existe no banco. Mudou o JSON, o diretório ou o banco, o `make sso-up` zera o banco e importa de novo. `make keycloak-reset` faz o mesmo na mão.
+
+---
+
+## 8. Keycloak com o AD de verdade (POC)
 
 O realm do lab já vem pronto para o AD: a federação, os mappers e o grupo que recebe `gateway-admin` são os mesmos. Muda só o diretório, por variável:
 

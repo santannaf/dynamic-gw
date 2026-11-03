@@ -9,12 +9,12 @@
 # Erros reais (apply/rollout) ainda quebram porque chamamos `fail` neles.
 #
 # Uso:
-#   scripts/bootstrap-platform.sh                   # ciclo completo
-#   NAMESPACE=outro scripts/bootstrap-platform.sh   # override do namespace
+#   scripts/platform/bootstrap-platform.sh                   # ciclo completo
+#   NAMESPACE=outro scripts/platform/bootstrap-platform.sh   # override do namespace
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
 NAMESPACE="${NAMESPACE:-platform}"
@@ -80,7 +80,7 @@ kubectl rollout status deployment/gateway-route-operator -n "${NAMESPACE}" --tim
 # 4) Sample GatewayRoutes (httpbin + anything)
 #
 # Aplica as duas rotas baseline que o cenário de carga
-# (scripts/k6/run-load-scenario.sh) consome no pre-flight.
+# (scripts/load/k6/run-load-scenario.sh) consome no pre-flight.
 # ----------------------------------------------------------------
 step "Aplicando sample route-httpbin"
 kubectl -n "${NAMESPACE}" apply -f k8s/samples/route-httpbin.yaml \

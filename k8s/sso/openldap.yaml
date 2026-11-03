@@ -2,7 +2,7 @@
 # `keycloak`/`oauth`) e o gateway fala direto com ele (provider `ldap`).
 # Mesma forma que o IDM descreveu: uma OU por aplicação (ou=tools) com os
 # grupos de acesso; usuários em ou=people. O seed (LDIF com as senhas) vem do
-# Secret `openldap-seed`, gerado por scripts/deploy-sso.sh.
+# Secret `openldap-seed`, gerado por scripts/ldap/openldap.sh.
 #
 # Os dois leem com a conta somente-leitura cn=readonly (LDAP_READONLY_USER),
 # nunca com o admin. O Keycloak usa LDAPS (636) com o certificado do Secret

@@ -15,7 +15,7 @@ set -euo pipefail
 # o que não escala (e o apiserver tem um limite de ~256 KiB para metadata).
 # Server-side apply troca isso por managedFields incremental.
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
 NAMESPACE="${NAMESPACE:-platform}"
@@ -28,7 +28,7 @@ LOCAL_PORT_BASE="${LOCAL_PORT_BASE:-19080}"
 WAIT_RELOAD_SECS="${WAIT_RELOAD_SECS:-90}"
 # Quando 1, o snapshot gerado inclui também httpbin-route e anything-route
 # (mesma definição do k8s/samples + TESTE_LOCAL.md). Útil para o cenário do
-# k6 stress test em scripts/k6/load-during-large-snapshot.js, onde queremos
+# k6 stress test em scripts/load/k6/load-during-large-snapshot.js, onde queremos
 # que as duas rotas baseline continuem servindo durante o reload pesado.
 INCLUDE_BASELINE="${INCLUDE_BASELINE:-0}"
 

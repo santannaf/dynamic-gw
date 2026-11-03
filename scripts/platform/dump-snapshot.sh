@@ -8,9 +8,9 @@ set -euo pipefail
 #   - data[routes.yaml]          (formato legado)         -> texto puro
 #
 # Uso:
-#   scripts/dump-snapshot.sh                          # vai pro stdout
-#   scripts/dump-snapshot.sh | head -20      # primeiras N linhas
-#   scripts/dump-snapshot.sh > /tmp/x.yaml   # salva em arquivo
+#   scripts/platform/dump-snapshot.sh                          # vai pro stdout
+#   scripts/platform/dump-snapshot.sh | head -20      # primeiras N linhas
+#   scripts/platform/dump-snapshot.sh > /tmp/x.yaml   # salva em arquivo
 
 NAMESPACE="${NAMESPACE:-platform}"
 CONFIGMAP="${CONFIGMAP:-gateway-routes}"

@@ -50,7 +50,7 @@ No `GatewayRoute`, o campo `spec.targetUri` aponta para o **upstream**. Esse ups
 Comece do zero. Sem cluster, sem CRD, sem deployments. Se for a primeiríssima vez (cluster nunca criado), esse comando vai falhar silenciosamente — pode ignorar.
 
 ```bash
-./scripts/delete-cluster.sh
+./scripts/cluster/delete-cluster.sh
 ```
 
 > "Cluster zero. Vou subir do nada para mostrar a arquitetura."
@@ -60,7 +60,7 @@ Comece do zero. Sem cluster, sem CRD, sem deployments. Se for a primeiríssima v
 ## Fase 1 — Cluster e namespace (infra básica)
 
 ```bash
-HOST_PORT=8090 ./scripts/create-cluster.sh
+HOST_PORT=8090 ./scripts/cluster/create-cluster.sh
 ```
 
 ⚠️ **Atualizar o `~/.kube/config`** — sempre que o cluster é recriado, a porta do API server muda. Sem esse passo, o próximo `kubectl` falha com `connection refused`:

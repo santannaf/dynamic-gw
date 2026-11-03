@@ -1,6 +1,6 @@
 # Cenário Properties (v1 standalone: rotas em properties, sem operator/CRD)
 # com login direto no diretório (OpenLDAP local no lugar do AD). Substitui k8s/gateway-standalone/deployment.yaml.
-# Aplicado por scripts/deploy-sso.sh (MODE=standalone PROVIDER=ldap),
+# Aplicado por scripts/sso/deploy-sso.sh (MODE=standalone PROVIDER=ldap),
 # que troca __HOST_PORT__. Rotas e `access`: application-standalone-sso.yaml.
 # Doc: SSO_CENARIO_PROPERTIES.md
 apiVersion: apps/v1

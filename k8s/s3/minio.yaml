@@ -1,5 +1,5 @@
 # MinIO (S3 compatível) para testar o store S3 no k3d sem conta AWS.
-# Só para o lab. Aplicado por scripts/deploy-sso.sh (MODE=s3, S3_BACKEND=minio),
+# Só para o lab. Aplicado por scripts/sso/deploy-sso.sh (MODE=s3, S3_BACKEND=minio),
 # que troca __S3_BUCKET__ e gera o Secret minio-credentials (fora do git).
 # O bucket é criado no startup (MINIO_DEFAULT_BUCKETS). O PVC (local-path do
 # k3s) segura o snapshot se o pod reiniciar: sem ele o gateway leria "objeto

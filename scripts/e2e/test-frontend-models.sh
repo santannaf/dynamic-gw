@@ -5,7 +5,7 @@
 # e não têm o que testar aqui. O script liga front-origins só durante o teste.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
 
 HOST_PORT="${HOST_PORT:-8080}"

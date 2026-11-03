@@ -1,4 +1,4 @@
-# Seed do OpenLDAP local. __DEMO_PASSWORD__ é trocado por scripts/deploy-sso.sh
+# Seed do OpenLDAP local. __DEMO_PASSWORD__ é trocado por scripts/ldap/openldap.sh
 # (a senha gerada vai para o Secret openldap-seed; este arquivo não tem segredo).
 #
 # Mesma forma do AD do IDM: usuários em ou=people e, na OU da aplicação
