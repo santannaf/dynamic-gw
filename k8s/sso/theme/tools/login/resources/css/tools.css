@@ -1,0 +1,121 @@
+/* As mesmas cores das páginas do gateway (login do LDAP, sessão encerrada). */
+:root {
+    --tools-bg: #f4f5f7;
+    --tools-card: #ffffff;
+    --tools-text: #1d2330;
+    --tools-muted: #5b6475;
+    --tools-line: #d5d9e0;
+    --tools-accent: #1f5fbf;
+    --tools-accent-hover: #194f9f;
+    --tools-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+:root.pf-v5-theme-dark {
+    --tools-bg: #14171c;
+    --tools-card: #1d2128;
+    --tools-text: #e7e9ee;
+    --tools-muted: #a3abb8;
+    --tools-line: #343a45;
+    --tools-accent: #7aa7ff;
+    --tools-accent-hover: #a5c3ff;
+}
+
+:root,
+:root.pf-v5-theme-dark {
+    --pf-v5-global--FontFamily--text: var(--tools-font);
+    --pf-v5-global--FontFamily--heading: var(--tools-font);
+    --pf-v5-global--primary-color--100: var(--tools-accent);
+    --pf-v5-global--primary-color--200: var(--tools-accent-hover);
+    --pf-v5-global--link--Color: var(--tools-accent);
+    --pf-v5-global--link--Color--hover: var(--tools-accent-hover);
+}
+
+.login-pf body {
+    background: var(--tools-bg);
+    color: var(--tools-text);
+}
+
+.pf-v5-c-login__container {
+    grid-template-columns: minmax(0, 24rem);
+}
+
+.pf-v5-c-login__main {
+    background: var(--tools-card);
+    border: 1px solid var(--tools-line);
+    border-radius: 12px;
+    box-shadow: none;
+}
+
+#kc-header-wrapper {
+    /* O keycloak.v2 pinta o título com esta variável, e com !important: é ela que muda. */
+    --pf-v5-global--Color--light-100: var(--tools-text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--tools-text);
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+#kc-header-wrapper::before {
+    content: "";
+    width: 32px;
+    height: 32px;
+    flex: none;
+    background: url("../img/logo.svg") no-repeat center / contain;
+}
+
+.pf-v5-c-login__main-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.pf-v5-c-login__main-footer-band-item {
+    color: var(--tools-muted);
+}
+
+.pf-v5-c-button.pf-m-primary {
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+#kc-social-providers .pf-v5-c-login__main-footer-links-item-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--tools-line);
+    border-radius: 8px;
+    color: var(--tools-text);
+    font-weight: 600;
+}
+
+#kc-social-providers .pf-v5-c-login__main-footer-links-item-link:hover {
+    border-color: var(--tools-accent);
+}
+
+#kc-social-providers .pf-v5-c-login__main-footer-links-item {
+    flex: 1 1 100%;
+}
+
+/* O logo colorido e o texto do botão seguem o guia de marca da Microsoft ("Entrar com Microsoft"). */
+#social-microsoft svg {
+    display: none;
+}
+
+#social-microsoft::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    flex: none;
+    background: url("../img/microsoft.svg") no-repeat center / contain;
+}
+
+#social-microsoft::after {
+    content: "Entrar com " attr(aria-label);
+}

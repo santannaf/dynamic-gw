@@ -809,6 +809,7 @@ HOST_PORT=18080 make cluster        # a porta precisa estar livre: é ela que en
 make load-images && make deploy     # plataforma v2
 HOST_PORT=18080 make sso-up         # OpenLDAP + PostgreSQL + Keycloak (realm tools) federando por LDAPS + gateway com provider=keycloak
 KEYCLOAK_DB=oracle HOST_PORT=18080 make sso-up   # o mesmo, com o Keycloak sobre Oracle 26ai Free
+MICROSOFT=entra MICROSOFT_TENANT_ID=… MICROSOFT_CLIENT_ID=… MICROSOFT_CLIENT_SECRET=… HOST_PORT=18080 make sso-up   # botão "Entrar com Microsoft" no Entra ID real (o default é a Microsoft simulada)
 HOST_PORT=18080 make sso-test       # e2e: federação, login, operação x negócio, bearer, multi-réplica, logout, auditoria
 
 HOST_PORT=18080 make ldap-up        # OpenLDAP no lugar do AD + gateway com provider=ldap

@@ -262,5 +262,51 @@
         }
       }
     ]
-  }
+  },
+  "displayNameHtml": "tools",
+  "loginTheme": "tools",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt-BR"],
+  "defaultLocale": "pt-BR",
+  "authenticationFlows": [
+    {
+      "alias": "vincular-usuario-do-ad",
+      "description": "Primeiro login por um provedor externo: associa a conta ao usuário do AD com o mesmo e-mail, sem perguntar. Sem esse usuário, o login é recusado.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {"authenticator": "idp-detect-existing-broker-user", "requirement": "REQUIRED", "priority": 10, "authenticatorFlow": false, "userSetupAllowed": false},
+        {"authenticator": "idp-auto-link", "requirement": "REQUIRED", "priority": 20, "authenticatorFlow": false, "userSetupAllowed": false}
+      ]
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "microsoft",
+      "displayName": "Microsoft",
+      "providerId": "oidc",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "vincular-usuario-do-ad",
+      "config": {
+        "clientId": "${MICROSOFT_CLIENT_ID}",
+        "clientSecret": "${MICROSOFT_CLIENT_SECRET}",
+        "clientAuthMethod": "client_secret_post",
+        "authorizationUrl": "${MICROSOFT_AUTHORIZATION_URL}",
+        "tokenUrl": "${MICROSOFT_TOKEN_URL}",
+        "jwksUrl": "${MICROSOFT_JWKS_URL}",
+        "issuer": "${MICROSOFT_ISSUER}",
+        "useJwksUrl": "true",
+        "validateSignature": "true",
+        "pkceEnabled": "true",
+        "pkceMethod": "S256",
+        "defaultScope": "openid profile email",
+        "syncMode": "IMPORT",
+        "guiOrder": "1"
+      }
+    }
+  ]
 }

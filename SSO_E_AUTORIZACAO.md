@@ -264,3 +264,37 @@ Antes da POC, combine com o IDM:
 Para login transparente nas máquinas do domínio, ligue Kerberos/SPNEGO na mesma federação (*Allow Kerberos authentication*), com keytab do SPN `HTTP/<host do Keycloak>`. Se a empresa usa Entra ID (o Azure AD) em vez de AD local, não há LDAP: a federação é por OIDC/SAML (*Identity providers*), e os grupos chegam por um mapper do provedor.
 
 Para conferir sem a POC: `make sso-test` roda no lab as mesmas verificações (usuário vindo do diretório, LDAPS, só leitura, cache de 1 min, OU, separação entre operar e usar).
+
+## 9. Tela de login e "Entrar com Microsoft"
+
+A tela de login do realm `tools` usa o tema `tools` (`k8s/sso/theme/tools`): o `keycloak.v2` com as cores e o cartão das páginas do gateway, em português, no claro e no escuro. O `keycloak.sh` publica o tema no ConfigMap `keycloak-theme-tools`, montado em `/opt/keycloak/themes/tools`. Mudar só o tema reinicia o Keycloak sem zerar o banco.
+
+O botão **Entrar com Microsoft** é o provedor de identidade `microsoft` do realm, por OIDC, e não LDAP:
+
+1. O usuário clica no botão e entra na Microsoft (Entra ID), com o MFA que a empresa exigir.
+2. A Microsoft devolve o usuário ao Keycloak, que procura no AD, pela federação LDAP, quem tem o mesmo e-mail e associa as duas contas sem perguntar (fluxo `vincular-usuario-do-ad`).
+3. A sessão é a desse usuário do AD: os grupos continuam vindo da OU da aplicação, e as rotas não mudam.
+
+Quem existe na Microsoft mas não no AD é recusado: o Keycloak não cria usuário local. O token da Microsoft não chega ao gateway.
+
+### No lab: a Microsoft simulada
+
+Com `MICROSOFT=sim`, o default, o realm `microsoft-sim` faz o papel do Entra ID no mesmo Keycloak. Ele tem alice, bob, carol e dave, com os mesmos e-mails e a mesma senha do diretório, e a eve, que só existe "na Microsoft".
+
+🌐 Abra `http://localhost:18080/sso/group/headers`, clique em **Entrar com Microsoft** e entre como alice na tela "Microsoft (simulado)". A volta é na rota, como alice, com `group:tools-httpbin`. Como eve, o Keycloak recusa o login.
+
+### Com o Entra ID de verdade
+
+1. No Entra ID, crie um **App Registration** (plataforma Web) com o redirect `http://localhost:18080/auth/realms/tools/broker/microsoft/endpoint` (fora do lab, a URL pública do Keycloak) e um client secret.
+2. Em **Token configuration**, adicione a optional claim `email` ao ID token. Ela precisa ser igual ao `mail` do usuário no AD: é por ela que as contas se associam. Com o Entra Connect sincronizando o AD, já é.
+3. Suba com as variáveis. O segredo vai para o Secret `keycloak-microsoft`, nunca para o repositório:
+
+```bash
+MICROSOFT=entra \
+MICROSOFT_TENANT_ID=<tenant id> \
+MICROSOFT_CLIENT_ID=<application (client) id> \
+MICROSOFT_CLIENT_SECRET='…' \
+HOST_PORT=18080 make lab linux
+```
+
+O realm simulado deixa de ser importado, e o provedor `microsoft` passa a apontar para `login.microsoftonline.com/<tenant>/v2.0`. Trocar de `sim` para `entra`, ou de tenant, reimporta o realm, e as sessões abertas caem. O Keycloak e o navegador precisam alcançar `login.microsoftonline.com`.

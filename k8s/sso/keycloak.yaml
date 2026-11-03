@@ -38,6 +38,8 @@ spec:
         # diretório mudam, scripts/keycloak/keycloak.sh zera o banco e este
         # checksum recria o pod, que importa o realm de novo.
         platform.saca.pags/realm-checksum: "__REALM_CHECKSUM__"
+        # O tema da tela de login: muda sem zerar o banco, só recria o pod.
+        platform.saca.pags/theme-checksum: "__THEME_CHECKSUM__"
     spec:
       containers:
         - name: keycloak
@@ -87,12 +89,23 @@ spec:
             - name: LDAP_BIND_PASSWORD
               valueFrom:
                 secretKeyRef: {name: keycloak-ldap, key: bind-password}
+            # Botão "Login com Microsoft" (placeholders ${MICROSOFT_*} do realm): URLs e client ID
+            # no ConfigMap keycloak-microsoft, segredo no Secret; MICROSOFT=sim ou entra no keycloak.sh.
+            - name: MICROSOFT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: keycloak-microsoft, key: client-secret}
+            # Senha dos usuários do realm microsoft-sim: a mesma do diretório do lab.
+            - name: MICROSOFT_SIM_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: sso-secrets, key: demo-password}
             # CA que assina o certificado do diretório (LDAPS). Sem ela, PKIX path building failed.
             - name: KC_TRUSTSTORE_PATHS
               value: /opt/keycloak/conf/truststores/ldap-ca.pem
           envFrom:
             - configMapRef:
                 name: keycloak-ldap
+            - configMapRef:
+                name: keycloak-microsoft
             # KC_DB e KC_DB_URL; KC_DB_USERNAME e KC_DB_PASSWORD no Secret.
             - configMapRef:
                 name: keycloak-db
@@ -121,10 +134,23 @@ spec:
               mountPath: /opt/keycloak/conf/truststores/ldap-ca.pem
               subPath: ca.pem
               readOnly: true
+            - name: theme
+              mountPath: /opt/keycloak/themes/tools
+              readOnly: true
       volumes:
         - name: realm
           configMap:
             name: keycloak-realm-tools
+        - name: theme
+          configMap:
+            name: keycloak-theme-tools
+            items:
+              - {key: theme.properties, path: login/theme.properties}
+              - {key: tools.css, path: login/resources/css/tools.css}
+              - {key: logo.svg, path: login/resources/img/logo.svg}
+              - {key: favicon.ico, path: login/resources/img/favicon.ico}
+              - {key: microsoft.svg, path: login/resources/img/microsoft.svg}
+              - {key: messages_pt_BR.properties, path: login/messages/messages_pt_BR.properties}
         - name: ldap-ca
           secret:
             secretName: keycloak-ldap

@@ -21,6 +21,7 @@ render() {
     sed -e "s|__HOST_PORT__|${HOST_PORT}|g" \
         -e "s|__REALM_CHECKSUM__|${REALM_CHECKSUM:-none}|g" \
         -e "s|__SEED_CHECKSUM__|${SEED_CHECKSUM:-none}|g" \
+        -e "s|__THEME_CHECKSUM__|${THEME_CHECKSUM:-none}|g" \
         -e "s|__S3_BUCKET__|${S3_BUCKET:-}|g" \
         -e "s|__S3_REGION__|${S3_REGION}|g" \
         -e "s|__S3_ENDPOINT__|${S3_ENDPOINT:-}|g" \

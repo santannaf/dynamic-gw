@@ -1,0 +1,104 @@
+{
+  "realm": "microsoft-sim",
+  "displayName": "Microsoft (simulado)",
+  "enabled": true,
+  "sslRequired": "none",
+  "loginWithEmailAllowed": true,
+  "clients": [
+    {
+      "clientId": "tools-broker",
+      "name": "Login com Microsoft do realm tools",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${MICROSOFT_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "${GATEWAY_PUBLIC_BASE_URL}/auth/realms/tools/broker/microsoft/endpoint"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@tools.local",
+      "firstName": "Alice",
+      "lastName": "Tools",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${MICROSOFT_SIM_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "bob",
+      "email": "bob@tools.local",
+      "firstName": "Bob",
+      "lastName": "Tools",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${MICROSOFT_SIM_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "carol",
+      "email": "carol@tools.local",
+      "firstName": "Carol",
+      "lastName": "Tools",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${MICROSOFT_SIM_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "dave",
+      "email": "dave@tools.local",
+      "firstName": "Dave",
+      "lastName": "Tools",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${MICROSOFT_SIM_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "eve",
+      "email": "eve@tools.local",
+      "firstName": "Eve",
+      "lastName": "Somente Microsoft",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${MICROSOFT_SIM_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

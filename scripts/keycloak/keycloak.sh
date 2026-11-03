@@ -27,6 +27,18 @@
 #       LDAP_CA_FILE=/caminho/ca-corporativa.pem               CA que assina o certificado do AD
 #     Opcionais: LDAP_USERNAME_ATTRIBUTE (sAMAccountName; userPrincipalName para logar com e-mail)
 #                GATEWAY_ADMINS_GROUP (gateway-admins): o grupo da OU que recebe a role gateway-admin.
+#
+# A tela de login usa o tema de k8s/sso/theme/tools (ConfigMap keycloak-theme-tools). Mudar
+# só o tema reinicia o Keycloak sem zerar o banco.
+#
+# MICROSOFT escolhe para onde vai o botão "Login com Microsoft" (provedor microsoft do realm):
+#   sim (default)  realm microsoft-sim neste mesmo Keycloak, com os usuários do diretório do lab
+#   entra          o Entra ID de um App Registration. Obrigatórios (o segredo nunca vai para o repo):
+#       MICROSOFT_TENANT_ID=...      ID do tenant (Directory ID)
+#       MICROSOFT_CLIENT_ID=...      Application (client) ID
+#       MICROSOFT_CLIENT_SECRET=...  client secret do App Registration
+#     Redirect a cadastrar no App Registration: http://localhost:<HOST_PORT>/auth/realms/tools/broker/microsoft/endpoint
+# A conta da Microsoft é associada ao usuário do AD com o mesmo e-mail; sem ele, o login é recusado.
 set -euo pipefail
 LOG_PREFIX=keycloak
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -35,6 +47,8 @@ KEYCLOAK_BASE_IMAGE="quay.io/keycloak/keycloak:26.1"
 KEYCLOAK_DB="${KEYCLOAK_DB:-postgres}"
 DIRECTORY="${DIRECTORY:-openldap}"
 GATEWAY_ADMINS_GROUP="${GATEWAY_ADMINS_GROUP:-gateway-admins}"
+MICROSOFT="${MICROSOFT:-sim}"
+THEME_DIR="k8s/sso/theme/tools/login"
 DB="${ROOT}/scripts/db/${KEYCLOAK_DB}.sh"
 
 check() {
@@ -42,6 +56,22 @@ check() {
         echo "KEYCLOAK_DB must be postgres or oracle (got '${KEYCLOAK_DB}')" >&2
         exit 2
     fi
+    case "${MICROSOFT}" in
+        sim) ;;
+        entra)
+            local var
+            for var in MICROSOFT_TENANT_ID MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET; do
+                if [[ -z "${!var:-}" ]]; then
+                    echo "MICROSOFT=entra needs ${var} (see the header of scripts/keycloak/keycloak.sh)" >&2
+                    exit 2
+                fi
+            done
+            ;;
+        *)
+            echo "MICROSOFT must be sim or entra (got '${MICROSOFT}')" >&2
+            exit 2
+            ;;
+    esac
     case "${DIRECTORY}" in
         openldap) ;;
         ad)
@@ -149,6 +179,64 @@ ensure_keycloak_image() {
     fi
 }
 
+# Valores do provedor microsoft do realm (placeholders ${MICROSOFT_*}). No simulado, o
+# navegador chega ao realm microsoft-sim por localhost, e o Keycloak busca o token e as
+# chaves pelo endereço interno, porque localhost dentro do pod é o próprio pod.
+setup_microsoft() {
+    local issuer authorize token jwks client secret previous
+    if [[ "${MICROSOFT}" == "entra" ]]; then
+        local login="https://login.microsoftonline.com/${MICROSOFT_TENANT_ID}"
+        issuer="${login}/v2.0"
+        authorize="${login}/oauth2/v2.0/authorize"
+        token="${login}/oauth2/v2.0/token"
+        jwks="${login}/discovery/v2.0/keys"
+        client="${MICROSOFT_CLIENT_ID}"
+        secret="${MICROSOFT_CLIENT_SECRET}"
+    else
+        local internal="http://keycloak.${NAMESPACE}.svc.cluster.local:8080/auth/realms/microsoft-sim/protocol/openid-connect"
+        issuer="http://localhost:${HOST_PORT}/auth/realms/microsoft-sim"
+        authorize="${issuer}/protocol/openid-connect/auth"
+        token="${internal}/token"
+        jwks="${internal}/certs"
+        client="tools-broker"
+        previous="$(kubectl -n "${NAMESPACE}" get configmap keycloak-microsoft -o jsonpath='{.data.MICROSOFT_MODE}' 2>/dev/null || true)"
+        secret=""
+        if [[ "${previous}" == "sim" ]]; then
+            secret="$(kubectl -n "${NAMESPACE}" get secret keycloak-microsoft -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || true)"
+        fi
+        [[ -n "${secret}" ]] || secret="$(openssl rand -hex 24)"
+    fi
+    log "Login com Microsoft: ${MICROSOFT} (${issuer})"
+    kubectl -n "${NAMESPACE}" create configmap keycloak-microsoft \
+        --from-literal=MICROSOFT_MODE="${MICROSOFT}" \
+        --from-literal=MICROSOFT_CLIENT_ID="${client}" \
+        --from-literal=MICROSOFT_AUTHORIZATION_URL="${authorize}" \
+        --from-literal=MICROSOFT_TOKEN_URL="${token}" \
+        --from-literal=MICROSOFT_JWKS_URL="${jwks}" \
+        --from-literal=MICROSOFT_ISSUER="${issuer}" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    kubectl -n "${NAMESPACE}" create secret generic keycloak-microsoft \
+        --from-literal=client-secret="${secret}" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    MICROSOFT_CHECKSUM="$(printf '%s|%s|%s|%s' "${MICROSOFT}" "${client}" "${issuer}" "${secret}" | sha256sum | cut -c1-16)"
+}
+
+# O tema não entra no checksum do realm: mudar só a tela reinicia o Keycloak, sem zerar o banco.
+publish_theme() {
+    local files=("${THEME_DIR}/theme.properties" "${THEME_DIR}/resources/css/tools.css"
+        "${THEME_DIR}/resources/img/logo.svg" "${THEME_DIR}/messages/messages_pt_BR.properties"
+        gateway/src/main/resources/static/favicon.ico "${THEME_DIR}/resources/img/microsoft.svg")
+    kubectl -n "${NAMESPACE}" create configmap keycloak-theme-tools \
+        --from-file=theme.properties="${files[0]}" \
+        --from-file=tools.css="${files[1]}" \
+        --from-file=logo.svg="${files[2]}" \
+        --from-file=messages_pt_BR.properties="${files[3]}" \
+        --from-file=favicon.ico="${files[4]}" \
+        --from-file=microsoft.svg="${files[5]}" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    THEME_CHECKSUM="$(cat "${files[@]}" | sha256sum | cut -c1-16)"
+}
+
 stop() {
     kubectl -n "${NAMESPACE}" scale deployment/keycloak --replicas=0 >/dev/null
     kubectl -n "${NAMESPACE}" wait --for=delete pod -l app.kubernetes.io/name=keycloak --timeout=180s >/dev/null 2>&1 || true
@@ -160,11 +248,17 @@ up() {
     setup_directory
     "${DB}" up
     ensure_keycloak_image
-    kubectl -n "${NAMESPACE}" create configmap keycloak-realm-tools \
-        --from-file=realm-tools.json=k8s/sso/realm-tools.json \
+    setup_microsoft
+    publish_theme
+    local realms=(--from-file=realm-tools.json=k8s/sso/realm-tools.json)
+    if [[ "${MICROSOFT}" == "sim" ]]; then
+        realms+=(--from-file=realm-microsoft-sim.json=k8s/sso/realm-microsoft-sim.json)
+    fi
+    kubectl -n "${NAMESPACE}" create configmap keycloak-realm-tools "${realms[@]}" \
         --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     # Trocar de banco também reimporta: o realm passa a viver no banco novo.
-    REALM_CHECKSUM="$( (sha256sum < k8s/sso/realm-tools.json; printf '%s' "${DIRECTORY_CHECKSUM}"
+    REALM_CHECKSUM="$( (sha256sum < k8s/sso/realm-tools.json; sha256sum < k8s/sso/realm-microsoft-sim.json
+        printf '%s%s' "${DIRECTORY_CHECKSUM}" "${MICROSOFT_CHECKSUM}"
         kubectl -n "${NAMESPACE}" get configmap keycloak-db -o jsonpath='{.data}') | sha256sum | cut -c1-16)"
     if kubectl -n "${NAMESPACE}" get deployment keycloak >/dev/null 2>&1; then
         local deployed
@@ -195,8 +289,9 @@ reset() {
 
 down() {
     render k8s/sso/keycloak.yaml | kubectl delete --ignore-not-found -f -
-    kubectl -n "${NAMESPACE}" delete configmap keycloak-realm-tools keycloak-ldap keycloak-db --ignore-not-found
-    kubectl -n "${NAMESPACE}" delete secret keycloak-ldap keycloak-db --ignore-not-found
+    kubectl -n "${NAMESPACE}" delete configmap keycloak-realm-tools keycloak-ldap keycloak-db keycloak-theme-tools \
+        keycloak-microsoft --ignore-not-found
+    kubectl -n "${NAMESPACE}" delete secret keycloak-ldap keycloak-db keycloak-microsoft --ignore-not-found
 }
 
 case "${1:-}" in

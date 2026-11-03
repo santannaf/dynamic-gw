@@ -15,6 +15,8 @@
 #   PROVIDER=ldap        login direto no OpenLDAP, sem Keycloak; PROVIDER=oauth: só tokens (default keycloak)
 #   MODE=s3              snapshot das rotas no MinIO; MODE=standalone: v1, sem operator (default v2)
 #   SKIP_BUILD=1         reusa as imagens locais, sem compilar
+#   MICROSOFT=entra      botão "Entrar com Microsoft" no Entra ID real, com MICROSOFT_TENANT_ID,
+#                        MICROSOFT_CLIENT_ID e MICROSOFT_CLIENT_SECRET (default: a Microsoft simulada)
 #
 # Sobe também as rotas /jp/... contra a API pública do JSONPlaceholder, uma por política
 # (make jsonplaceholder-test): no v2, as de k8s/samples/routes-jsonplaceholder.yaml; no v1,

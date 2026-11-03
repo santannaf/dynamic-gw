@@ -93,6 +93,38 @@ check "write side of /sso/rw needs tools-admins" "403" \
     "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/alice" -X POST "${BASE}/sso/rw/post")"
 check "whoami" "alice" "$(curl -s -b "${WORK}/alice" "${BASE}/_gateway/whoami" | jq -r .user)"
 
+echo "== login page (tools theme) and the Microsoft button"
+login_page="$(curl -s -L -c "${WORK}/probe" -b "${WORK}/probe" -H 'Accept: text/html' "${BASE}/sso/group/headers")"
+check "the login page uses the tools theme, in Portuguese" "yes yes" \
+    "$(grep -q 'login/tools/css/tools.css' <<<"${login_page}" && echo yes || echo no) $(grep -q 'Entrar' <<<"${login_page}" && echo yes || echo no)"
+check "the Microsoft button is on the page" "yes" "$(grep -q 'id="social-microsoft"' <<<"${login_page}" && echo yes || echo no)"
+# Login pelo botão: o realm microsoft-sim faz o papel do Entra ID, e o Keycloak associa a
+# conta ao usuário do diretório com o mesmo e-mail. Imprime o status final da rota.
+microsoft_login() {
+    local user="$1" jar="$2" page broker sim action
+    page="$(curl -s -L -c "${jar}" -b "${jar}" -H 'Accept: text/html' "${BASE}/sso/group/headers")"
+    broker="$(printf '%s' "${page}" | grep -o 'href="[^"]*broker/microsoft/login[^"]*"' | head -1 \
+        | sed -e 's/^href="//' -e 's/"$//' -e 's/&amp;/\&/g')"
+    [[ -n "${broker}" ]] || { echo "no button"; return; }
+    sim="$(curl -s -L -c "${jar}" -b "${jar}" -H 'Accept: text/html' "${BASE}${broker}")"
+    action="$(printf '%s' "${sim}" | grep -o 'action="[^"]*login-actions/authenticate[^"]*"' | head -1 \
+        | sed -e 's/^action="//' -e 's/"$//' -e 's/&amp;/\&/g')"
+    [[ -n "${action}" ]] || { echo "no form"; return; }
+    curl -s -L -c "${jar}" -b "${jar}" -H 'Accept: text/html' -o "${WORK}/body" -w '%{http_code}' \
+        --data-urlencode "username=${user}" --data-urlencode "password=${PASSWORD}" "${action}"
+}
+if [[ "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/auth/realms/microsoft-sim/.well-known/openid-configuration")" == "200" ]]; then
+    check "alice signs in with Microsoft and lands on the route" "200" "$(microsoft_login alice "${WORK}/ms-alice")"
+    curl -s -b "${WORK}/ms-alice" "${BASE}/sso/group/headers" -o "${WORK}/body"
+    check "she is the directory user, with the directory's groups" "alice tools-httpbin" \
+        "$(header X-Auth-Request-User) $(header X-Auth-Request-Groups)"
+    microsoft_login eve "${WORK}/ms-eve" >/dev/null
+    check "eve, who exists only at Microsoft, gets no session" "401" \
+        "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/ms-eve" "${BASE}/_gateway/whoami")"
+else
+    echo "  skip  login with Microsoft (MICROSOFT=entra: the real Entra ID needs a person at the keyboard)"
+fi
+
 echo "== directory (Keycloak federates it; the realm keeps no people)"
 admin="$(admin_token)"
 directory="$(api '/components?type=org.keycloak.storage.UserStorageProvider' | jq -r '.[0].id')"
