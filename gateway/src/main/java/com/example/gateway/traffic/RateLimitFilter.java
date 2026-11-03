@@ -12,7 +12,6 @@ import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -61,7 +60,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
             Optional<RateLimiter.Decision> decision = limiters.tryAcquire(GLOBAL_SCOPE, global,
                     CallerKeys.of(global.key(), exchange, trustedProxies));
             if (decision.isPresent() && !decision.get().allowed()) {
-                return refuse(exchange, decision.get());
+                return refuse(exchange, decision.get(), global, "Gateway rate limit reached");
             }
             tightest = decision.orElse(null);
         }
@@ -69,7 +68,7 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
             Optional<RateLimiter.Decision> decision = limiters.tryAcquire(route.getId(), own,
                     CallerKeys.of(own.key(), exchange, trustedProxies));
             if (decision.isPresent() && !decision.get().allowed()) {
-                return refuse(exchange, decision.get());
+                return refuse(exchange, decision.get(), own, "Rate limit of this route reached");
             }
             if (decision.isPresent() && (tightest == null || decision.get().remaining() < tightest.remaining())) {
                 tightest = decision.get();
@@ -81,13 +80,27 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         return chain.filter(exchange);
     }
 
-    private static Mono<Void> refuse(ServerWebExchange exchange, RateLimiter.Decision decision) {
+    private static Mono<Void> refuse(ServerWebExchange exchange, RateLimiter.Decision decision,
+                                     RouteRateLimit policy, String what) {
         exchange.getAttributes().put(AccessAttributes.DECISION, AccessDecision.RATE_LIMITED);
-        ServerHttpResponse response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
-        describe(response.getHeaders(), decision);
-        response.getHeaders().set(HttpHeaders.RETRY_AFTER, String.valueOf(seconds(decision.retryAfterNanos())));
-        return response.setComplete();
+        HttpHeaders headers = exchange.getResponse().getHeaders();
+        describe(headers, decision);
+        long retryAfter = seconds(decision.retryAfterNanos());
+        headers.set(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfter));
+        return PolicyErrors.write(exchange, HttpStatus.TOO_MANY_REQUESTS, what + ": " + policy.requests()
+                + " requests every " + policy.period() + whose(policy.key()) + ". Retry after " + retryAfter + "s.");
+    }
+
+    private static String whose(String key) {
+        if (key == null || "route".equals(key)) {
+            return "";
+        }
+        return switch (key) {
+            case "ip" -> " for each client address";
+            case "user" -> " for each user";
+            case "client-id" -> " for each client";
+            default -> " for each " + key.substring(key.indexOf(':') + 1);
+        };
     }
 
     // IETF draft "RateLimit header fields for HTTP": limit, what is left, and seconds to a full budget.

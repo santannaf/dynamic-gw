@@ -11,7 +11,6 @@ import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -77,10 +76,9 @@ public class ThrottleFilter implements GlobalFilter, Ordered {
 
     private static Mono<Void> refuse(ServerWebExchange exchange) {
         exchange.getAttributes().put(AccessAttributes.DECISION, AccessDecision.THROTTLED);
-        ServerHttpResponse response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.SERVICE_UNAVAILABLE);
-        response.getHeaders().set(HttpHeaders.RETRY_AFTER, "1");
-        return response.setComplete();
+        exchange.getResponse().getHeaders().set(HttpHeaders.RETRY_AFTER, "1");
+        return PolicyErrors.write(exchange, HttpStatus.SERVICE_UNAVAILABLE,
+                "Too many requests in progress, and the queue is full or the wait ran out. Retry after 1s.");
     }
 
     private record Key(String routeId, RouteThrottle policy) {

@@ -123,9 +123,9 @@ public class AggregationFilter implements GlobalFilter, Ordered {
         ServerHttpResponse response = exchange.getResponse();
         response.getHeaders().set(COMPLETED_HEADER, String.valueOf(answered.size() == parts.size()));
         if (answered.isEmpty()) {
-            response.setStatusCode(parts.stream().allMatch(Part::timedOut)
-                    ? HttpStatus.GATEWAY_TIMEOUT : HttpStatus.BAD_GATEWAY);
-            return response.setComplete();
+            return parts.stream().allMatch(Part::timedOut)
+                    ? PolicyErrors.write(exchange, HttpStatus.GATEWAY_TIMEOUT, "No backend of the aggregation answered in time.")
+                    : PolicyErrors.write(exchange, HttpStatus.BAD_GATEWAY, "No backend of the aggregation answered successfully.");
         }
         ObjectNode merged = json.createObjectNode();
         for (Part part : answered) {

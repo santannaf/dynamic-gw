@@ -11,6 +11,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.aot.DisabledInAotMode;
@@ -162,7 +163,16 @@ class RoutePoliciesIntegrationTest {
         client.get().uri("/limited/echo").exchange()
                 .expectStatus().isEqualTo(429)
                 .expectHeader().valueEquals("RateLimit-Remaining", "0")
-                .expectHeader().value(HttpHeaders.RETRY_AFTER, value -> assertThat(Long.parseLong(value)).isBetween(1L, 20L));
+                .expectHeader().value(HttpHeaders.RETRY_AFTER, value -> assertThat(Long.parseLong(value)).isBetween(1L, 20L))
+                .expectHeader().contentType(MediaType.APPLICATION_JSON)
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(429)
+                .jsonPath("$.error").isEqualTo("Too Many Requests")
+                .jsonPath("$.path").isEqualTo("/limited/echo")
+                .jsonPath("$.requestId").isNotEmpty()
+                .jsonPath("$.timestamp").isNotEmpty()
+                .jsonPath("$.message").value(message -> assertThat((String) message)
+                        .startsWith("Rate limit of this route reached: 3 requests every 1m. Retry after "));
 
         assertThat(audit.awaitLast(event -> "rate_limited".equals(event.reason())).routeId()).isEqualTo("limited");
     }
@@ -178,13 +188,16 @@ class RoutePoliciesIntegrationTest {
     void throttleRunsTheLimitQueuesOneAndRefusesTheRest() {
         WebClient web = WebClient.create("http://localhost:" + port);
 
-        List<Integer> statuses = Flux.range(0, 4)
+        List<String> answers = Flux.range(0, 4)
                 .flatMap(i -> web.get().uri("/throttled/slow?ms=700")
-                        .exchangeToMono(response -> response.releaseBody().thenReturn(response.statusCode().value())))
+                        .exchangeToMono(response -> response.bodyToMono(String.class).defaultIfEmpty("")
+                                .map(body -> response.statusCode().value() + " " + body)))
                 .collectList()
                 .block(Duration.ofSeconds(15));
 
-        assertThat(statuses).containsExactlyInAnyOrder(200, 200, 200, 503);
+        assertThat(answers).extracting(answer -> answer.substring(0, 3)).containsExactlyInAnyOrder("200", "200", "200", "503");
+        assertThat(answers).filteredOn(answer -> answer.startsWith("503")).singleElement().asString()
+                .contains("\"status\":503", "\"error\":\"Service Unavailable\"", "\"path\":\"/throttled/slow\"", "Retry after 1s.");
         assertThat(upstream.peakConcurrency()).isEqualTo(2);
         assertThat(audit.awaitLast(event -> "throttled".equals(event.reason())).routeId()).isEqualTo("throttled");
     }
@@ -241,9 +254,16 @@ class RoutePoliciesIntegrationTest {
 
         client.get().uri("/falha/1").exchange()
                 .expectStatus().isEqualTo(502)
-                .expectHeader().valueEquals(AggregationFilter.COMPLETED_HEADER, "false");
+                .expectHeader().valueEquals(AggregationFilter.COMPLETED_HEADER, "false")
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(502)
+                .jsonPath("$.path").isEqualTo("/falha/1")
+                .jsonPath("$.message").isEqualTo("No backend of the aggregation answered successfully.");
         client.get().uri("/lento/1").exchange()
-                .expectStatus().isEqualTo(504);
+                .expectStatus().isEqualTo(504)
+                .expectBody()
+                .jsonPath("$.error").isEqualTo("Gateway Timeout")
+                .jsonPath("$.message").isEqualTo("No backend of the aggregation answered in time.");
     }
 
     @Test

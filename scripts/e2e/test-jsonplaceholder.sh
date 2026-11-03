@@ -118,17 +118,21 @@ statuses=""
 for _ in 1 2 3 4; do statuses+="$(body -H "X-Api-Key: ${API_KEY}" "${BASE}/jp/limitado/posts/1") "; done
 check "three pass, the fourth is refused" "200 200 200 429 " "${statuses}"
 check "Retry-After on the refusal" "yes" "$([[ "$(header Retry-After)" =~ ^[0-9]+$ ]] && echo yes || echo no)"
+check "the refusal says why, in the gateway's error JSON" "429 Too Many Requests /jp/limitado/posts/1" \
+    "$(jq -r '"\(.status) \(.error) \(.path)"' "${WORK}/body")"
 check "another key has its own budget" "200" "$(code -H "X-Api-Key: ${API_KEY}-b" "${BASE}/jp/limitado/posts/1")"
 
 echo "== throttle (1 at a time, 1 in the queue)"
 for i in 1 2 3 4 5 6; do
-    curl -s -o /dev/null -w '%{http_code}\n' "${BASE}/jp/lento/comments" > "${WORK}/throttle-${i}" &
+    curl -s -o "${WORK}/throttle-body-${i}" -w '%{http_code}\n' "${BASE}/jp/lento/comments" > "${WORK}/throttle-${i}" &
 done
 wait
-answered="$(cat "${WORK}"/throttle-* | grep -c '^200$' || true)"
-refused="$(cat "${WORK}"/throttle-* | grep -c '^503$' || true)"
+answered="$(cat "${WORK}"/throttle-[0-9] | grep -c '^200$' || true)"
+refused="$(cat "${WORK}"/throttle-[0-9] | grep -c '^503$' || true)"
 check "six at once: some run, the excess gets 503" "yes yes 6" \
     "$([[ ${answered} -ge 1 ]] && echo yes || echo no) $([[ ${refused} -ge 1 ]] && echo yes || echo no) $((answered + refused))"
+check "the 503 says why, in the gateway's error JSON" "503 Service Unavailable" \
+    "$(cat "${WORK}"/throttle-body-* | jq -r 'select(.status? == 503) | "\(.status) \(.error)"' 2>/dev/null | head -1)"
 
 echo "== filters and mapping (/jp/artigos, a facade in Portuguese)"
 status="$(body "${BASE}/jp/artigos/1")"

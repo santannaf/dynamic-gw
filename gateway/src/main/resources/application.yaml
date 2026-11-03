@@ -4,6 +4,17 @@ spring:
   threads:
     virtual:
       enabled: true
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            pool:
+              # NAT e firewall no caminho até um backend externo derrubam conexão parada sem
+              # avisar; reaproveitada, ela deixava a requisição pendurada até o nginx-lb dar 504.
+              # Ociosa por mais de 20s, a conexão é fechada em vez de voltar ao uso.
+              max-idle-time: 20s
+              eviction-interval: 10s
 
 server:
   port: 8080

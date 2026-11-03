@@ -97,6 +97,23 @@ access → rate limit → throttle → filtros da rota → proxy ou agregação 
 - Quem o rate limit barra (429) não ocupa vaga de throttle.
 - A transformação vale tanto para a resposta do backend quanto para a resposta montada pela agregação.
 
+### Quando uma política recusa
+
+As recusas das políticas (429 do rate limit, 503 do throttling, 502 e 504 da agregação) vêm com o mesmo JSON de erro que o gateway devolve, por exemplo, no 404, mais uma `message` que diz o motivo:
+
+```json
+{
+  "timestamp": "2026-11-03T20:47:10.515Z",
+  "path": "/jp/limitado/posts/1",
+  "status": 429,
+  "error": "Too Many Requests",
+  "requestId": "d07f7b39-106",
+  "message": "Rate limit of this route reached: 3 requests every 10s for each X-Api-Key. Retry after 4s."
+}
+```
+
+O `path` é o que o cliente pediu, antes de qualquer `stripPrefix` ou filtro. O `requestId` é o mesmo `http.request.id` do evento de [auditoria](#auditoria), o que liga a resposta ao log. O 413 do filtro `RequestSize` é do Spring Cloud Gateway: vem sem corpo, com o motivo no header `errorMessage`.
+
 ### Os limites contam por réplica
 
 Rate limit e throttling ficam em memória, em cada pod do gateway, como no KrakenD Community. Não há Redis. Com 3 réplicas atrás do nginx-lb, uma rota com `requests: 100` aceita até 300 requisições por período no total. Divida o teto desejado pelo número de réplicas, ou fixe as réplicas.
@@ -180,12 +197,21 @@ Ratelimit-Reset: 10
 
 # 6ª chamada
 HTTP/1.1 429 Too Many Requests
-Content-Length: 0
+Content-Type: application/json
 Ratelimit-Limit: 5
 Ratelimit-Policy: 5;w=10
 Ratelimit-Remaining: 0
 Ratelimit-Reset: 10
 Retry-After: 2
+
+{
+  "timestamp": "2026-11-03T20:47:10.515Z",
+  "path": "/pol/limited/get",
+  "status": 429,
+  "error": "Too Many Requests",
+  "requestId": "d07f7b39-106",
+  "message": "Rate limit of this route reached: 5 requests every 10s. Retry after 2s."
+}
 ```
 
 | Header                | O que diz                                     |
@@ -196,7 +222,7 @@ Retry-After: 2
 | `RateLimit-Policy`    | `requests;w=<período em segundos>`            |
 | `Retry-After`         | só no 429: segundos até caber mais uma        |
 
-Os headers seguem o draft do IETF "RateLimit header fields for HTTP". Quando a rota e o teto global valem juntos, eles descrevem o orçamento mais apertado. O 429 vem sem corpo. O Traefik do lab muda a caixa dos nomes (`Ratelimit-Limit`), o que não faz diferença: nome de header HTTP não diferencia maiúsculas.
+Os headers seguem o draft do IETF "RateLimit header fields for HTTP". Quando a rota e o teto global valem juntos, eles descrevem o orçamento mais apertado. O corpo do 429 é o [JSON de erro do gateway](#quando-uma-política-recusa), e a `message` diz qual orçamento acabou (`Rate limit of this route reached` ou, no teto global, `Gateway rate limit reached`) e em quantos segundos tentar de novo. O Traefik do lab muda a caixa dos nomes (`Ratelimit-Limit`), o que não faz diferença: nome de header HTTP não diferencia maiúsculas.
 
 ### Experimente
 
@@ -254,8 +280,17 @@ chamada 2: 200 em 3,8 s     esperou na fila a vaga da primeira
 chamada 3: 503 em 0,001 s   fila cheia
 
 HTTP/1.1 503 Service Unavailable
-Content-Length: 0
+Content-Type: application/json
 Retry-After: 1
+
+{
+  "timestamp": "2026-11-03T20:47:24.551Z",
+  "path": "/pol/throttled/delay/2",
+  "status": 503,
+  "error": "Service Unavailable",
+  "requestId": "ef994d68-6",
+  "message": "Too many requests in progress, and the queue is full or the wait ran out. Retry after 1s."
+}
 ```
 
 ### Experimente
@@ -581,8 +616,8 @@ X-Gateway-Completed: false
 | Situação                                                                                           | Resposta                                                   |
 |----------------------------------------------------------------------------------------------------|------------------------------------------------------------|
 | um backend responde fora de 2xx, falha, estoura o `timeout`, devolve algo que não é JSON ou passa de `gateway.traffic.aggregate.max-body-size` | 200 sem ele, com `X-Gateway-Completed: false` |
-| todos falham, e todos por estourar o tempo                                                          | 504, sem corpo                                             |
-| todos falham, por qualquer outro motivo                                                             | 502, sem corpo                                             |
+| todos falham, e todos por estourar o tempo                                                          | 504, com o JSON de erro (`No backend of the aggregation answered in time.`) |
+| todos falham, por qualquer outro motivo                                                             | 502, com o JSON de erro (`No backend of the aggregation answered successfully.`) |
 | método diferente de GET                                                                             | 404: a rota só casa com GET                                |
 
 Resposta parcial também é 200, então quem consome a rota precisa olhar o `X-Gateway-Completed`. Backend que responde 2xx sem corpo entra como `{}`.

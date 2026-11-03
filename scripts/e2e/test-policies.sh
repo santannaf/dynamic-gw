@@ -114,6 +114,8 @@ for _ in $(seq 1 6); do statuses+="$(body "${BASE}/pol/limited/get") "; done
 check "five pass, the sixth is refused" "200 200 200 200 200 429 " "${statuses}"
 check "Retry-After on the refusal" "yes" "$([[ "$(header Retry-After)" =~ ^[0-9]+$ ]] && echo yes || echo no)"
 check "budget is empty" "0" "$(header RateLimit-Remaining)"
+check "the refusal says why, in the gateway's error JSON" "429 Too Many Requests /pol/limited/get" \
+    "$(jq -r '"\(.status) \(.error) \(.path)"' "${WORK}/body")"
 
 echo "== rate limit per caller (2 per 10s for each X-Api-Key)"
 statuses=""
@@ -122,11 +124,13 @@ check "each key has its own budget" "200 200 429 200 " "${statuses}"
 
 echo "== throttle (1 at a time, 1 in the queue)"
 for i in 1 2 3; do
-    curl -s -o /dev/null -w '%{http_code}\n' "${BASE}/pol/throttled/delay/2" > "${WORK}/throttle-${i}" &
+    curl -s -o "${WORK}/throttle-body-${i}" -w '%{http_code}\n' "${BASE}/pol/throttled/delay/2" > "${WORK}/throttle-${i}" &
     sleep 0.2
 done
 wait
-check "one runs, one waits, one is refused" "200 200 503" "$(cat "${WORK}"/throttle-* | sort | tr '\n' ' ' | sed 's/ $//')"
+check "one runs, one waits, one is refused" "200 200 503" "$(cat "${WORK}"/throttle-[0-9] | sort | tr '\n' ' ' | sed 's/ $//')"
+check "the 503 says why, in the gateway's error JSON" "503 Service Unavailable" \
+    "$(cat "${WORK}"/throttle-body-* | jq -r 'select(.status == 503) | "\(.status) \(.error)"' 2>/dev/null | head -1)"
 
 if [[ ",${PROFILES}," == *",keycloak,"* || ",${PROFILES}," == *",ldap,"* || ",${PROFILES}," == *",oauth,"* ]]; then
     echo "== audit trail"

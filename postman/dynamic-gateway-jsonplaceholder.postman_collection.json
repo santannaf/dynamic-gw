@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3207a438-25ff-512d-8d50-e21d6b42517f",
     "name": "Dynamic Gateway: políticas de rota (JSONPlaceholder)",
-    "description": "Rotas `/jp/...` do gateway contra a API pública do [JSONPlaceholder](https://jsonplaceholder.typicode.com), uma por política: rate limit, throttling, filtros, mapping e agregação. O guia está em `POLITICAS_DE_ROTA.md`.\n\n**Antes de rodar**\n- `baseUrl`: `http://localhost:<HOST_PORT>` do lab (`make lab`), ou `http://localhost:8080` para o gateway fora do cluster (`./gradlew :gateway:bootRun --args='--spring.profiles.active=standalone'`).\n- Pasta 1: não precisa de mais nada.\n- Pasta 2 (SSO ligado): preencha `cliSecret` com `kubectl -n platform get secret sso-secrets -o jsonpath='{.data.tools-cli-client-secret}' | base64 -d` e rode primeiro \"Token do tools-cli\".\n- Pasta 3 (SSO ligado): abra no navegador `{{baseUrl}}/jp/privado/posts/1`, que leva ao login, e entre como alice, bob ou carol (a senha sai no fim do `make lab`). Depois copie o valor do cookie `GW_SESSION` (DevTools > Application > Cookies) para `sessionCookie`.\n\nOs limites contam por réplica do gateway: os testes de rate limit e throttling disparam várias chamadas e funcionam com 1 ou 2 réplicas. Sem SSO, as pastas 2 e 3 não se aplicam.",
+    "description": "Rotas `/jp/...` do gateway contra a API pública do [JSONPlaceholder](https://jsonplaceholder.typicode.com), uma por política: rate limit, throttling, filtros, mapping e agregação. O guia está em `POLITICAS_DE_ROTA.md`.\n\n**Antes de rodar**\n- `baseUrl`: já vem `http://localhost:18080`, o lab criado com `HOST_PORT=18080 make lab`. Troque para `http://localhost:8080` se o lab foi criado sem `HOST_PORT`, ou para o gateway fora do cluster (`./gradlew :gateway:bootRun --args='--spring.profiles.active=standalone'`).\n- Pasta 1: não precisa de mais nada.\n- Pasta 2 (SSO ligado): preencha `cliSecret` com `kubectl -n platform get secret sso-secrets -o jsonpath='{.data.tools-cli-client-secret}' | base64 -d` e rode primeiro \"Token do tools-cli\".\n- Pasta 3 (SSO ligado): abra no navegador `{{baseUrl}}/jp/privado/posts/1`, que leva ao login, e entre como alice, bob ou carol (a senha sai no fim do `make lab`). Depois copie o valor do cookie `GW_SESSION` (DevTools > Application > Cookies) para `sessionCookie`.\n\nOs limites contam por réplica do gateway: os testes de rate limit e throttling disparam várias chamadas e funcionam com 1 ou 2 réplicas. Sem SSO, as pastas 2 e 3 não se aplicam.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -101,8 +101,8 @@
                   "    pm.expect(pm.response.headers.get(\"RateLimit-Limit\")).to.eql(\"3\");",
                   "    pm.expect(pm.response.headers.get(\"RateLimit-Policy\")).to.eql(\"3;w=10\");",
                   "});",
-                  "// Mais 6 chamadas com a mesma chave: até 3 passam em cada réplica do gateway,",
-                  "// então com 1 ou 2 réplicas pelo menos uma recebe 429.",
+                  "// Mais 8 chamadas com a mesma chave: até 3 passam em cada réplica do gateway, e uma",
+                  "// vaga volta a cada 3,3s; com 1 ou 2 réplicas, pelo menos uma das 9 recebe 429.",
                   "const key = pm.collectionVariables.get(\"apiKey\");",
                   "const target = pm.variables.get(\"baseUrl\") + \"/jp/limitado/posts/1\";",
                   "const statuses = [pm.response.code];",
@@ -114,12 +114,16 @@
                   "    pm.sendRequest({ url: target, method: \"GET\", header: { \"X-Api-Key\": key } }, (err, res) => {",
                   "        statuses.push(err ? 0 : res.code);",
                   "        if (res && res.code === 429) {",
-                  "            pm.test(\"o 429 traz Retry-After\", () => pm.expect(res.headers.get(\"Retry-After\")).to.match(/^\\d+$/));",
+                  "            pm.test(\"o 429 traz Retry-After e diz o motivo\", () => {",
+                  "                pm.expect(res.headers.get(\"Retry-After\")).to.match(/^\\d+$/);",
+                  "                pm.expect(res.json().error).to.eql(\"Too Many Requests\");",
+                  "                pm.expect(res.json().message).to.include(\"Rate limit of this route reached\");",
+                  "            });",
                   "        }",
                   "        next(left - 1);",
                   "    });",
                   "}",
-                  "next(6);"
+                  "next(8);"
                 ]
               }
             }
@@ -144,7 +148,7 @@
                 "1"
               ]
             },
-            "description": "Cada `X-Api-Key` tem 3 requisições a cada 10 segundos. O script de teste faz mais 6 chamadas com a mesma chave e confere o 429. A chave muda a cada execução, para o orçamento começar cheio."
+            "description": "Cada `X-Api-Key` tem 3 requisições a cada 10 segundos. O script de teste faz mais 8 chamadas com a mesma chave e confere o 429. A chave muda a cada execução, para o orçamento começar cheio."
           },
           "response": []
         },
@@ -163,6 +167,9 @@
                   "for (let i = 0; i < 7; i++) {",
                   "    pm.sendRequest({ url: target, method: \"GET\" }, (err, res) => {",
                   "        statuses.push(err ? 0 : res.code);",
+                  "        if (res && res.code === 503) {",
+                  "            pm.test(\"o 503 diz o motivo\", () => pm.expect(res.json().error).to.eql(\"Service Unavailable\"));",
+                  "        }",
                   "        if (statuses.length === 7) {",
                   "            pm.test(\"ao mesmo tempo, o excesso recebe 503: \" + statuses.sort().join(\" \"), () => {",
                   "                pm.expect(statuses).to.include(200);",
@@ -977,8 +984,8 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8080",
-      "description": "http://localhost:<HOST_PORT> do lab"
+      "value": "http://localhost:18080",
+      "description": "http://localhost:<HOST_PORT> do lab; 8080 sem HOST_PORT ou no bootRun"
     },
     {
       "key": "cliSecret",

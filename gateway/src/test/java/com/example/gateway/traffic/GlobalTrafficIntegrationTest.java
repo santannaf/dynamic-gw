@@ -68,7 +68,9 @@ class GlobalTrafficIntegrationTest {
         WebTestClient client = WebTestClient.bindToServer().baseUrl("http://localhost:" + port).build();
         client.get().uri("/a/echo").exchange().expectStatus().isOk();
         client.get().uri("/b/echo").exchange().expectStatus().isOk().expectHeader().valueEquals("RateLimit-Remaining", "0");
-        client.get().uri("/a/echo").exchange().expectStatus().isEqualTo(429);
+        client.get().uri("/a/echo").exchange().expectStatus().isEqualTo(429)
+                .expectBody().jsonPath("$.message").value(message -> assertThat((String) message)
+                        .startsWith("Gateway rate limit reached: 4 requests every 1m"));
         client.get().uri("/b/echo").exchange().expectStatus().isEqualTo(429);
     }
 
