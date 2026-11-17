@@ -120,7 +120,7 @@ Rate limit e throttling ficam em memória, em cada pod do gateway, como no Krake
 
 ### Experimente no lab
 
-As rotas de exemplo estão em [`k8s/samples/routes-policies.yaml`](k8s/samples/routes-policies.yaml) (v2) e no fim do [`application-standalone.yaml`](gateway/src/main/resources/application-standalone.yaml) (v1), com as mesmas regras. Elas apontam para o go-httpbin, que devolve o que recebeu, e são públicas, então não pedem login. As respostas mostradas neste guia saíram delas.
+As rotas de exemplo estão em [`k8s/samples/routes-policies.yaml`](k8s/samples/routes-policies.yaml) (v2) e no fim do [`properties/application-standalone.yaml`](gateway/src/main/resources/properties/application-standalone.yaml) (v1), com as mesmas regras. Elas apontam para o go-httpbin, que devolve o que recebeu, e são públicas, então não pedem login. As respostas mostradas neste guia saíram delas.
 
 ```bash
 GW=http://localhost:8080                            # ou a porta do HOST_PORT do seu cluster
@@ -860,6 +860,6 @@ O contrato completo do evento está em [`GATEWAY_DE_BORDA.md`](GATEWAY_DE_BORDA.
 | Modelo e validação   | `shared/` (`RouteRateLimit`, ..., `RoutePolicyRules`), usado pelo operator e pelo gateway    |
 | Schema               | `k8s/crd/gatewayroutes.platform.saca.pags.yaml`, com regras CEL                              |
 | Filtros globais      | `gateway/.../traffic/`: `RateLimitFilter`, `ThrottleFilter`, `ResponseTransformFilter`, `AggregationFilter` |
-| Exemplos e e2e       | `k8s/samples/routes-policies.yaml`, `application-standalone.yaml` e `scripts/e2e/test-policies.sh` (`make policies-test`) |
+| Exemplos e e2e       | `k8s/samples/routes-policies.yaml`, `properties/application-standalone.yaml` e `scripts/e2e/test-policies.sh` (`make policies-test`) |
 
 As políticas viajam como metadata da rota, como o `access`, e não como filtro por rota. Por isso as 60 mil rotas continuam no caminho rápido. Mudar só uma política dispara o reload, porque o hash do snapshot inclui as políticas, e um snapshot antigo, sem elas, continua carregando.

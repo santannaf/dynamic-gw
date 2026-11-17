@@ -20,6 +20,11 @@ public class GatewayRuntimeHints implements RuntimeHintsRegistrar {
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
         // The favicon the gateway answers when no route serves one (Spring Boot's static resources).
         hints.resources().registerPattern("static/favicon.ico");
+        // Spring Boot only embeds the application*.yaml at the classpath root; the profile
+        // files live in folders and application.yaml imports them.
+        for (String folder : new String[]{"keycloak", "ldap", "oauth", "s3", "properties"}) {
+            hints.resources().registerPattern(folder + "/*.yaml");
+        }
         hints.reflection()
                 .registerType(RouteConfigSnapshot.class,
                         MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,

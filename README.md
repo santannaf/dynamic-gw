@@ -415,7 +415,7 @@ curl http://localhost:8080/internal/routes                              # lista 
 
 ## Modo standalone (v1)
 
-A v1 dispensa CRD, operator e ConfigMap-watcher. Rotas vivem no [`application-standalone.yaml`](gateway/src/main/resources/application-standalone.yaml) embarcado na imagem do gateway. Trocar rota = rebuild da imagem + rollout restart do pod (sem hot-reload, por design).
+A v1 dispensa CRD, operator e ConfigMap-watcher. Rotas vivem no [`properties/application-standalone.yaml`](gateway/src/main/resources/properties/application-standalone.yaml) embarcado na imagem do gateway. Trocar rota = rebuild da imagem + rollout restart do pod (sem hot-reload, por design).
 
 ```bash
 make load-images
@@ -554,7 +554,7 @@ operator.routes.store.type: configmap  # ou s3 (não suporta properties — modo
 | `properties` | só gateway (v1 standalone) | ✅ produção                               |
 | `s3`         | gateway + operator         | ✅ validado no k3d com MinIO              |
 
-O S3 usa `S3RouteConfigPublisher` (PutObject) e `S3RouteConfigProvider` (GetObject) sobre o `SnapshotCodec` compartilhado; o operator sinaliza o reload pelo Service (a réplica que recebe relê na hora) e cada réplica faz HEAD no objeto a cada `poll-interval` (15 s), relendo quando o ETag muda. Para ligar: profile `s3` (`application-s3.yaml`) mais bucket e região por ambiente; `endpoint` + `path-style-access` para S3 compatível (MinIO).
+O S3 usa `S3RouteConfigPublisher` (PutObject) e `S3RouteConfigProvider` (GetObject) sobre o `SnapshotCodec` compartilhado; o operator sinaliza o reload pelo Service (a réplica que recebe relê na hora) e cada réplica faz HEAD no objeto a cada `poll-interval` (15 s), relendo quando o ETag muda. Para ligar: profile `s3` (`s3/application-s3.yaml`) mais bucket e região por ambiente; `endpoint` + `path-style-access` para S3 compatível (MinIO).
 
 **Nenhuma mudança foi necessária** no CRD, no validator, no `SnapshotBuilder`, no reconciler, no `GatewayRouteReloadService`, no bootstrap runner, no `RouteDefinitionMapper`, no `InMemoryDynamicRouteLocator`, ou no endpoint `/internal/routes/reload`. `StorageAbstractionLeakTest` amarra esse contrato — assert que essas classes **não** importam tipos backend-específicos.
 
@@ -838,13 +838,13 @@ HOST_PORT=18080 make standalone-sso-test
 make standalone-sso-down            # volta o v1 sem SSO
 ```
 
-A configuração já vem pronta em profiles embarcados na imagem e combináveis: um de provedor (`application-keycloak.yaml`, `application-ldap.yaml`, `application-oauth.yaml`) e, quando o store não é o default, um de cenário. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
+A configuração já vem pronta em profiles embarcados na imagem e combináveis, cada um numa pasta de `gateway/src/main/resources/`: um de provedor (`keycloak/`, `ldap/`, `oauth/`) e, quando o store não é o default, um de cenário (`s3/`, `properties/`). O `application.yaml` importa o arquivo de cada profile ativo, sem `optional:`: se o arquivo faltar, o gateway não sobe. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
 
-| Cenário de rotas | Rotas vêm de                                 | Keycloak                  | LDAP                  | Guia                                                     |
-|------------------|----------------------------------------------|---------------------------|-----------------------|----------------------------------------------------------|
-| CRD (v2)         | `GatewayRoute` → ConfigMap                   | `keycloak`                | `ldap`                | [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md)               |
-| S3 (v2)          | `GatewayRoute` → objeto S3                   | `s3,keycloak`             | `s3,ldap`             | [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md)                 |
-| Properties (v1)  | `application-standalone-sso.yaml`, na imagem | `standalone-sso,keycloak` | `standalone-sso,ldap` | [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md) |
+| Cenário de rotas | Rotas vêm de                                            | Keycloak                  | LDAP                  | Guia                                                     |
+|------------------|---------------------------------------------------------|---------------------------|-----------------------|----------------------------------------------------------|
+| CRD (v2)         | `GatewayRoute` → ConfigMap                              | `keycloak`                | `ldap`                | [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md)               |
+| S3 (v2)          | `GatewayRoute` → objeto S3                              | `s3,keycloak`             | `s3,ldap`             | [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md)                 |
+| Properties (v1)  | `properties/application-standalone-sso.yaml`, na imagem | `standalone-sso,keycloak` | `standalone-sso,ldap` | [`SSO_CENARIO_PROPERTIES.md`](SSO_CENARIO_PROPERTIES.md) |
 
 Usuários do diretório do lab (OpenLDAP no lugar do AD, o mesmo para o Keycloak e para o provider `ldap`): `alice` (tools-httpbin), `bob` (sem grupo), `carol` (tools-admins, tools-httpbin) e `dave` (gateway-admins: opera o gateway, sem acesso às ferramentas). A senha é gerada no Secret `sso-secrets` e impressa pelo `sso-up`. No Keycloak, nenhuma pessoa é cadastrada no realm: ficam a conta de serviço `tools-cli` e a role `gateway-admin`, do client `tools-gateway` (nunca do realm), dada ao grupo `gateway-admins`. O modelo e o porquê estão em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#6-modelo-de-roles-operar-o-gateway-não-é-usar-as-ferramentas); o passo a passo manual, em [`TESTE_SSO.md`](TESTE_SSO.md).
 

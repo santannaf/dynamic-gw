@@ -358,7 +358,7 @@ Para voltar ao Keycloak: `make sso-up`.
 
 ## 3. v1 standalone com SSO
 
-O mesmo SSO sem operator nem CRD. As rotas e o `access` de cada uma estão em `gateway/src/main/resources/application-standalone-sso.yaml`, embarcado na imagem: mudar exige rebuild e rollout, como no v1 puro.
+O mesmo SSO sem operator nem CRD. As rotas e o `access` de cada uma estão em `gateway/src/main/resources/properties/application-standalone-sso.yaml`, embarcado na imagem: mudar exige rebuild e rollout, como no v1 puro.
 
 ```bash
 make standalone-sso-up          # troca o gateway do cluster pelo v1 (PROVIDER=ldap também funciona)

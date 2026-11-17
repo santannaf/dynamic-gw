@@ -21,14 +21,14 @@ browser / API ──► nginx-lb ──► gateway (profile keycloak | ldap) ─
 
 ## O que já está configurado
 
-| Peça                                     | Arquivo                                                                           | O que tem                                                                                         |
-|------------------------------------------|-----------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
-| Profile do provedor, embarcado na imagem | `gateway/src/main/resources/application-keycloak.yaml` ou `application-ldap.yaml` | segurança e auditoria ligadas, realm/client do Keycloak ou servidor e bases de busca do diretório |
-| Store de rotas                           | `gateway/src/main/resources/application.yaml`                                     | `gateway.routes.store.type: configmap` (default)                                                  |
-| Deployment do gateway                    | `k8s/sso/gateway-keycloak.yaml` ou `k8s/sso/gateway-ldap.yaml`                    | ativa o profile e passa só a URL pública e os segredos                                            |
-| Rotas de exemplo                         | `k8s/samples/routes-sso.yaml`                                                     | 7 rotas `/sso/*`, uma política diferente em cada                                                  |
-| CRD                                      | `k8s/crd/gatewayroutes.platform.saca.pags.yaml`                                   | `spec.access` validado no `kubectl apply`                                                         |
-| Operator                                 | `k8s/operator/deployment.yaml`                                                    | sem mudança: o operator não participa do SSO                                                      |
+| Peça                                     | Arquivo                                                                                         | O que tem                                                                                         |
+|------------------------------------------|-------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| Profile do provedor, embarcado na imagem | `gateway/src/main/resources/keycloak/application-keycloak.yaml` ou `ldap/application-ldap.yaml` | segurança e auditoria ligadas, realm/client do Keycloak ou servidor e bases de busca do diretório |
+| Store de rotas                           | `gateway/src/main/resources/application.yaml`                                                   | `gateway.routes.store.type: configmap` (default)                                                  |
+| Deployment do gateway                    | `k8s/sso/gateway-keycloak.yaml` ou `k8s/sso/gateway-ldap.yaml`                                  | ativa o profile e passa só a URL pública e os segredos                                            |
+| Rotas de exemplo                         | `k8s/samples/routes-sso.yaml`                                                                   | 7 rotas `/sso/*`, uma política diferente em cada                                                  |
+| CRD                                      | `k8s/crd/gatewayroutes.platform.saca.pags.yaml`                                                 | `spec.access` validado no `kubectl apply`                                                         |
+| Operator                                 | `k8s/operator/deployment.yaml`                                                                  | sem mudança: o operator não participa do SSO                                                      |
 
 **Profiles ativos:** `SPRING_PROFILES_ACTIVE=keycloak` ou `SPRING_PROFILES_ACTIVE=ldap`.
 

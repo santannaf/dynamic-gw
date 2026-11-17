@@ -1,13 +1,13 @@
 # Cenário Properties (v1): rotas embarcadas na imagem, com SSO (Keycloak ou LDAP)
 
-É o v1 standalone, sem operator nem CRD. As rotas, e o `access` de cada uma, ficam em `application-standalone-sso.yaml`, dentro da imagem nativa. Mudar uma rota ou uma política exige rebuild e rollout, como no v1 puro. Quem está em cada grupo continua dinâmico, porque isso é do AD ou do Keycloak. O login vem do Keycloak (`keycloak`) ou direto do diretório (`ldap`).
+É o v1 standalone, sem operator nem CRD. As rotas, e o `access` de cada uma, ficam em `properties/application-standalone-sso.yaml`, dentro da imagem nativa. Mudar uma rota ou uma política exige rebuild e rollout, como no v1 puro. Quem está em cada grupo continua dinâmico, porque isso é do AD ou do Keycloak. O login vem do Keycloak (`keycloak`) ou direto do diretório (`ldap`).
 
 Os outros cenários: [`SSO_CENARIO_CRD.md`](SSO_CENARIO_CRD.md) e [`SSO_CENARIO_S3.md`](SSO_CENARIO_S3.md). O modelo de SSO e autorização está em [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md), e o v1 sem SSO em [`TESTE_STANDALONE.md`](TESTE_STANDALONE.md).
 
 ## Como funciona
 
 ```
-application-standalone-sso.yaml ── make load-images ──► imagem nativa (rotas + access)
+properties/application-standalone-sso.yaml ── make load-images ──► imagem nativa (rotas + access)
                                                               │ rollout restart
                                                               ▼
 browser / API ──► nginx-lb ──► gateway (profiles standalone-sso + keycloak | ldap) ──► backend
@@ -20,8 +20,8 @@ browser / API ──► nginx-lb ──► gateway (profiles standalone-sso + ke
 
 | Peça                           | Arquivo                                                                              | O que tem                                                                     |
 |--------------------------------|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------------|
-| Rotas e políticas, embarcadas  | `gateway/src/main/resources/application-standalone-sso.yaml`                         | `store.type: properties`, 4 rotas com `access`, segurança e auditoria ligadas |
-| Profile do provedor, embarcado | `application-keycloak.yaml` ou `application-ldap.yaml`                               | os mesmos dos cenários CRD e S3                                               |
+| Rotas e políticas, embarcadas  | `gateway/src/main/resources/properties/application-standalone-sso.yaml`              | `store.type: properties`, 4 rotas com `access`, segurança e auditoria ligadas |
+| Profile do provedor, embarcado | `keycloak/application-keycloak.yaml` ou `ldap/application-ldap.yaml`                 | os mesmos dos cenários CRD e S3                                               |
 | Deployment do gateway          | `k8s/sso/gateway-standalone-keycloak.yaml` ou `k8s/sso/gateway-standalone-ldap.yaml` | ativa os profiles e passa a URL pública e os segredos                         |
 | Service e Ingress              | `k8s/gateway-standalone/service.yaml`, `ingress.yaml`                                | os do v1                                                                      |
 
@@ -108,7 +108,7 @@ curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Accept: text/html' 
 
 ## Mudar quem acessa uma rota
 
-1. Edite `access` (ou a rota) em `gateway/src/main/resources/application-standalone-sso.yaml`.
+1. Edite `access` (ou a rota) em `gateway/src/main/resources/properties/application-standalone-sso.yaml`.
 2. `./gradlew :gateway:test --tests 'com.example.gateway.GatewayProfilesTest'`. O teste falha se alguma chave do YAML não casar com uma propriedade, o que pega erro de digitação.
 3. `make load-images` (~3 min, build nativo).
 4. `kubectl -n platform rollout restart deployment/dynamic-gateway`. A tag `:local` não muda, então só pods novos pegam a imagem nova.
@@ -117,7 +117,7 @@ Sem rebuild dá para mudar só o comportamento das rotas **sem** `access`: `GATE
 
 ## Em outro ambiente
 
-O SSO se sobrescreve por variável de ambiente, sem rebuild, com as mesmas variáveis do [cenário CRD](SSO_CENARIO_CRD.md#em-outro-ambiente): URL pública, issuer e client do Keycloak, ou URL, bind DN, bases e filtros do AD. As rotas, não. Para apontar para backends reais, edite o `application-standalone-sso.yaml` e gere a imagem do ambiente.
+O SSO se sobrescreve por variável de ambiente, sem rebuild, com as mesmas variáveis do [cenário CRD](SSO_CENARIO_CRD.md#em-outro-ambiente): URL pública, issuer e client do Keycloak, ou URL, bind DN, bases e filtros do AD. As rotas, não. Para apontar para backends reais, edite o `properties/application-standalone-sso.yaml` e gere a imagem do ambiente.
 
 ## Cuidados
 

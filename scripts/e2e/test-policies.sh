@@ -3,7 +3,7 @@
 # agregação, rate limit e throttling. Só curl + jq.
 #
 #   v2 (make deploy, com ou sem SSO): aplica k8s/samples/routes-policies.yaml e remove no fim
-#   v1 (make standalone-up): as mesmas rotas já vêm no application-standalone.yaml da imagem
+#   v1 (make standalone-up): as mesmas rotas já vêm no properties/application-standalone.yaml da imagem
 #
 # Os limites contam por réplica: o teste reduz o gateway a uma réplica e
 # devolve o número original no fim.

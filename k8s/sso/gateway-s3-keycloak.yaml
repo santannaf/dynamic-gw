@@ -47,7 +47,7 @@ spec:
             # debian:stable-slim já traz /usr/share/zoneinfo, então basta a env.
             - name: TZ
               value: America/Sao_Paulo
-            # Store S3: key e poll-interval vêm do profile s3 (application-s3.yaml).
+            # Store S3: key e poll-interval vêm do profile s3 (s3/application-s3.yaml).
             - name: GATEWAY_ROUTES_STORE_S3_BUCKET
               value: __S3_BUCKET__
             - name: GATEWAY_ROUTES_STORE_S3_REGION
@@ -57,7 +57,7 @@ spec:
               value: "__S3_ENDPOINT__"
             - name: GATEWAY_ROUTES_STORE_S3_PATH_STYLE_ACCESS
               value: "__S3_PATH_STYLE__"
-            # --- SSO + auditoria: o resto vem dos profiles (gateway/src/main/resources/application-keycloak.yaml) ---
+            # --- SSO + auditoria: o resto vem dos profiles (gateway/src/main/resources/keycloak/application-keycloak.yaml) ---
             - name: SPRING_PROFILES_ACTIVE
               value: s3,keycloak
             - name: GATEWAY_SECURITY_PUBLIC_BASE_URL

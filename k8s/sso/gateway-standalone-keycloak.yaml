@@ -1,7 +1,7 @@
 # Cenário Properties (v1 standalone: rotas em properties, sem operator/CRD)
 # com SSO pelo Keycloak (OIDC). Substitui k8s/gateway-standalone/deployment.yaml.
 # Aplicado por scripts/sso/deploy-sso.sh (MODE=standalone PROVIDER=keycloak),
-# que troca __HOST_PORT__. Rotas e `access`: application-standalone-sso.yaml.
+# que troca __HOST_PORT__. Rotas e `access`: properties/application-standalone-sso.yaml.
 # Doc: SSO_CENARIO_PROPERTIES.md
 apiVersion: apps/v1
 kind: Deployment
@@ -44,7 +44,7 @@ spec:
           env:
             - name: TZ
               value: America/Sao_Paulo
-            # --- SSO + auditoria: o resto vem dos profiles (gateway/src/main/resources/application-keycloak.yaml) ---
+            # --- SSO + auditoria: o resto vem dos profiles (gateway/src/main/resources/keycloak/application-keycloak.yaml) ---
             - name: SPRING_PROFILES_ACTIVE
               value: standalone-sso,keycloak
             - name: GATEWAY_SECURITY_PUBLIC_BASE_URL

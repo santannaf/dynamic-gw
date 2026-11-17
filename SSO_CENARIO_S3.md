@@ -24,14 +24,14 @@ Depois de gravar, o operator manda o sinal de reload pelo Service do gateway (pu
 
 ## O que já está configurado
 
-| Peça                           | Arquivo                                                              | O que tem                                                                         |
-|--------------------------------|----------------------------------------------------------------------|-----------------------------------------------------------------------------------|
-| Profile do store, embarcado    | `gateway/src/main/resources/application-s3.yaml`                     | `type: s3`, key `snapshots/routes.yaml`, `poll-interval: 15s`, região `us-east-1` |
-| Profile do provedor, embarcado | `application-keycloak.yaml` ou `application-ldap.yaml`               | os mesmos do cenário CRD                                                          |
-| Deployment do gateway          | `k8s/sso/gateway-s3-keycloak.yaml` ou `k8s/sso/gateway-s3-ldap.yaml` | igual ao do cenário CRD (2 réplicas); muda só o store                             |
-| Deployment do operator         | `k8s/sso/operator-s3.yaml`                                           | publica no bucket em vez da ConfigMap                                             |
-| S3 local                       | `k8s/s3/minio.yaml`                                                  | MinIO com PVC e o bucket criado no startup                                        |
-| Rotas de exemplo               | `k8s/samples/routes-sso.yaml`                                        | as mesmas 7 rotas `/sso/*`                                                        |
+| Peça                           | Arquivo                                                              | O que tem                                                                                                        |
+|--------------------------------|----------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| Profile do store, embarcado    | `gateway/src/main/resources/s3/application-s3.yaml`                  | `type: s3`, key `snapshots/routes.yaml`, `poll-interval: 15s` (a região, `us-east-1`, vem do `application.yaml`) |
+| Profile do provedor, embarcado | `keycloak/application-keycloak.yaml` ou `ldap/application-ldap.yaml` | os mesmos do cenário CRD                                                                                         |
+| Deployment do gateway          | `k8s/sso/gateway-s3-keycloak.yaml` ou `k8s/sso/gateway-s3-ldap.yaml` | igual ao do cenário CRD (2 réplicas); muda só o store                                                            |
+| Deployment do operator         | `k8s/sso/operator-s3.yaml`                                           | publica no bucket em vez da ConfigMap                                                                            |
+| S3 local                       | `k8s/s3/minio.yaml`                                                  | MinIO com PVC e o bucket criado no startup                                                                       |
+| Rotas de exemplo               | `k8s/samples/routes-sso.yaml`                                        | as mesmas 7 rotas `/sso/*`                                                                                       |
 
 **Profiles ativos:** `SPRING_PROFILES_ACTIVE=s3,keycloak` ou `SPRING_PROFILES_ACTIVE=s3,ldap`.
 

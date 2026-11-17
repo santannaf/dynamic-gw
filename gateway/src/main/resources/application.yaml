@@ -47,3 +47,48 @@ gateway:
         bucket: ""
         key: ""
         region: us-east-1
+
+# O Spring Boot só procura application-{profile}.yaml na raiz do classpath: cada profile
+# importa aqui o arquivo da pasta dele. Sem `optional:`: se o arquivo de um profile ativo
+# faltar, o gateway não sobe, em vez de subir sem ele (sem SSO, no caso de um provedor).
+# Arquivo novo numa pasta também precisa do hint em GatewayRuntimeHints, senão o binário
+# nativo não o embarca e o import falha no startup.
+#
+# Em chave repetida vale o documento de baixo: os provedores vêm depois das origens das
+# rotas, como em SPRING_PROFILES_ACTIVE=s3,keycloak.
+---
+spring:
+  config:
+    activate:
+      on-profile: s3
+    import: classpath:s3/application-s3.yaml
+---
+spring:
+  config:
+    activate:
+      on-profile: standalone
+    import: classpath:properties/application-standalone.yaml
+---
+spring:
+  config:
+    activate:
+      on-profile: standalone-sso
+    import: classpath:properties/application-standalone-sso.yaml
+---
+spring:
+  config:
+    activate:
+      on-profile: keycloak
+    import: classpath:keycloak/application-keycloak.yaml
+---
+spring:
+  config:
+    activate:
+      on-profile: ldap
+    import: classpath:ldap/application-ldap.yaml
+---
+spring:
+  config:
+    activate:
+      on-profile: oauth
+    import: classpath:oauth/application-oauth.yaml

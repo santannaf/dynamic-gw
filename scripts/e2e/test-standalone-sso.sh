@@ -2,7 +2,7 @@
 # E2E do v1 standalone com SSO (profile standalone-sso), pré-requisito:
 #   make standalone-sso-up                 # provider keycloak (default)
 #   PROVIDER=ldap make standalone-sso-up   # e rode este script com PROVIDER=ldap
-# As rotas vêm de gateway/src/main/resources/application-standalone-sso.yaml:
+# As rotas vêm de gateway/src/main/resources/properties/application-standalone-sso.yaml:
 #   /anything/** pública · /me/** qualquer autenticado · /httpbin/** tools-httpbin
 #   /admin/** tools-admins (grupo), com forward-token; /internal/routes só para quem opera o gateway
 set -uo pipefail

@@ -11,7 +11,7 @@ Os exemplos usam o ambiente local do roteiro: gateway em `http://localhost:18080
 | Pergunta                                    | Quem responde           | Onde se configura                                                                           |
 |---------------------------------------------|-------------------------|---------------------------------------------------------------------------------------------|
 | **Quem é você?** (autenticação, o SSO)      | Keycloak, uma vez só    | usuários, senhas e grupos no AD (no lab, o OpenLDAP), que o Keycloak federa                 |
-| **Você pode usar esta rota?** (autorização) | Gateway, a cada request | bloco `access` de cada rota (`GatewayRoute` no v2, `application-standalone-sso.yaml` no v1) |
+| **Você pode usar esta rota?** (autorização) | Gateway, a cada request | bloco `access` de cada rota (`GatewayRoute` no v2, `properties/application-standalone-sso.yaml` no v1) |
 
 O SSO não libera as rotas. Ele só garante que a pessoa prove quem é **uma vez**. Depois disso, cada rota decide sozinha se aceita, olhando os grupos e roles que vieram do Keycloak.
 

@@ -7,7 +7,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.aot.hint.RuntimeHints;
+import org.springframework.aot.hint.predicate.RuntimeHintsPredicates;
 import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor;
+import org.springframework.boot.context.config.ConfigDataResourceNotFoundException;
 import org.springframework.boot.context.properties.bind.BindHandler;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -15,20 +18,42 @@ import org.springframework.boot.context.properties.bind.handler.NoUnboundElement
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The profiles embedded in the image, combined as the k8s/sso manifests do:
  * every key must bind (a typo would be silently ignored at runtime) and no
- * secret may come from them.
+ * secret may come from them. Each profile file lives in a folder, which Spring
+ * Boot does not search, so application.yaml imports it, and the native image
+ * only embeds it with a hint.
  */
 class GatewayProfilesTest {
+
+    private static final Map<String, String> PROFILE_FILES = Map.of(
+            "keycloak", "keycloak/application-keycloak.yaml",
+            "ldap", "ldap/application-ldap.yaml",
+            "oauth", "oauth/application-oauth.yaml",
+            "s3", "s3/application-s3.yaml",
+            "standalone", "properties/application-standalone.yaml",
+            "standalone-sso", "properties/application-standalone-sso.yaml");
+
+    private static final Pattern FOLDER_RESOURCE = Pattern.compile("class path resource \\[([^\\]]+/[^\\]]+)]");
 
     static Stream<Arguments> scenarios() {
         return Stream.of(
@@ -176,12 +201,84 @@ class GatewayProfilesTest {
                         .as(route.id()).isEmpty());
     }
 
+    static Stream<String> profiles() {
+        return PROFILE_FILES.keySet().stream().sorted();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("profiles")
+    void eachProfileImportsOnlyTheFileInItsFolder(String profile) {
+        assertThat(importedFiles(environment(List.of(profile), Map.of()))).containsExactly(PROFILE_FILES.get(profile));
+    }
+
+    @Test
+    void withoutProfilesNoFolderIsImported() {
+        assertThat(importedFiles(environment(List.of(), Map.of()))).isEmpty();
+    }
+
+    @Test
+    void theProviderFileTakesPrecedenceOverTheRouteOriginFile() {
+        assertThat(importedFiles(environment(List.of("s3", "keycloak"), Map.of())))
+                .containsExactly(PROFILE_FILES.get("keycloak"), PROFILE_FILES.get("s3"));
+        assertThat(importedFiles(environment(List.of("ldap", "standalone-sso"), Map.of())))
+                .containsExactly(PROFILE_FILES.get("ldap"), PROFILE_FILES.get("standalone-sso"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("profiles")
+    void aProfileWhoseFileIsMissingStopsTheStartup(String profile) {
+        String file = PROFILE_FILES.get(profile);
+        ResourceLoader withoutTheFile = new DefaultResourceLoader() {
+            @Override
+            public Resource getResource(String location) {
+                return location.endsWith(file) ? new ClassPathResource("missing/" + file) : super.getResource(location);
+            }
+        };
+
+        assertThatThrownBy(() -> environment(List.of(profile), Map.of(), withoutTheFile))
+                .isInstanceOf(ConfigDataResourceNotFoundException.class)
+                .hasMessageContaining(file);
+    }
+
+    @Test
+    void everyFileInAProfileFolderIsAProfileFileEmbeddedInTheNativeImage() throws Exception {
+        RuntimeHints hints = new RuntimeHints();
+        new GatewayRuntimeHints().registerHints(hints, getClass().getClassLoader());
+        Path resources = Path.of(new ClassPathResource("application.yaml").getURI()).getParent();
+
+        List<String> folderFiles;
+        try (Stream<Path> files = Files.walk(resources)) {
+            folderFiles = files
+                    .filter(file -> resources.relativize(file).getNameCount() > 1)
+                    .filter(file -> file.toString().endsWith(".yaml") || file.toString().endsWith(".yml"))
+                    .map(file -> resources.relativize(file).toString().replace(File.separatorChar, '/'))
+                    .toList();
+        }
+
+        assertThat(folderFiles).containsExactlyInAnyOrderElementsOf(PROFILE_FILES.values());
+        assertThat(folderFiles).allSatisfy(file ->
+                assertThat(RuntimeHintsPredicates.resource().forResource(file).test(hints)).as(file).isTrue());
+    }
+
     private static ConfigurableEnvironment environment(List<String> profiles, Map<String, Object> variables) {
+        return environment(profiles, variables, null);
+    }
+
+    private static ConfigurableEnvironment environment(List<String> profiles, Map<String, Object> variables,
+                                                       ResourceLoader resourceLoader) {
         StandardEnvironment env = new StandardEnvironment();
         env.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
         env.getPropertySources().addFirst(new SystemEnvironmentPropertySource("deployment", variables));
-        ConfigDataEnvironmentPostProcessor.applyTo(env, null, null, profiles);
+        ConfigDataEnvironmentPostProcessor.applyTo(env, resourceLoader, null, profiles);
         return env;
+    }
+
+    private static List<String> importedFiles(ConfigurableEnvironment env) {
+        return env.getPropertySources().stream()
+                .map(source -> FOLDER_RESOURCE.matcher(source.getName()))
+                .filter(Matcher::find)
+                .map(matcher -> matcher.group(1))
+                .toList();
     }
 
     private static <T> T bindStrictly(ConfigurableEnvironment env, String prefix, Class<T> type) {

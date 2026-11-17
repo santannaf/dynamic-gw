@@ -40,7 +40,7 @@ spec:
             - name: TZ
               value: America/Sao_Paulo
             # Ativa o profile com as rotas estáticas embarcadas em
-            # gateway/src/main/resources/application-standalone.yaml.
+            # gateway/src/main/resources/properties/application-standalone.yaml.
             # Mudou rota = rebuild da imagem (make load-images) + rollout
             # restart deste deployment.
             - name: SPRING_PROFILES_ACTIVE

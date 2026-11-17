@@ -1,7 +1,7 @@
 # Cenário Properties (v1 standalone: rotas em properties, sem operator/CRD)
 # com login direto no diretório (OpenLDAP local no lugar do AD). Substitui k8s/gateway-standalone/deployment.yaml.
 # Aplicado por scripts/sso/deploy-sso.sh (MODE=standalone PROVIDER=ldap),
-# que troca __HOST_PORT__. Rotas e `access`: application-standalone-sso.yaml.
+# que troca __HOST_PORT__. Rotas e `access`: properties/application-standalone-sso.yaml.
 # Doc: SSO_CENARIO_PROPERTIES.md
 apiVersion: apps/v1
 kind: Deployment
@@ -44,7 +44,7 @@ spec:
           env:
             - name: TZ
               value: America/Sao_Paulo
-            # --- SSO + auditoria: o resto vem dos profiles (gateway/src/main/resources/application-ldap.yaml) ---
+            # --- SSO + auditoria: o resto vem dos profiles (gateway/src/main/resources/ldap/application-ldap.yaml) ---
             - name: SPRING_PROFILES_ACTIVE
               value: standalone-sso,ldap
             - name: GATEWAY_SECURITY_PUBLIC_BASE_URL

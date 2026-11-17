@@ -20,7 +20,7 @@ Pra o modo com CRD + operator + hot-reload, veja [`TESTE_CONFIGMAP.md`](TESTE_CO
 
 ### Editor mental
 
-- v1 standalone significa: **rotas vivem no arquivo `gateway/src/main/resources/application-standalone.yaml`** e são empacotadas dentro da imagem nativa do gateway.
+- v1 standalone significa: **rotas vivem no arquivo `gateway/src/main/resources/properties/application-standalone.yaml`** e são empacotadas dentro da imagem nativa do gateway.
 - Trocar rota = editar esse YAML, rebuild da imagem, rollout restart. Sem hot-reload.
 - Não tem operator, então não vai aparecer pod chamado `gateway-route-operator`.
 
@@ -123,7 +123,7 @@ Reload completed snapshotRoutes=2 activeRoutes=2 totalMs=... (...)
 Gateway bootstrap completed activeRoutes=2
 ```
 
-Se aparecer `Reload completed snapshotRoutes=0`, o `application-standalone.yaml` não foi carregado — provavelmente faltou `SPRING_PROFILES_ACTIVE=standalone`. Confirma:
+Se aparecer `Reload completed snapshotRoutes=0`, o `properties/application-standalone.yaml` não foi carregado — provavelmente faltou `SPRING_PROFILES_ACTIVE=standalone`. Confirma:
 
 ```bash
 kubectl -n platform exec deploy/dynamic-gateway -- env | grep PROFILES
@@ -196,13 +196,13 @@ kubectl -n platform rollout status   deployment/dynamic-gateway --timeout=120s
 curl -s http://localhost:18000/httpbin/get | python3 -m json.tool      # HTTP 200
 ```
 
-Não tem `ConfigMap` envolvido — as rotas vêm do `application-standalone.yaml` empacotado dentro da imagem nativa. Restart de pod sempre devolve o mesmo catálogo.
+Não tem `ConfigMap` envolvido — as rotas vêm do `properties/application-standalone.yaml` empacotado dentro da imagem nativa. Restart de pod sempre devolve o mesmo catálogo.
 
 ---
 
 ## Fase 7 — Trocar uma rota
 
-Edita `gateway/src/main/resources/application-standalone.yaml` (por exemplo, mudar `stripPrefix` de uma rota), depois:
+Edita `gateway/src/main/resources/properties/application-standalone.yaml` (por exemplo, mudar `stripPrefix` de uma rota), depois:
 
 ```bash
 make load-images    # rebuild da imagem + re-import no cluster
@@ -237,7 +237,7 @@ Se `SPRING_PROFILES_ACTIVE` não estiver `standalone`, o profile não foi ativad
 
 ### Pod do gateway em `CrashLoopBackOff`
 
-YAML malformado em `application-standalone.yaml` quebra o bind do `@ConfigurationProperties`. Veja o log:
+YAML malformado em `properties/application-standalone.yaml` quebra o bind do `@ConfigurationProperties`. Veja o log:
 
 ```bash
 kubectl -n platform logs deploy/dynamic-gateway --tail=80 | grep -iE "error|exception"

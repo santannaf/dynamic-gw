@@ -20,8 +20,8 @@
 # KEYCLOAK_DB (postgres ou oracle), DIRECTORY (openldap ou ad) e as variáveis do
 # AD estão no cabeçalho de scripts/keycloak/keycloak.sh.
 #
-# O SSO em si vem dos profiles embarcados na imagem (application-keycloak.yaml,
-# application-ldap.yaml); os manifests de k8s/sso/ só ativam os profiles e
+# O SSO em si vem dos profiles embarcados na imagem (keycloak/application-keycloak.yaml,
+# ldap/application-ldap.yaml); os manifests de k8s/sso/ só ativam os profiles e
 # passam URL pública e segredos. HOST_PORT tem que ser a porta do k3d.
 set -euo pipefail
 LOG_PREFIX=sso

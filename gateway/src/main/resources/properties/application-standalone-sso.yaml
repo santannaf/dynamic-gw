@@ -1,8 +1,8 @@
 # Profile "standalone-sso": o v1 (rotas em properties, sem operator/CRD) com
 # uma política de acesso por rota. O provedor de SSO vem do outro profile:
 #
-#   SPRING_PROFILES_ACTIVE=standalone-sso,keycloak   (Keycloak, ver application-keycloak.yaml)
-#   SPRING_PROFILES_ACTIVE=standalone-sso,ldap       (direto no diretório, ver application-ldap.yaml)
+#   SPRING_PROFILES_ACTIVE=standalone-sso,keycloak   (Keycloak, ver keycloak/application-keycloak.yaml)
+#   SPRING_PROFILES_ACTIVE=standalone-sso,ldap       (direto no diretório, ver ldap/application-ldap.yaml)
 #
 # Este arquivo vai embarcado na imagem nativa: mudar rota ou `access` = rebuild
 # da imagem + rollout, como no v1 puro. Quem está em cada grupo continua

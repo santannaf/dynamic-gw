@@ -50,7 +50,7 @@ spec:
               value: gateway-routes
             - name: GATEWAY_ROUTES_STORE_CONFIGMAP_KEY
               value: routes.yaml
-            # --- OAuth + auditoria: o resto vem do profile (gateway/src/main/resources/application-oauth.yaml) ---
+            # --- OAuth + auditoria: o resto vem do profile (gateway/src/main/resources/oauth/application-oauth.yaml) ---
             - name: SPRING_PROFILES_ACTIVE
               value: oauth
             - name: GATEWAY_SECURITY_OAUTH_ISSUER
