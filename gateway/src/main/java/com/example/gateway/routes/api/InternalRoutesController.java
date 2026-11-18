@@ -113,6 +113,18 @@ public class InternalRoutesController {
         if (access.forwardToken() != null) {
             map.put("forwardToken", access.forwardToken());
         }
+        if (access.channel() != null) {
+            map.put("channel", access.channel());
+        }
+        if (access.identityProvider() != null) {
+            map.put("identityProvider", access.identityProvider());
+        }
+        if (access.audience() != null) {
+            map.put("audience", access.audience());
+        }
+        if (access.obo() != null) {
+            map.put("obo", Map.of("scopes", access.obo().scopes() == null ? List.of() : access.obo().scopes()));
+        }
         return map;
     }
 }

@@ -227,9 +227,9 @@ class FastRouteCompilerTest {
         RouteDefinitionMapper mapper = new RouteDefinitionMapper();
         List<RouteDefinition> definitions = List.of(
                 mapper.toDefinition(new RouteConfigEntry("a", "/a/**", "http://a", 1, List.of("GET"), true,
-                        null, null, new RouteAccess("authenticated", List.of("group:tools-a"), true), null, null, null, null, null)),
+                        null, null, new RouteAccess("authenticated", List.of("group:tools-a"), true, null, null, null, null), null, null, null, null, null)),
                 mapper.toDefinition(new RouteConfigEntry("b", "/b/**", "http://b", null, null, true,
-                        null, null, new RouteAccess("public", null, null), null, null, null, null, null)));
+                        null, null, new RouteAccess("public", null, null, null, null, null, null), null, null, null, null, null)));
         AtomicReference<List<RouteDefinition>> fallbackInput = new AtomicReference<>();
         RouteCompiler fallback = defs -> {
             fallbackInput.set(defs);
@@ -244,6 +244,6 @@ class FastRouteCompilerTest {
         assertThat(compiled).extracting(Route::getId).containsExactly("a", "b");
         assertThat(compiled.getFirst().getMetadata())
                 .containsEntry(RouteDefinitionMapper.ACCESS_METADATA_KEY,
-                        new RouteAccess("authenticated", List.of("group:tools-a"), true));
+                        new RouteAccess("authenticated", List.of("group:tools-a"), true, null, null, null, null));
     }
 }

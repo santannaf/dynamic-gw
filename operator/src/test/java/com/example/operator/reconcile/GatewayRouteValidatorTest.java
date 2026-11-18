@@ -3,6 +3,7 @@ package com.example.operator.reconcile;
 import com.example.operator.crd.GatewayRoute;
 import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteSpec;
+import com.example.shared.routes.RouteObo;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -143,6 +144,33 @@ class GatewayRouteValidatorTest {
         assertThat(validator.validate(r))
                 .map(s -> s.contains("mode=public"))
                 .contains(true);
+    }
+
+    @Test
+    void oboRouteOfTheScenariosPasses() {
+        GatewayRoute r = withAccess(route("pedidos", "/pedidos/**", "http://x", 1, null, true),
+                null, List.of("role:pedidos-leitura"), true);
+        r.getSpec().getAccess().setIdentityProvider("microsoft");
+        r.getSpec().getAccess().setObo(new RouteObo(List.of("api://backend-b/pedidos.read")));
+        assertThat(validator.validate(r)).isEmpty();
+    }
+
+    @Test
+    void audienceWithoutForwardTokenFailsUnderSpec() {
+        GatewayRoute r = withAccess(route("bad", "/api/**", "http://x", 1, null, true), null, List.of("group:a"), null);
+        r.getSpec().getAccess().setAudience("abc-api");
+        assertThat(validator.validate(r))
+                .hasValueSatisfying(problem -> assertThat(problem)
+                        .startsWith("spec.access.audience")
+                        .contains("access.forwardToken: true"));
+    }
+
+    @Test
+    void ldapChannelWithTokenFailsUnderSpec() {
+        GatewayRoute r = withAccess(route("bad", "/api/**", "http://x", 1, null, true), null, List.of("group:a"), true);
+        r.getSpec().getAccess().setChannel("ldap");
+        assertThat(validator.validate(r))
+                .hasValueSatisfying(problem -> assertThat(problem).startsWith("spec.access.channel=ldap has no token"));
     }
 
     static GatewayRoute withAccess(GatewayRoute route, String mode, List<String> anyOf, Boolean forwardToken) {

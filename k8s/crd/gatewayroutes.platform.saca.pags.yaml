@@ -47,6 +47,8 @@ spec:
                   message: declare either targetUri or aggregate, not both
                 - rule: "!has(self.aggregate) || !has(self.methods) || self.methods.all(m, m == 'GET')"
                   message: aggregate only answers GET; methods must be [GET] or absent
+                - rule: "!(has(self.aggregate) && has(self.access) && (has(self.access.audience) || has(self.access.obo)))"
+                  message: access.audience and access.obo cannot be combined with aggregate (the same token would reach every backend)
               properties:   # SEU - modelo de domínio
                 # --- path: predicado de rota ---
                 path:
@@ -114,11 +116,52 @@ spec:
                         pattern: '^[a-z][a-z0-9-]*:.+$'   # SEU - tipo aberto: cada gateway de borda define os seus
                     forwardToken:
                       type: boolean
-                      description: When true the gateway forwards the caller's access token upstream as Authorization Bearer.
-                  # SEU - regra entre campos (CEL): rota pública não pode exigir autoridade.
+                      description: When true the gateway sends a token upstream as Authorization Bearer, the caller's access token unless audience or obo picks another one.
+                    channel:
+                      type: string
+                      enum:            # canais que o gateway sabe rodar juntos (gateway.security.additional-providers)
+                        - keycloak
+                        - ldap
+                      description: Identity channel whose session the route accepts. Absent means the gateway's provider.
+                    identityProvider:
+                      type: string
+                      maxLength: 64
+                      pattern: '^[A-Za-z0-9._-]+$'
+                      description: Alias of the Keycloak identity provider the session must come from, such as microsoft. A session from another login is sent to log in again.
+                    audience:
+                      type: string
+                      minLength: 1
+                      maxLength: 255
+                      description: Keycloak client the forwarded token is issued for, by token exchange; the backend validates this aud. Needs forwardToken.
+                    obo:
+                      type: object
+                      description: Entra On-Behalf-Of. The backend receives the Entra token for these scopes instead of the caller's token. Needs forwardToken and identityProvider.
+                      required:
+                        - scopes
+                      properties:
+                        scopes:
+                          type: array
+                          minItems: 1
+                          maxItems: 16
+                          items:
+                            type: string
+                            minLength: 1
+                            maxLength: 256
+                            pattern: '^\S+$'   # vão separados por espaço no pedido ao Entra
+                  # SEU - regras entre campos (CEL), as mesmas do RoutePolicyRules (v1 e reload do gateway).
                   x-kubernetes-validations:
                     - rule: "!(has(self.mode) && self.mode == 'public' && has(self.anyOf) && size(self.anyOf) > 0)"
                       message: access.mode=public cannot be combined with a non-empty access.anyOf
+                    - rule: "!(has(self.mode) && self.mode == 'public') || (!(has(self.forwardToken) && self.forwardToken) && !has(self.channel) && !has(self.identityProvider) && !has(self.audience) && !has(self.obo))"
+                      message: access.mode=public accepts no other access field
+                    - rule: "!(has(self.channel) && self.channel == 'ldap') || (!(has(self.forwardToken) && self.forwardToken) && !has(self.identityProvider) && !has(self.audience) && !has(self.obo))"
+                      message: access.channel=ldap has no token, so it accepts no forwardToken, identityProvider, audience or obo
+                    - rule: "!(has(self.audience) || has(self.obo)) || (has(self.forwardToken) && self.forwardToken)"
+                      message: access.audience and access.obo pick the token the backend receives, so they need access.forwardToken true
+                    - rule: "!(has(self.audience) && has(self.obo))"
+                      message: access.audience and access.obo cannot be combined
+                    - rule: "!has(self.obo) || has(self.identityProvider)"
+                      message: access.obo needs access.identityProvider (the exchange uses the token stored at that login)
                 # --- rateLimit: requisições por período, contadas em cada réplica do gateway (429 acima) ---
                 rateLimit:
                   type: object

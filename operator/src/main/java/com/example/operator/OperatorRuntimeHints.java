@@ -10,6 +10,7 @@ import com.example.shared.routes.RouteBackend;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
 import com.example.shared.routes.RouteFilter;
+import com.example.shared.routes.RouteObo;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
 import com.example.shared.routes.RouteTransform;
@@ -25,6 +26,7 @@ public class OperatorRuntimeHints implements RuntimeHintsRegistrar {
                 RouteConfigSnapshot.class,
                 RouteConfigEntry.class,
                 RouteAccess.class,
+                RouteObo.class,
                 RouteRateLimit.class,
                 RouteThrottle.class,
                 RouteFilter.class,

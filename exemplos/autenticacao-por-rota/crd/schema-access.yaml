@@ -1,7 +1,6 @@
-# Schema proposto de spec.access no CRD (k8s/crd/gatewayroutes.platform.saca.pags.yaml).
-# É um fragmento: vai em spec.versions[].schema.openAPIV3Schema.properties.spec.properties
-# e não se aplica sozinho. mode, anyOf, forwardToken e a primeira regra são os de
-# hoje; o que está marcado "novo" é a proposta.
+# Schema de spec.access no CRD (k8s/crd/gatewayroutes.platform.saca.pags.yaml), copiado de lá.
+# mode, anyOf, forwardToken e a primeira regra existiam antes; o que está marcado "novo" veio com a
+# ETT-1452. Fragmento: fica em spec.versions[].schema.openAPIV3Schema.properties.spec.properties.
 access:
   type: object
   description: Access policy enforced by the gateway. Absent means the gateway's default access (gateway.security.default-access).
@@ -25,7 +24,7 @@ access:
       description: When true the gateway sends a token upstream as Authorization Bearer, the caller's access token unless audience or obo picks another one.
     channel:                         # novo
       type: string
-      enum:
+      enum:            # canais que o gateway sabe rodar juntos (gateway.security.additional-providers)
         - keycloak
         - ldap
       description: Identity channel whose session the route accepts. Absent means the gateway's provider.
@@ -33,11 +32,12 @@ access:
       type: string
       maxLength: 64
       pattern: '^[A-Za-z0-9._-]+$'
-      description: Alias of the Keycloak identity provider the session must come from, such as microsoft.
+      description: Alias of the Keycloak identity provider the session must come from, such as microsoft. A session from another login is sent to log in again.
     audience:                        # novo
       type: string
+      minLength: 1
       maxLength: 255
-      description: Keycloak client the forwarded token is issued for, by token exchange. The backend validates this aud. Needs forwardToken.
+      description: Keycloak client the forwarded token is issued for, by token exchange; the backend validates this aud. Needs forwardToken.
     obo:                             # novo
       type: object
       description: Entra On-Behalf-Of. The backend receives the Entra token for these scopes instead of the caller's token. Needs forwardToken and identityProvider.
@@ -50,24 +50,24 @@ access:
           maxItems: 16
           items:
             type: string
+            minLength: 1
             maxLength: 256
+            pattern: '^\S+$'   # vão separados por espaço no pedido ao Entra
   x-kubernetes-validations:
     - rule: "!(has(self.mode) && self.mode == 'public' && has(self.anyOf) && size(self.anyOf) > 0)"
       message: access.mode=public cannot be combined with a non-empty access.anyOf
-    # novo
-    - rule: "!(has(self.mode) && self.mode == 'public') || (!has(self.channel) && !has(self.identityProvider) && !has(self.audience) && !has(self.forwardToken) && !has(self.obo))"
+    - rule: "!(has(self.mode) && self.mode == 'public') || (!(has(self.forwardToken) && self.forwardToken) && !has(self.channel) && !has(self.identityProvider) && !has(self.audience) && !has(self.obo))"
       message: access.mode=public accepts no other access field
-    # novo
-    - rule: "!(has(self.channel) && self.channel == 'ldap') || (!has(self.identityProvider) && !has(self.audience) && !has(self.forwardToken) && !has(self.obo))"
-      message: access.channel=ldap has no token, so it accepts no identityProvider, audience, forwardToken or obo
-    # novo
-    - rule: "!has(self.obo) || (has(self.forwardToken) && self.forwardToken && has(self.identityProvider) && !has(self.audience))"
-      message: access.obo needs forwardToken true and access.identityProvider, and cannot be combined with audience
-    # novo
-    - rule: "!has(self.audience) || (has(self.forwardToken) && self.forwardToken)"
-      message: access.audience needs forwardToken true
+    - rule: "!(has(self.channel) && self.channel == 'ldap') || (!(has(self.forwardToken) && self.forwardToken) && !has(self.identityProvider) && !has(self.audience) && !has(self.obo))"
+      message: access.channel=ldap has no token, so it accepts no forwardToken, identityProvider, audience or obo
+    - rule: "!(has(self.audience) || has(self.obo)) || (has(self.forwardToken) && self.forwardToken)"
+      message: access.audience and access.obo pick the token the backend receives, so they need access.forwardToken true
+    - rule: "!(has(self.audience) && has(self.obo))"
+      message: access.audience and access.obo cannot be combined
+    - rule: "!has(self.obo) || has(self.identityProvider)"
+      message: access.obo needs access.identityProvider (the exchange uses the token stored at that login)
 
-# novo, em spec.x-kubernetes-validations (a regra olha o access e o aggregate da rota):
+# Em spec.x-kubernetes-validations, porque olha o access e o aggregate da rota:
 #
 #   - rule: "!(has(self.aggregate) && has(self.access) && (has(self.access.audience) || has(self.access.obo)))"
-#     message: access.audience and access.obo cannot be combined with aggregate
+#     message: access.audience and access.obo cannot be combined with aggregate (the same token would reach every backend)

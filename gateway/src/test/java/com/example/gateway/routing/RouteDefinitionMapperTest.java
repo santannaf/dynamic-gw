@@ -107,7 +107,7 @@ class RouteDefinitionMapperTest {
 
     @Test
     void accessTravelsAsMetadataOnly() {
-        RouteAccess access = new RouteAccess("authenticated", List.of("group:tools-httpbin"), null);
+        RouteAccess access = new RouteAccess("authenticated", List.of("group:tools-httpbin"), null, null, null, null, null);
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
                 "restricted", "/foo/**", "http://upstream", null, null, true, null, null, access, null, null, null, null, null));
 

@@ -21,7 +21,7 @@ class GatewayRouteForwardCompatibilityTest {
                  "metadata": {"name": "future", "namespace": "platform"},
                  "spec": {"path": "/f/**", "targetUri": "http://f", "cache": {"ttl": "1m"},
                           "rateLimit": {"requests": 5, "period": "1s", "algorithm": "sliding-window"},
-                          "access": {"mode": "public", "audience": "x"}}}""";
+                          "access": {"mode": "public", "stepUp": "mfa"}}}""";
 
         GatewayRoute route = serialization.unmarshal(json, GatewayRoute.class);
 

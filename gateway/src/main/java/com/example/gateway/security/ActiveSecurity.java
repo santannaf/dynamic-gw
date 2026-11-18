@@ -1,5 +1,6 @@
 package com.example.gateway.security;
 
+import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.access.AccessPolicy;
 import com.example.gateway.access.AccessSettings;
 import com.example.gateway.access.UnauthenticatedHandler;
@@ -89,6 +90,14 @@ public final class ActiveSecurity implements DisposableBean {
                 properties.getIdentityHeaders().getPrefix(),
                 properties.getIdentityHeaders().getMaxLength(),
                 channel.gatewayCookieNames());
+    }
+
+    public AccessCapabilities accessCapabilities() {
+        if (!enabled()) {
+            return AccessCapabilities.disabled();
+        }
+        return new AccessCapabilities(true, properties.getProvider(),
+                Map.of(properties.getProvider(), channel.accessFeatures()));
     }
 
     @Override

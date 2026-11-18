@@ -1,5 +1,6 @@
 package com.example.gateway.security;
 
+import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.access.RouteAccessFilter;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteDefinitionMapper;
@@ -40,6 +41,11 @@ public class SecurityConfiguration {
     @Bean
     ActiveSecurity activeSecurity(GatewaySecurityProperties properties, Clock securityClock) {
         return ActiveSecurity.from(properties, securityClock);
+    }
+
+    @Bean
+    AccessCapabilities accessCapabilities(ActiveSecurity activeSecurity) {
+        return activeSecurity.accessCapabilities();
     }
 
     @Bean

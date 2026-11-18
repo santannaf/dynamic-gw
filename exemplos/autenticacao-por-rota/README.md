@@ -25,7 +25,7 @@ Os três arquivos de um cenário têm as mesmas rotas, com os mesmos ids, o mesm
 Checadas no operator e no reload do gateway, para o v1 e o v2 aceitarem as mesmas rotas:
 
 - `mode: public` não aceita mais nada no `access`.
-- `channel: ldap` não tem token: recusa `forward-token`, `identity-provider`, `audience` e `obo`.
+- `channel: ldap` não tem token: recusa `forward-token: true`, `identity-provider`, `audience` e `obo`.
 - `forward-token: true` liga o envio de token ao backend. `audience` e `obo` escolhem qual token vai, exigem `forward-token: true` e não convivem. Sem nenhum dos dois, vai o token A.
 - `obo` exige `identity-provider` e de 1 a 16 scopes.
 - `audience` e `obo` não valem em rota com `aggregate`: o mesmo token iria para todos os backends.

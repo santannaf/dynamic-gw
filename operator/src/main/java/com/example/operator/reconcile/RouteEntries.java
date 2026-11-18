@@ -36,6 +36,7 @@ final class RouteEntries {
         if (access == null) {
             return null;
         }
-        return new RouteAccess(access.getMode(), access.getAnyOf(), access.getForwardToken());
+        return new RouteAccess(access.getMode(), access.getAnyOf(), access.getForwardToken(),
+                access.getChannel(), access.getIdentityProvider(), access.getAudience(), access.getObo());
     }
 }

@@ -2,6 +2,7 @@ package com.example.gateway.routes.store;
 
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.shared.routes.RouteAccess;
+import com.example.shared.routes.RouteObo;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +37,21 @@ import static org.assertj.core.api.Assertions.assertThat;
         "gateway.routes.store.properties.routes[1].enabled=true",
         "gateway.routes.store.properties.routes[1].access.mode=authenticated",
         "gateway.routes.store.properties.routes[1].access.any-of[0]=group:tools-httpbin",
-        "gateway.routes.store.properties.routes[1].access.forward-token=true"
+        "gateway.routes.store.properties.routes[1].access.forward-token=true",
+        "gateway.routes.store.properties.routes[2].id=pedidos-route",
+        "gateway.routes.store.properties.routes[2].path=/pedidos/**",
+        "gateway.routes.store.properties.routes[2].target-uri=http://pedidos.example.com:8080",
+        "gateway.routes.store.properties.routes[2].access.any-of[0]=role:pedidos-leitura",
+        "gateway.routes.store.properties.routes[2].access.forward-token=true",
+        "gateway.routes.store.properties.routes[2].access.channel=keycloak",
+        "gateway.routes.store.properties.routes[2].access.identity-provider=microsoft",
+        "gateway.routes.store.properties.routes[2].access.obo.scopes[0]=api://backend-b/pedidos.read",
+        "gateway.routes.store.properties.routes[3].id=abc-route",
+        "gateway.routes.store.properties.routes[3].path=/abc/**",
+        "gateway.routes.store.properties.routes[3].target-uri=http://abc.example.com:8080",
+        "gateway.routes.store.properties.routes[3].access.any-of[0]=role:abc-user",
+        "gateway.routes.store.properties.routes[3].access.forward-token=true",
+        "gateway.routes.store.properties.routes[3].access.audience=abc-api"
 })
 class PropertiesProviderIntegrationTest {
 
@@ -62,7 +77,7 @@ class PropertiesProviderIntegrationTest {
         assertThat(provider).isInstanceOf(PropertiesRouteConfigProvider.class);
         assertThat(provider.load().version()).isEqualTo("integration-test");
         assertThat(provider.load().routes()).extracting("id")
-                .containsExactly("httpbin-route", "anything-route");
+                .containsExactly("httpbin-route", "anything-route", "pedidos-route", "abc-route");
     }
 
     @Test
@@ -80,6 +95,21 @@ class PropertiesProviderIntegrationTest {
     void accessBindsFromKebabCaseAndAbsentStaysNull() {
         assertThat(provider.load().routes().get(0).access()).isNull();
         assertThat(provider.load().routes().get(1).access())
-                .isEqualTo(new RouteAccess("authenticated", List.of("group:tools-httpbin"), true));
+                .isEqualTo(new RouteAccess("authenticated", List.of("group:tools-httpbin"), true, null, null, null, null));
+    }
+
+    @Test
+    void newAccessFieldsBindFromKebabCase() {
+        assertThat(provider.load().routes().get(2).access()).isEqualTo(new RouteAccess(null,
+                List.of("role:pedidos-leitura"), true, "keycloak", "microsoft", null,
+                new RouteObo(List.of("api://backend-b/pedidos.read"))));
+        assertThat(provider.load().routes().get(3).access().audience()).isEqualTo("abc-api");
+    }
+
+    @Test
+    void routesAskingForFeaturesOfASecurityThatIsOffAreNotServed() {
+        assertThat(routeLocator.currentRoutes())
+                .extracting(r -> r.getId())
+                .doesNotContain("pedidos-route", "abc-route");
     }
 }

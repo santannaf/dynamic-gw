@@ -54,17 +54,17 @@ class StandaloneSsoProfileTest {
                 .collect(Collectors.toMap(RouteConfigEntry::id, Function.identity()));
 
         assertThat(routes.get("httpbin-route").access())
-                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), null));
-        assertThat(routes.get("anything-route").access()).isEqualTo(new RouteAccess("public", null, null));
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), null, null, null, null, null));
+        assertThat(routes.get("anything-route").access()).isEqualTo(new RouteAccess("public", null, null, null, null, null, null));
         assertThat(routes.get("me-route").access()).isNull();
         assertThat(routes.get("admin-route").access())
-                .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), true));
-        assertThat(routes.get("jp-posts").access()).isEqualTo(new RouteAccess("public", null, null));
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), true, null, null, null, null));
+        assertThat(routes.get("jp-posts").access()).isEqualTo(new RouteAccess("public", null, null, null, null, null, null));
         assertThat(routes.get("jp-privado").access()).isNull();
         assertThat(routes.get("jp-usuarios").access())
-                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), null));
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), null, null, null, null, null));
         assertThat(routes.get("jp-gestao-escrita").access())
-                .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), null));
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), null, null, null, null, null));
         assertThat(routeLocator.size()).isEqualTo(15);
     }
 }

@@ -30,6 +30,7 @@ spec:
 - **`anyOf`**: quem chama precisa de pelo menos uma destas permissões, no formato `<tipo>:<nome>`.
 - **`<tipo>`**: letras minúsculas, dígitos e hífen, começando por letra. É livre, e cada gateway define os seus.
 - **`forwardToken`**: repassa o access token ao backend. Só vale em canal com token. Em canal sem token, é ignorado.
+- **`channel`**, **`identityProvider`**, **`audience`** e **`obo`**: entram com a ETT-1452 (o desenho está em [`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf) e os exemplos em [`exemplos/autenticacao-por-rota/`](exemplos/autenticacao-por-rota/)). `channel` escolhe o canal da rota quando o gateway roda dois; `identityProvider` exige uma sessão que veio daquele IdP do Keycloak; `audience` e `obo` escolhem qual token o backend recebe e exigem `forwardToken: true`. O snapshot e o CRD já os carregam, com as regras entre eles (`RoutePolicyRules`). Enquanto o canal não aplica um deles, o gateway não serve a rota que o declara, pelo mesmo motivo das políticas.
 
 Permissão por método usa duas rotas com o mesmo `path` e `methods` diferentes, como `/sso/rw/**` em `k8s/samples/routes-sso.yaml`.
 

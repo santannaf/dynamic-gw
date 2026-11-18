@@ -10,17 +10,19 @@ import java.util.List;
  * Effective access policy of a route: the declared {@link RouteAccess}
  * merged with the gateway default. Unknown modes fail closed.
  */
-public record AccessPolicy(Mode mode, List<String> anyOf, boolean forwardToken) {
+public record AccessPolicy(Mode mode, List<String> anyOf, boolean forwardToken, String channel,
+                           String identityProvider, String audience, List<String> oboScopes) {
 
     private static final Logger log = LoggerFactory.getLogger(AccessPolicy.class);
 
     public AccessPolicy {
         anyOf = anyOf == null ? List.of() : List.copyOf(anyOf);
+        oboScopes = oboScopes == null ? List.of() : List.copyOf(oboScopes);
     }
 
     public static AccessPolicy of(String routeId, RouteAccess declared, Mode defaultMode) {
         if (declared == null) {
-            return new AccessPolicy(defaultMode, List.of(), false);
+            return new AccessPolicy(defaultMode, List.of(), false, null, null, null, List.of());
         }
         List<String> anyOf = declared.anyOf() == null ? List.of() : declared.anyOf();
         Mode mode;
@@ -39,7 +41,9 @@ public record AccessPolicy(Mode mode, List<String> anyOf, boolean forwardToken) 
             // still carries it gets the restrictive reading.
             mode = Mode.AUTHENTICATED;
         }
-        return new AccessPolicy(mode, anyOf, Boolean.TRUE.equals(declared.forwardToken()));
+        return new AccessPolicy(mode, anyOf, Boolean.TRUE.equals(declared.forwardToken()), declared.channel(),
+                declared.identityProvider(), declared.audience(),
+                declared.obo() == null ? List.of() : declared.obo().scopes());
     }
 
     public boolean requiresIdentity() {

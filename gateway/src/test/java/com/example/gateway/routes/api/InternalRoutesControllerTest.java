@@ -5,6 +5,7 @@ import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteDefinitionMapper;
 import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
+import com.example.shared.routes.RouteObo;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
 import com.example.shared.routes.RouteTransform;
@@ -145,7 +146,7 @@ class InternalRoutesControllerTest {
     void getExposesAccessPolicyWhenDeclared() {
         RouteDefinition restricted = mapper.toDefinition(new RouteConfigEntry(
                 "restricted", "/r/**", "http://r", 1, null, true, null, null,
-                new RouteAccess(null, List.of("group:tools-httpbin"), true), null, null, null, null, null));
+                new RouteAccess(null, List.of("group:tools-httpbin"), true, null, null, null, null), null, null, null, null, null));
         RouteDefinition open = mapper.toDefinition(new RouteConfigEntry(
                 "open", "/o/**", "http://o", 1, null, true, null, null, null, null, null, null, null, null));
         routeLocator.replaceAll(
@@ -164,5 +165,28 @@ class InternalRoutesControllerTest {
                 .jsonPath("$.routes[0].access.forwardToken").isEqualTo(true)
                 .jsonPath("$.routes[0].access.mode").doesNotExist()
                 .jsonPath("$.routes[1].access").doesNotExist();
+    }
+
+    @Test
+    void getExposesTheChannelIdentityProviderAndToken() {
+        RouteDefinition pedidos = mapper.toDefinition(new RouteConfigEntry(
+                "pedidos", "/pedidos/**", "http://p", 1, null, true, null, null,
+                new RouteAccess(null, List.of("role:pedidos-leitura"), true, "keycloak", "microsoft", null,
+                        new RouteObo(List.of("api://backend-b/pedidos.read"))),
+                null, null, null, null, null));
+        routeLocator.replaceAll(List.of(Route.async(pedidos).asyncPredicate(e -> Mono.just(true)).build()),
+                List.of(pedidos));
+        InternalRoutesController controller = new InternalRoutesController(
+                mock(GatewayRouteReloadService.class), routeLocator);
+
+        WebTestClient.bindToController(controller).build()
+                .get().uri("/internal/routes")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes[0].access.channel").isEqualTo("keycloak")
+                .jsonPath("$.routes[0].access.identityProvider").isEqualTo("microsoft")
+                .jsonPath("$.routes[0].access.obo.scopes[0]").isEqualTo("api://backend-b/pedidos.read")
+                .jsonPath("$.routes[0].access.audience").doesNotExist();
     }
 }

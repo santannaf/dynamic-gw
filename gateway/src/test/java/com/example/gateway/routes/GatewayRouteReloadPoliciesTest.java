@@ -1,5 +1,6 @@
 package com.example.gateway.routes;
 
+import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteCompiler;
 import com.example.gateway.routing.RouteDefinitionMapper;
@@ -73,7 +74,7 @@ class GatewayRouteReloadPoliciesTest {
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), List.of(route));
 
         List<String> active = new GatewayRouteReloadService(provider, mapper, new InMemoryDynamicRouteLocator(),
-                compiler, event -> {}, "X-Id-").reloadFromStore();
+                compiler, event -> {}, "X-Id-", AccessCapabilities.disabled()).reloadFromStore();
 
         assertThat(active).isEmpty();
     }

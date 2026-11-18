@@ -18,16 +18,16 @@ class AccessUnitsTest {
                 .isEqualTo(AccessPolicy.Mode.AUTHENTICATED);
         assertThat(AccessPolicy.of("r", null, AccessPolicy.Mode.PUBLIC).mode())
                 .isEqualTo(AccessPolicy.Mode.PUBLIC);
-        assertThat(AccessPolicy.of("r", new RouteAccess(null, List.of("group:a"), null), AccessPolicy.Mode.PUBLIC).mode())
+        assertThat(AccessPolicy.of("r", new RouteAccess(null, List.of("group:a"), null, null, null, null, null), AccessPolicy.Mode.PUBLIC).mode())
                 .as("anyOf without mode means authenticated")
                 .isEqualTo(AccessPolicy.Mode.AUTHENTICATED);
-        assertThat(AccessPolicy.of("r", new RouteAccess("everyone", null, null), AccessPolicy.Mode.PUBLIC).mode())
+        assertThat(AccessPolicy.of("r", new RouteAccess("everyone", null, null, null, null, null, null), AccessPolicy.Mode.PUBLIC).mode())
                 .as("unknown mode fails closed")
                 .isEqualTo(AccessPolicy.Mode.AUTHENTICATED);
-        assertThat(AccessPolicy.of("r", new RouteAccess("public", List.of("group:a"), null), AccessPolicy.Mode.PUBLIC).mode())
+        assertThat(AccessPolicy.of("r", new RouteAccess("public", List.of("group:a"), null, null, null, null, null), AccessPolicy.Mode.PUBLIC).mode())
                 .isEqualTo(AccessPolicy.Mode.AUTHENTICATED);
-        assertThat(AccessPolicy.of("r", new RouteAccess("public", null, true), AccessPolicy.Mode.AUTHENTICATED))
-                .isEqualTo(new AccessPolicy(AccessPolicy.Mode.PUBLIC, List.of(), true));
+        assertThat(AccessPolicy.of("r", new RouteAccess("public", null, true, null, null, null, null), AccessPolicy.Mode.AUTHENTICATED))
+                .isEqualTo(new AccessPolicy(AccessPolicy.Mode.PUBLIC, List.of(), true, null, null, null, List.of()));
     }
 
     @Test

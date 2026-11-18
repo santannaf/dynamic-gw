@@ -38,6 +38,15 @@ public final class RoutePolicyRules {
     private static final Pattern DATA_SIZE = Pattern.compile("^[0-9]{1,12}(B|KB|MB)?$");
     private static final Pattern PATH_VARIABLE = Pattern.compile("\\{[^}/]+}");
     private static final int MAX_BACKENDS = 10;
+    private static final List<String> ACCESS_MODES = List.of("public", "authenticated");
+    private static final List<String> CHANNELS = List.of("keycloak", "ldap");
+    // <type>:<name>. Each edge gateway defines its own types, so the type stays
+    // open; this must match the pattern of spec.access.anyOf in the CRD.
+    private static final Pattern AUTHORITY = Pattern.compile("^[a-z][a-z0-9-]*:.+$");
+    private static final Pattern IDENTITY_PROVIDER_ALIAS = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
+    private static final int MAX_AUDIENCE_LENGTH = 255;
+    private static final int MAX_OBO_SCOPES = 16;
+    private static final int MAX_SCOPE_LENGTH = 256;
 
     private RoutePolicyRules() {
     }
@@ -91,6 +100,7 @@ public final class RoutePolicyRules {
             return problem("targetUri is required (or aggregate, to combine several backends)");
         }
         return first(
+                access(route.access(), route.aggregate() != null),
                 rateLimit(route.rateLimit()),
                 throttle(route.throttle()),
                 filters(route.filters(), identityHeaderPrefix),
@@ -103,6 +113,86 @@ public final class RoutePolicyRules {
         for (Optional<String> problem : problems) {
             if (problem.isPresent()) {
                 return problem;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> access(RouteAccess access, boolean aggregated) {
+        if (access == null) {
+            return Optional.empty();
+        }
+        if (access.mode() != null && !ACCESS_MODES.contains(access.mode())) {
+            return problem("access.mode must be public or authenticated, but was '" + access.mode() + "'");
+        }
+        List<String> anyOf = access.anyOf() == null ? List.of() : access.anyOf();
+        for (String authority : anyOf) {
+            if (authority == null || !AUTHORITY.matcher(authority).matches()) {
+                return problem("access.anyOf contains invalid authority '" + authority
+                        + "' (expected <type>:<name>, such as group:tools-admins or scope:orders.read)");
+            }
+        }
+        boolean forwardsToken = Boolean.TRUE.equals(access.forwardToken());
+        boolean picksToken = access.audience() != null || access.obo() != null;
+        if ("public".equals(access.mode())) {
+            if (!anyOf.isEmpty()) {
+                return problem("access.mode=public cannot be combined with a non-empty access.anyOf");
+            }
+            if (forwardsToken || access.channel() != null || access.identityProvider() != null || picksToken) {
+                return problem("access.mode=public accepts no other access field");
+            }
+        }
+        if (access.channel() != null && !CHANNELS.contains(access.channel())) {
+            return problem("access.channel must be keycloak or ldap, but was '" + access.channel() + "'");
+        }
+        if ("ldap".equals(access.channel()) && (forwardsToken || access.identityProvider() != null || picksToken)) {
+            return problem("access.channel=ldap has no token, so it accepts no forwardToken, identityProvider,"
+                    + " audience or obo");
+        }
+        if (access.identityProvider() != null && !IDENTITY_PROVIDER_ALIAS.matcher(access.identityProvider()).matches()) {
+            return problem("access.identityProvider must be a Keycloak identity provider alias (up to 64 letters,"
+                    + " digits, '.', '_' or '-'), but was '" + access.identityProvider() + "'");
+        }
+        if (access.audience() != null
+                && (access.audience().isBlank() || access.audience().length() > MAX_AUDIENCE_LENGTH)) {
+            return problem("access.audience must be a Keycloak client id of up to " + MAX_AUDIENCE_LENGTH
+                    + " characters");
+        }
+        if (picksToken && !forwardsToken) {
+            return problem("access.audience and access.obo pick the token the backend receives, so they need"
+                    + " access.forwardToken: true");
+        }
+        if (access.audience() != null && access.obo() != null) {
+            return problem("access.audience and access.obo cannot be combined: each picks the token the backend"
+                    + " receives");
+        }
+        if (access.obo() != null) {
+            Optional<String> obo = obo(access);
+            if (obo.isPresent()) {
+                return obo;
+            }
+        }
+        if (aggregated && picksToken) {
+            return problem("access.audience and access.obo cannot be combined with aggregate: the same token would"
+                    + " reach every backend");
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> obo(RouteAccess access) {
+        if (access.identityProvider() == null) {
+            return problem("access.obo needs access.identityProvider: the exchange uses the token stored at that"
+                    + " login");
+        }
+        List<String> scopes = access.obo().scopes();
+        if (scopes == null || scopes.isEmpty() || scopes.size() > MAX_OBO_SCOPES) {
+            return problem("access.obo.scopes must list 1 to " + MAX_OBO_SCOPES + " scopes");
+        }
+        for (String scope : scopes) {
+            // The scopes go space-separated in the request to Entra.
+            if (scope == null || scope.isBlank() || scope.length() > MAX_SCOPE_LENGTH
+                    || scope.chars().anyMatch(Character::isWhitespace)) {
+                return problem("access.obo.scopes contains invalid scope '" + scope + "'");
             }
         }
         return Optional.empty();

@@ -1,7 +1,9 @@
 package com.example.operator.reconcile;
 
+import com.example.operator.crd.GatewayRoute;
 import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
+import com.example.shared.routes.RouteObo;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -76,8 +78,27 @@ class SnapshotBuilderTest {
 
         assertThat(result.snapshot().routes()).hasSize(2);
         assertThat(result.snapshot().routes().get(0).access())
-                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), true));
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), true, null, null, null, null));
         assertThat(result.snapshot().routes().get(1).access()).isNull();
+    }
+
+    @Test
+    void newAccessFieldsAreCopiedVerbatim() {
+        GatewayRoute pedidos = withAccess(route("pedidos", "/pedidos/**", "http://p", 1, null, true),
+                null, List.of("role:pedidos-leitura"), true);
+        pedidos.getSpec().getAccess().setChannel("keycloak");
+        pedidos.getSpec().getAccess().setIdentityProvider("microsoft");
+        pedidos.getSpec().getAccess().setObo(new RouteObo(List.of("api://backend-b/pedidos.read")));
+        GatewayRoute abc = withAccess(route("abc", "/abc/**", "http://a", 1, null, true),
+                null, List.of("role:abc-user"), true);
+        abc.getSpec().getAccess().setAudience("abc-api");
+
+        SnapshotBuilder.Result result = builder.build(List.of(pedidos, abc), fixedClock);
+
+        assertThat(result.snapshot().routes()).extracting(RouteConfigEntry::access).containsExactly(
+                new RouteAccess(null, List.of("role:abc-user"), true, null, null, "abc-api", null),
+                new RouteAccess(null, List.of("role:pedidos-leitura"), true, "keycloak", "microsoft", null,
+                        new RouteObo(List.of("api://backend-b/pedidos.read"))));
     }
 
     @Test

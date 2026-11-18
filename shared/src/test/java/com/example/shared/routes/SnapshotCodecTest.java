@@ -27,7 +27,7 @@ class SnapshotCodecTest {
                 true,
                 "platform-team",
                 "Echoes the request via httpbin for smoke testing.",
-                new RouteAccess("authenticated", List.of("group:tools-httpbin", "role:gateway-admin"), true)
+                new RouteAccess("authenticated", List.of("group:tools-httpbin", "role:gateway-admin"), true, null, null, null, null)
         , null, null, null, null, null);
         RouteConfigEntry echo = new RouteConfigEntry(
                 "echo-route",
@@ -129,7 +129,7 @@ class SnapshotCodecTest {
 
     @Test
     void accessAnyOfIsUnmodifiable() {
-        RouteAccess access = new RouteAccess(null, new java.util.ArrayList<>(List.of("group:a")), null);
+        RouteAccess access = new RouteAccess(null, new java.util.ArrayList<>(List.of("group:a")), null, null, null, null, null);
 
         assertThatThrownBy(() -> access.anyOf().add("group:b"))
                 .isInstanceOf(UnsupportedOperationException.class);

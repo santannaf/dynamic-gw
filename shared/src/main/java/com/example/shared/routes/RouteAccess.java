@@ -1,6 +1,8 @@
 package com.example.shared.routes;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -12,14 +14,31 @@ import java.util.List;
  * {@code anyOf} holds authorities in the form {@code <type>:<name>}; the
  * gateway decides which types exist. {@code forwardToken == null} means
  * {@code false}.
+ *
+ * {@code channel} picks the identity channel whose session the route accepts
+ * (absent: the gateway's provider). {@code identityProvider} is the alias of
+ * the Keycloak identity provider the session must come from.
+ * {@code forwardToken} sends a token to the backend, and {@code audience}
+ * (token exchange for that client) or {@code obo} (Entra On-Behalf-Of) picks
+ * which one; without either, the caller's own token goes.
+ * {@link RoutePolicyRules} holds the rules between these fields.
+ *
+ * Only one constructor: a second one would stop Spring Boot from finding the
+ * one to bind routes declared in properties.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record RouteAccess(
         String mode,
         List<String> anyOf,
-        Boolean forwardToken
+        Boolean forwardToken,
+        String channel,
+        String identityProvider,
+        String audience,
+        RouteObo obo
 ) {
     public RouteAccess {
-        anyOf = anyOf == null ? null : List.copyOf(anyOf);
+        // Unlike List.copyOf, keeps a null entry, so RoutePolicyRules rejects the route
+        // instead of the whole snapshot failing to load.
+        anyOf = anyOf == null ? null : Collections.unmodifiableList(new ArrayList<>(anyOf));
     }
 }

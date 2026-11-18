@@ -1,5 +1,6 @@
 package com.example.gateway.routes;
 
+import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteCompiler;
 import com.example.gateway.routing.RouteDefinitionMapper;
@@ -41,6 +42,7 @@ public class GatewayRouteReloadService {
     private final RouteCompiler routeCompiler;
     private final ApplicationEventPublisher events;
     private final String identityHeaderPrefix;
+    private final AccessCapabilities accessCapabilities;
     // Mantemos só o hash SHA-256 do último snapshot, não a lista inteira de
     // RouteConfigEntry. Para 60k rotas, segurar a List<RouteConfigEntry>
     // ocupava ~50 MiB de heap continuamente só para suportar o early-return
@@ -54,7 +56,8 @@ public class GatewayRouteReloadService {
                                      InMemoryDynamicRouteLocator routeLocator,
                                      RouteCompiler routeCompiler,
                                      ApplicationEventPublisher events) {
-        this(provider, mapper, routeLocator, routeCompiler, events, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX);
+        this(provider, mapper, routeLocator, routeCompiler, events, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX,
+                AccessCapabilities.disabled());
     }
 
     @Autowired
@@ -64,13 +67,15 @@ public class GatewayRouteReloadService {
                                      RouteCompiler routeCompiler,
                                      ApplicationEventPublisher events,
                                      @Value("${gateway.security.identity-headers.prefix:X-Auth-Request-}")
-                                     String identityHeaderPrefix) {
+                                     String identityHeaderPrefix,
+                                     AccessCapabilities accessCapabilities) {
         this.provider = provider;
         this.mapper = mapper;
         this.routeLocator = routeLocator;
         this.routeCompiler = routeCompiler;
         this.events = events;
         this.identityHeaderPrefix = identityHeaderPrefix;
+        this.accessCapabilities = accessCapabilities;
     }
 
     // Serialized: the store watcher and the operator's reload signal can arrive together, and
@@ -144,7 +149,8 @@ public class GatewayRouteReloadService {
     }
 
     private boolean isValid(RouteConfigEntry entry) {
-        Optional<String> problem = RoutePolicyRules.validate(entry, identityHeaderPrefix);
+        Optional<String> problem = RoutePolicyRules.validate(entry, identityHeaderPrefix)
+                .or(() -> accessCapabilities.unsupported(entry.access()));
         problem.ifPresent(p -> log.warn("Route {} is invalid and will not be served: {}", entry.id(), p));
         return problem.isEmpty();
     }
@@ -209,8 +215,10 @@ public class GatewayRouteReloadService {
     /**
      * Layout: marcador de presença (-1 ausente, 1 presente); mode; marcador
      * de presença de anyOf seguido de cada autoridade em ordem e um 0x00
-     * terminador; byte de forwardToken (-1 nulo, 0, 1). Os marcadores
-     * mantêm access nulo e anyOf nulo distinguíveis de vazio.
+     * terminador; byte de forwardToken (-1 nulo, 0, 1); channel,
+     * identityProvider e audience; marcador de presença dos scopes do obo
+     * seguido de cada scope e um 0x00 terminador. Os marcadores mantêm access
+     * nulo, anyOf nulo e obo nulo distinguíveis de vazio.
      */
     private static void hashAccess(MessageDigest md, RouteAccess access) {
         if (access == null) {
@@ -229,6 +237,18 @@ public class GatewayRouteReloadService {
         }
         md.update((byte) 0);
         md.update((byte) (access.forwardToken() == null ? -1 : access.forwardToken() ? 1 : 0));
+        updateUtf8(md, access.channel());
+        updateUtf8(md, access.identityProvider());
+        updateUtf8(md, access.audience());
+        if (access.obo() == null || access.obo().scopes() == null) {
+            md.update((byte) -1);
+        } else {
+            md.update((byte) 1);
+            for (String scope : access.obo().scopes()) {
+                updateUtf8(md, scope);
+            }
+        }
+        md.update((byte) 0);
     }
 
     private static void updatePolicies(MessageDigest md, RouteConfigEntry e) {

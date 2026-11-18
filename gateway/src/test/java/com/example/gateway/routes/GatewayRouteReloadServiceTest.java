@@ -1,5 +1,6 @@
 package com.example.gateway.routes;
 
+import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteCompiler;
 import com.example.gateway.routing.RouteDefinitionMapper;
@@ -7,6 +8,8 @@ import com.example.gateway.routes.store.RouteConfigProvider;
 import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
+import com.example.shared.routes.RouteObo;
+import com.example.shared.routes.RoutePolicyRules;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
 import org.springframework.cloud.gateway.route.Route;
@@ -17,6 +20,8 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -116,38 +121,92 @@ class GatewayRouteReloadServiceTest {
     @Test
     void changingOnlyAccessTriggersReload() {
         assertThat(refreshEventsAcross(
-                new RouteAccess(null, List.of("group:x"), null),
-                new RouteAccess(null, List.of("group:y"), null)))
+                new RouteAccess(null, List.of("group:x"), null, null, null, null, null),
+                new RouteAccess(null, List.of("group:y"), null, null, null, null, null)))
                 .isEqualTo(2);
     }
 
     @Test
     void nullAndEmptyAccessAreDistinguished() {
-        assertThat(refreshEventsAcross(null, new RouteAccess(null, List.of(), null))).isEqualTo(2);
+        assertThat(refreshEventsAcross(null, new RouteAccess(null, List.of(), null, null, null, null, null))).isEqualTo(2);
         assertThat(refreshEventsAcross(
-                new RouteAccess(null, null, null),
-                new RouteAccess(null, List.of(), null)))
+                new RouteAccess(null, null, null, null, null, null, null),
+                new RouteAccess(null, List.of(), null, null, null, null, null)))
                 .isEqualTo(2);
     }
 
     @Test
     void forwardTokenChangeTriggersReload() {
         assertThat(refreshEventsAcross(
-                new RouteAccess("authenticated", null, null),
-                new RouteAccess("authenticated", null, false)))
+                new RouteAccess("authenticated", null, null, null, null, null, null),
+                new RouteAccess("authenticated", null, false, null, null, null, null)))
                 .isEqualTo(2);
     }
 
     @Test
     void identicalAccessShortCircuits() {
         assertThat(refreshEventsAcross(
-                new RouteAccess("authenticated", List.of("group:x"), true),
-                new RouteAccess("authenticated", List.of("group:x"), true)))
+                new RouteAccess("authenticated", List.of("group:x"), true, null, null, null, null),
+                new RouteAccess("authenticated", List.of("group:x"), true, null, null, null, null)))
                 .isEqualTo(1);
     }
 
-    /** Loads two snapshots that differ only by route a's access and counts refresh events. */
+    @Test
+    void changingOnlyTheAudienceTriggersReload() {
+        assertThat(refreshEventsAcross(
+                new RouteAccess(null, List.of("group:x"), true, null, null, "abc-api", null),
+                new RouteAccess(null, List.of("group:x"), true, null, null, "abc-api-v2", null),
+                EVERYTHING))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void changingOnlyTheChannelOrTheIdentityProviderTriggersReload() {
+        assertThat(refreshEventsAcross(
+                new RouteAccess(null, List.of("group:x"), null, null, null, null, null),
+                new RouteAccess(null, List.of("group:x"), null, "keycloak", null, null, null),
+                EVERYTHING))
+                .isEqualTo(2);
+        assertThat(refreshEventsAcross(
+                new RouteAccess(null, List.of("group:x"), null, null, "microsoft", null, null),
+                new RouteAccess(null, List.of("group:x"), null, null, "google", null, null),
+                EVERYTHING))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void changingOnlyTheOboScopesTriggersReload() {
+        assertThat(refreshEventsAcross(
+                new RouteAccess(null, List.of("group:x"), true, null, "microsoft", null, new RouteObo(List.of("a"))),
+                new RouteAccess(null, List.of("group:x"), true, null, "microsoft", null, new RouteObo(List.of("a", "b"))),
+                EVERYTHING))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void routeAskingForWhatTheGatewayDoesNotHaveIsNotServed() {
+        RouteConfigEntry plain = new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null,
+                new RouteAccess(null, List.of("group:x"), null, null, null, null, null), null, null, null, null, null);
+        RouteConfigEntry withIdp = new RouteConfigEntry("b", "/b/**", "http://b", 1, null, true, null, null,
+                new RouteAccess(null, List.of("group:x"), null, null, "microsoft", null, null), null, null, null, null, null);
+        RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), List.of(plain, withIdp));
+        AccessCapabilities noFeatures = new AccessCapabilities(true, "keycloak", Map.of("keycloak", Set.of()));
+
+        List<String> active = new GatewayRouteReloadService(provider, mapper, new InMemoryDynamicRouteLocator(),
+                compiler, event -> {}, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX, noFeatures).reloadFromStore();
+
+        assertThat(active).containsExactly("a");
+    }
+
+    private static final AccessCapabilities EVERYTHING = new AccessCapabilities(true, "keycloak",
+            Map.of("keycloak", Set.of(AccessCapabilities.Feature.values())));
+
     private int refreshEventsAcross(RouteAccess before, RouteAccess after) {
+        return refreshEventsAcross(before, after, AccessCapabilities.disabled());
+    }
+
+    /** Loads two snapshots that differ only by route a's access and counts refresh events. */
+    private int refreshEventsAcross(RouteAccess before, RouteAccess after, AccessCapabilities capabilities) {
         AtomicReference<RouteAccess> current = new AtomicReference<>(before);
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), List.of(
                 new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, current.get(), null, null, null, null, null)));
@@ -157,8 +216,9 @@ class GatewayRouteReloadServiceTest {
                 refreshEvents.incrementAndGet();
             }
         };
-        GatewayRouteReloadService service = new GatewayRouteReloadService(
-                provider, mapper, new InMemoryDynamicRouteLocator(), compiler, events);
+        GatewayRouteReloadService service = new GatewayRouteReloadService(provider, mapper,
+                new InMemoryDynamicRouteLocator(), compiler, events, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX,
+                capabilities);
 
         service.reloadFromStore();
         current.set(after);

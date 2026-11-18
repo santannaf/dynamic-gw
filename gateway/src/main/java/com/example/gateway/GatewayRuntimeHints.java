@@ -6,6 +6,7 @@ import com.example.shared.routes.RouteBackend;
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteConfigSnapshot;
 import com.example.shared.routes.RouteFilter;
+import com.example.shared.routes.RouteObo;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
 import com.example.shared.routes.RouteTransform;
@@ -35,6 +36,10 @@ public class GatewayRuntimeHints implements RuntimeHintsRegistrar {
                         MemberCategory.INVOKE_DECLARED_METHODS,
                         MemberCategory.ACCESS_DECLARED_FIELDS)
                 .registerType(RouteAccess.class,
+                        MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
+                        MemberCategory.INVOKE_DECLARED_METHODS,
+                        MemberCategory.ACCESS_DECLARED_FIELDS)
+                .registerType(RouteObo.class,
                         MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
                         MemberCategory.INVOKE_DECLARED_METHODS,
                         MemberCategory.ACCESS_DECLARED_FIELDS);

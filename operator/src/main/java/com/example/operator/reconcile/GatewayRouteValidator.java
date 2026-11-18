@@ -1,23 +1,17 @@
 package com.example.operator.reconcile;
 
 import com.example.operator.crd.GatewayRoute;
-import com.example.operator.crd.GatewayRouteAccess;
 import com.example.operator.crd.GatewayRouteSpec;
 import com.example.shared.routes.RoutePolicyRules;
 
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 public class GatewayRouteValidator {
 
     private static final Set<String> ALLOWED_METHODS = Set.of(
             "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
     );
-    private static final Set<String> ALLOWED_ACCESS_MODES = Set.of("public", "authenticated");
-    // <type>:<name>. Each edge gateway defines its own types, so the type stays
-    // open; this must match the pattern of spec.access.anyOf in the CRD.
-    private static final Pattern AUTHORITY = Pattern.compile("^[a-z][a-z0-9-]*:.+$");
     // Login, callback, logout and whoami live here; a route under this prefix
     // would be shadowed by the gateway's own endpoints.
     private static final String RESERVED_PATH_PREFIX = "/_gateway/";
@@ -50,37 +44,10 @@ public class GatewayRouteValidator {
                 }
             }
         }
-        Optional<String> access = validateAccess(spec.getAccess());
-        if (access.isPresent()) {
-            return access;
-        }
-        // Target (targetUri or aggregate) and policies: the same rules the
-        // gateway applies to routes declared in properties.
+        // Access, target (targetUri or aggregate) and policies: the same rules
+        // the gateway applies to routes declared in properties.
         return RoutePolicyRules.validate(RouteEntries.toEntry(resource),
                         RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX)
                 .map(problem -> "spec." + problem);
-    }
-
-    private static Optional<String> validateAccess(GatewayRouteAccess access) {
-        if (access == null) {
-            return Optional.empty();
-        }
-        if (access.getMode() != null && !ALLOWED_ACCESS_MODES.contains(access.getMode())) {
-            return Optional.of("spec.access.mode must be one of " + ALLOWED_ACCESS_MODES
-                    + " but was '" + access.getMode() + "'");
-        }
-        boolean hasAnyOf = access.getAnyOf() != null && !access.getAnyOf().isEmpty();
-        if (hasAnyOf) {
-            for (String authority : access.getAnyOf()) {
-                if (authority == null || !AUTHORITY.matcher(authority).matches()) {
-                    return Optional.of("spec.access.anyOf contains invalid authority '" + authority
-                            + "' (expected <type>:<name>, such as group:tools-admins or scope:orders.read)");
-                }
-            }
-        }
-        if ("public".equals(access.getMode()) && hasAnyOf) {
-            return Optional.of("spec.access.mode=public cannot be combined with a non-empty spec.access.anyOf");
-        }
-        return Optional.empty();
     }
 }
