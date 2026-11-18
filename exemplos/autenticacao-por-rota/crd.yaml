@@ -1,0 +1,147 @@
+# Proposta: uma estratégia de autenticação por rota (AUTENTICACAO_POR_ROTA.pdf),
+# no formato do v2 (GatewayRoute, com o operator). São as mesmas rotas de
+# properties.yaml. O que está marcado "novo" ainda não existe: com o CRD de hoje,
+# o kubectl recusa esses campos (unknown field), e um cliente sem validação
+# estrita os perderia, porque o API server descarta campo fora do schema.
+# A configuração do gateway (additional-providers e o app do Entra para o OBO)
+# não vai no CRD: fica no profile e nas variáveis do gateway, como em
+# properties.yaml.
+#
+# Código que muda junto: RouteAccess (shared), GatewayRouteAccess e
+# RouteEntries.toAccess (operator), as regras em RoutePolicyRules, o hashAccess
+# do GatewayRouteReloadService e o schema no fim deste arquivo. O hashAccess
+# hoje só lê mode, anyOf e forwardToken: sem os campos novos, mudar só o
+# audience de uma rota não a recarregaria. Na implantação, o gateway novo sobe
+# antes do operator novo (ver s3.yaml).
+
+# PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: public-api
+  namespace: platform
+spec:
+  path: /public/**
+  targetUri: http://public-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: platform-team
+  description: Rota pública.
+  access:
+    mode: public
+---
+# LDAP pelo Keycloak: login no Keycloak, que valida a senha no AD.
+# Já funciona hoje; só o audience é novo.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: abc
+  namespace: platform
+spec:
+  path: /abc/**
+  targetUri: http://abc-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: abc-team
+  description: Usuários com a role abc-user.
+  access:
+    anyOf:
+      - role:abc-user
+    audience: abc-api            # novo: token da troca V2 com aud=abc-api (client no realm)
+---
+# LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
+# Num gateway só com o canal ldap (como hoje), o channel sai.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: abc-interno
+  namespace: platform
+spec:
+  path: /abc-interno/**
+  targetUri: http://abc-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: abc-team
+  description: Membros do grupo abc-users no AD.
+  access:
+    channel: ldap                # novo
+    anyOf:
+      - group:abc-users
+---
+# IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: business-monitor
+  namespace: platform
+spec:
+  path: /business-monitor/**
+  targetUri: http://business-monitor.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: monitor-team
+  description: Login com Microsoft e a role business-monitor-user.
+  access:
+    identityProvider: microsoft  # novo: alias do IdP no realm
+    anyOf:
+      - role:business-monitor-user
+    audience: business-monitor   # novo
+---
+# OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: pedidos
+  namespace: platform
+spec:
+  path: /pedidos/**
+  targetUri: http://backend-b.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: pedidos-team
+  description: Pedidos do usuário, com o token do Entra.
+  access:
+    identityProvider: microsoft  # obrigatório: a troca usa o token guardado no login
+    anyOf:
+      - role:pedidos-leitura
+    obo:                         # novo
+      scopes:
+        - api://backend-b/pedidos.read
+
+# Mudança no schema (k8s/crd/gatewayroutes.platform.saca.pags.yaml), em
+# spec.access.properties, ao lado de mode, anyOf e forwardToken:
+#
+#   channel:
+#     type: string
+#     enum:
+#       - keycloak
+#       - ldap
+#     description: Identity channel whose session the route accepts. Absent means the gateway's provider.
+#   identityProvider:
+#     type: string
+#     maxLength: 64
+#     pattern: '^[A-Za-z0-9._-]+$'
+#     description: Alias of the Keycloak identity provider the session must come from, such as microsoft.
+#   audience:
+#     type: string
+#     maxLength: 255
+#     description: Keycloak client the forwarded token is issued for, by token exchange. The backend validates this aud.
+#   obo:
+#     type: object
+#     description: Entra On-Behalf-Of. The backend receives the Entra token for these scopes instead of the caller's token.
+#     required:
+#       - scopes
+#     properties:
+#       scopes:
+#         type: array
+#         minItems: 1
+#         maxItems: 16
+#         items:
+#           type: string
+#           maxLength: 256
+#
+# E em spec.access.x-kubernetes-validations, além da regra de hoje (public sem anyOf):
+#
+#   - rule: "!(has(self.mode) && self.mode == 'public') || (!has(self.channel) && !has(self.identityProvider) && !has(self.audience) && !has(self.forwardToken) && !has(self.obo))"
+#     message: access.mode=public accepts no other access field
+#   - rule: "!(has(self.channel) && self.channel == 'ldap') || (!has(self.identityProvider) && !has(self.audience) && !has(self.forwardToken) && !has(self.obo))"
+#     message: access.channel=ldap has no token, so it accepts no identityProvider, audience, forwardToken or obo
+#   - rule: "!has(self.obo) || (has(self.identityProvider) && !has(self.audience) && !(has(self.forwardToken) && self.forwardToken))"
+#     message: access.obo needs access.identityProvider and cannot be combined with audience or forwardToken
+#   - rule: "!has(self.audience) || !(has(self.forwardToken) && self.forwardToken)"
+#     message: access.audience already defines the forwarded token, so it cannot be combined with forwardToken

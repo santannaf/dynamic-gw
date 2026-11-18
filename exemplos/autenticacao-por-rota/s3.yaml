@@ -1,0 +1,130 @@
+# Proposta: uma estratégia de autenticação por rota (AUTENTICACAO_POR_ROTA.pdf),
+# no cenário S3 (profile s3,keycloak). O time continua escrevendo os
+# GatewayRoute de crd.yaml; este é o objeto que o operator grava em
+# s3://<bucket>/snapshots/routes.yaml e que o gateway lê por polling de ETag.
+#
+# Formato do SnapshotCodec de hoje, gerado com ele para os campos que já
+# existem: rotas em ordem de id (o metadata.name), strings entre aspas e campo
+# vazio como null. Os campos novos do access (channel, identityProvider,
+# audience e obo) entram depois do forwardToken, na ordem do RouteAccess
+# proposto. A configuração do gateway (additional-providers e o app do Entra)
+# não vai no snapshot.
+#
+# O gateway de hoje lê este objeto sem erro e descarta os campos novos
+# (conferido com o SnapshotCodec): as rotas subiriam sem as checagens novas.
+# Na implantação, o gateway novo sobe antes do operator novo. Vale também para
+# o ConfigMap, que guarda o mesmo formato.
+version: "2026-11-18T21:00:00Z"
+generatedAt: "2026-11-18T21:00:00Z"
+routes:
+- id: "abc"
+  path: "/abc/**"
+  targetUri: "http://abc-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "abc-team"
+  description: "Usuários com a role abc-user."
+  access:
+    mode: null
+    anyOf:
+    - "role:abc-user"
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: "abc-api"
+    obo: null
+  rateLimit: null
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
+- id: "abc-interno"
+  path: "/abc-interno/**"
+  targetUri: "http://abc-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "abc-team"
+  description: "Membros do grupo abc-users no AD."
+  access:
+    mode: null
+    anyOf:
+    - "group:abc-users"
+    forwardToken: null
+    channel: "ldap"
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit: null
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
+- id: "business-monitor"
+  path: "/business-monitor/**"
+  targetUri: "http://business-monitor.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "monitor-team"
+  description: "Login com Microsoft e a role business-monitor-user."
+  access:
+    mode: null
+    anyOf:
+    - "role:business-monitor-user"
+    forwardToken: null
+    channel: null
+    identityProvider: "microsoft"
+    audience: "business-monitor"
+    obo: null
+  rateLimit: null
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
+- id: "pedidos"
+  path: "/pedidos/**"
+  targetUri: "http://backend-b.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "pedidos-team"
+  description: "Pedidos do usuário, com o token do Entra."
+  access:
+    mode: null
+    anyOf:
+    - "role:pedidos-leitura"
+    forwardToken: null
+    channel: null
+    identityProvider: "microsoft"
+    audience: null
+    obo:
+      scopes:
+      - "api://backend-b/pedidos.read"
+  rateLimit: null
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
+- id: "public-api"
+  path: "/public/**"
+  targetUri: "http://public-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "platform-team"
+  description: "Rota pública."
+  access:
+    mode: "public"
+    anyOf: null
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit: null
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
