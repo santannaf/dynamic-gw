@@ -1,0 +1,40 @@
+# Cenário 2: o gateway usa o Keycloak com LDAP. Store: properties (v1).
+#
+# Profiles: standalone-sso,keycloak. O login é com usuário e senha na tela do
+# Keycloak, que valida a senha no AD pela federação LDAP do realm. Sem Identity
+# Provider no realm não há OBO.
+#
+# Já funciona hoje, menos o audience: a aud por rota sai da troca V2 do
+# Keycloak 26.2 ou mais novo (o lab está no 26.1).
+
+gateway:
+  security:
+    enabled: true
+    default-access: authenticated
+  routes:
+    store:
+      type: properties
+      properties:
+        version: "cenario-2-keycloak-ldap"
+        routes:
+          # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+          - id: public-api
+            path: /public/**
+            target-uri: http://public-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Rota pública.
+            access:
+              mode: public
+
+          # LDAP pelo Keycloak: login no Keycloak, que valida a senha no AD.
+          - id: abc
+            path: /abc/**
+            target-uri: http://abc-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: abc-team
+            description: Usuários com a role abc-user.
+            access:
+              any-of:
+                - role:abc-user
+              audience: abc-api             # novo: token da troca V2 com aud=abc-api (client no realm)

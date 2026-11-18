@@ -1,0 +1,63 @@
+# Cenário 3: o gateway usa o Keycloak com Identity Provider. Store: CRD (v2, snapshot no ConfigMap).
+#
+# Profile do gateway: keycloak. São as mesmas rotas de
+# properties/cenario-3-keycloak-idp.yaml, onde estão a explicação do cenário e a
+# configuração do gateway.
+#
+# Novo: identity-provider, audience e obo.
+# Com o CRD de hoje, o kubectl recusa os campos novos (unknown field); o schema
+# proposto está em schema-access.yaml.
+
+# PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: public-api
+  namespace: platform
+spec:
+  path: /public/**
+  targetUri: http://public-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: platform-team
+  description: Rota pública.
+  access:
+    mode: public
+---
+# IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
+# Neste realm todo login vem de lá; o identity-provider garante isso se outro login for ligado.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: business-monitor
+  namespace: platform
+spec:
+  path: /business-monitor/**
+  targetUri: http://business-monitor.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: monitor-team
+  description: Login com Microsoft e a role business-monitor-user.
+  access:
+    identityProvider: microsoft  # novo: alias do IdP no realm
+    anyOf:
+      - role:business-monitor-user
+    audience: business-monitor   # novo
+---
+# OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: pedidos
+  namespace: platform
+spec:
+  path: /pedidos/**
+  targetUri: http://backend-b.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: pedidos-team
+  description: Pedidos do usuário, com o token do Entra.
+  access:
+    identityProvider: microsoft  # obrigatório: a troca usa o token guardado no login
+    anyOf:
+      - role:pedidos-leitura
+    obo:                         # novo
+      scopes:
+        - api://backend-b/pedidos.read

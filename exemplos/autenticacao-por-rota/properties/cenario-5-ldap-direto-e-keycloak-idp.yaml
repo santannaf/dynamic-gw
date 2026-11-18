@@ -1,0 +1,85 @@
+# Cenário 5: o gateway faz o LDAP direto e usa o Keycloak com Identity Provider. Store: properties (v1).
+#
+# Dois canais no mesmo gateway, o único cenário assim. O keycloak é o principal
+# e faz o login pela Microsoft, como no cenário 3. O ldap faz o LDAP direto, como
+# no cenário 1, só nas rotas com access.channel: ldap. Profiles:
+# standalone-sso,keycloak, mais o bloco gateway.security.ldap do profile ldap,
+# sem o provider: ldap dele (hoje os dois profiles juntos se sobrescrevem).
+#
+# Novo: additional-providers, access.channel, um cookie de sessão por canal
+# (hoje os dois usariam GW_SESSION) e tudo o que é novo no cenário 3.
+
+gateway:
+  security:
+    enabled: true
+    provider: keycloak                 # canal principal: rotas sem access.channel
+    default-access: authenticated
+    # novo: o canal ldap junto com o keycloak, para as rotas com access.channel: ldap.
+    additional-providers:
+      - ldap
+    # Quem opera o gateway entra por qualquer um dos dois canais.
+    internal:
+      any-of:
+        - role:gateway-admin           # pelo Keycloak
+        - group:gateway-admins         # pelo LDAP direto
+    # novo: o app do gateway no Entra, usado pelo access.obo. O segredo vem por
+    # variável, como os outros: GATEWAY_SECURITY_OBO_CLIENT_SECRET.
+    obo:
+      tenant-id: <tenant do Entra>
+      client-id: <client id do app do gateway no Entra>
+  routes:
+    store:
+      type: properties
+      properties:
+        version: "cenario-5-ldap-direto-e-keycloak-idp"
+        routes:
+          # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+          - id: public-api
+            path: /public/**
+            target-uri: http://public-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Rota pública.
+            access:
+              mode: public
+
+          # LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
+          - id: abc
+            path: /abc/**
+            target-uri: http://abc-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: abc-team
+            description: Membros do grupo abc-users no AD.
+            access:
+              channel: ldap                 # novo: o canal de additional-providers
+              any-of:
+                - group:abc-users
+
+          # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
+          # Neste realm todo login vem de lá; o identity-provider garante isso se outro login for ligado.
+          - id: business-monitor
+            path: /business-monitor/**
+            target-uri: http://business-monitor.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: monitor-team
+            description: Login com Microsoft e a role business-monitor-user.
+            access:
+              identity-provider: microsoft  # novo: alias do IdP no realm
+              any-of:
+                - role:business-monitor-user
+              audience: business-monitor    # novo
+
+          # OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
+          - id: pedidos
+            path: /pedidos/**
+            target-uri: http://backend-b.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: pedidos-team
+            description: Pedidos do usuário, com o token do Entra.
+            access:
+              identity-provider: microsoft  # obrigatório: a troca usa o token guardado no login
+              any-of:
+                - role:pedidos-leitura
+              obo:                          # novo
+                scopes:
+                  - api://backend-b/pedidos.read

@@ -1,19 +1,13 @@
-# Proposta: uma estratégia de autenticação por rota (AUTENTICACAO_POR_ROTA.pdf),
-# no cenário S3 (profile s3,keycloak). O time continua escrevendo os
-# GatewayRoute de crd.yaml; este é o objeto que o operator grava em
+# Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: S3 (v2).
+#
+# Profiles do gateway: s3,keycloak. O time escreve os GatewayRoute de
+# crd/cenario-4-keycloak-idp-e-ldap.yaml; este é o objeto que o operator grava em
 # s3://<bucket>/snapshots/routes.yaml e que o gateway lê por polling de ETag.
+# Formato do SnapshotCodec: rotas em ordem de id, strings entre aspas e campo
+# vazio como null. Os campos novos do access entram depois do forwardToken.
 #
-# Formato do SnapshotCodec de hoje, gerado com ele para os campos que já
-# existem: rotas em ordem de id (o metadata.name), strings entre aspas e campo
-# vazio como null. Os campos novos do access (channel, identityProvider,
-# audience e obo) entram depois do forwardToken, na ordem do RouteAccess
-# proposto. A configuração do gateway (additional-providers e o app do Entra)
-# não vai no snapshot.
-#
-# O gateway de hoje lê este objeto sem erro e descarta os campos novos
-# (conferido com o SnapshotCodec): as rotas subiriam sem as checagens novas.
-# Na implantação, o gateway novo sobe antes do operator novo. Vale também para
-# o ConfigMap, que guarda o mesmo formato.
+# O gateway de hoje lê este objeto e descarta os campos novos: o gateway novo
+# sobe antes do operator novo.
 version: "2026-11-18T21:00:00Z"
 generatedAt: "2026-11-18T21:00:00Z"
 routes:
@@ -33,28 +27,6 @@ routes:
     channel: null
     identityProvider: null
     audience: "abc-api"
-    obo: null
-  rateLimit: null
-  throttle: null
-  filters: null
-  transform: null
-  aggregate: null
-- id: "abc-interno"
-  path: "/abc-interno/**"
-  targetUri: "http://abc-api.platform.svc.cluster.local:8080"
-  stripPrefix: 1
-  methods: null
-  enabled: true
-  team: "abc-team"
-  description: "Membros do grupo abc-users no AD."
-  access:
-    mode: null
-    anyOf:
-    - "group:abc-users"
-    forwardToken: null
-    channel: "ldap"
-    identityProvider: null
-    audience: null
     obo: null
   rateLimit: null
   throttle: null

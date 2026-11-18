@@ -1,0 +1,41 @@
+# Cenário 2: o gateway usa o Keycloak com LDAP. Store: CRD (v2, snapshot no ConfigMap).
+#
+# Profile do gateway: keycloak. São as mesmas rotas de
+# properties/cenario-2-keycloak-ldap.yaml, onde estão a explicação do cenário e a
+# configuração do gateway.
+#
+# Novo: audience.
+# Com o CRD de hoje, o kubectl recusa os campos novos (unknown field); o schema
+# proposto está em schema-access.yaml.
+
+# PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: public-api
+  namespace: platform
+spec:
+  path: /public/**
+  targetUri: http://public-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: platform-team
+  description: Rota pública.
+  access:
+    mode: public
+---
+# LDAP pelo Keycloak: login no Keycloak, que valida a senha no AD.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: abc
+  namespace: platform
+spec:
+  path: /abc/**
+  targetUri: http://abc-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: abc-team
+  description: Usuários com a role abc-user.
+  access:
+    anyOf:
+      - role:abc-user
+    audience: abc-api            # novo: token da troca V2 com aud=abc-api (client no realm)

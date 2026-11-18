@@ -1,22 +1,18 @@
-# Proposta: uma estratégia de autenticação por rota (AUTENTICACAO_POR_ROTA.pdf),
-# no formato do v1 (rotas em properties, profile standalone-sso,keycloak).
-# O que está marcado "novo" ainda não existe. O gateway de hoje não recusa o arquivo:
-# ignora as chaves que não conhece e serviria as rotas sem as checagens novas.
+# Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: properties (v1).
 #
-# Regras novas, checadas no operator e no reload como as de hoje:
-#   - mode: public não aceita mais nada no access.
-#   - channel: ldap não tem token: recusa identity-provider, audience, forward-token e obo.
-#   - obo exige identity-provider e não convive com audience nem forward-token.
-#   - audience e forward-token não convivem: com audience, o backend recebe um
-#     token com a aud dele no lugar do token A.
+# Profiles: standalone-sso,keycloak. É o realm do lab de hoje: login com usuário
+# e senha (federação LDAP) ou pela Microsoft (IdP microsoft, com o fluxo
+# vincular-usuario-do-ad, que associa pelo e-mail ao usuário do AD). Rota sem
+# identity-provider aceita os dois logins, porque é o mesmo usuário do AD. Rota
+# com identity-provider: microsoft só aceita quem entrou pela Microsoft; quem
+# entrou com senha faz login de novo (kc_idp_hint=microsoft e prompt=login).
+#
+# Novo: identity-provider, audience, obo e o bloco obo do gateway.
 
 gateway:
   security:
     enabled: true
     default-access: authenticated
-    # novo: canais além do provider do profile, para as rotas com access.channel.
-    additional-providers:
-      - ldap
     # novo: o app do gateway no Entra, usado pelo access.obo. O segredo vem por
     # variável, como os outros: GATEWAY_SECURITY_OBO_CLIENT_SECRET.
     obo:
@@ -26,7 +22,7 @@ gateway:
     store:
       type: properties
       properties:
-        version: "v1-autenticacao-por-rota"
+        version: "cenario-4-keycloak-idp-e-ldap"
         routes:
           # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
           - id: public-api
@@ -38,8 +34,8 @@ gateway:
             access:
               mode: public
 
-          # LDAP pelo Keycloak: login no Keycloak, que valida a senha no AD.
-          # Já funciona hoje; só o audience é novo.
+          # LDAP pelo Keycloak: aceita quem entrou com senha ou pela Microsoft,
+          # porque é o mesmo usuário do AD.
           - id: abc
             path: /abc/**
             target-uri: http://abc-api.platform.svc.cluster.local:8080
@@ -49,22 +45,10 @@ gateway:
             access:
               any-of:
                 - role:abc-user
-              audience: abc-api            # novo: token da troca V2 com aud=abc-api (client no realm)
-
-          # LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
-          # Num gateway só com o canal ldap (como hoje), o channel sai.
-          - id: abc-interno
-            path: /abc-interno/**
-            target-uri: http://abc-api.platform.svc.cluster.local:8080
-            strip-prefix: 1
-            team: abc-team
-            description: Membros do grupo abc-users no AD.
-            access:
-              channel: ldap                # novo
-              any-of:
-                - group:abc-users
+              audience: abc-api             # novo: token da troca V2 com aud=abc-api (client no realm)
 
           # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
+          # Quem entrou com senha faz login de novo pela Microsoft.
           - id: business-monitor
             path: /business-monitor/**
             target-uri: http://business-monitor.platform.svc.cluster.local:8080
@@ -72,10 +56,10 @@ gateway:
             team: monitor-team
             description: Login com Microsoft e a role business-monitor-user.
             access:
-              identity-provider: microsoft # novo: alias do IdP no realm
+              identity-provider: microsoft  # novo: alias do IdP no realm
               any-of:
                 - role:business-monitor-user
-              audience: business-monitor   # novo
+              audience: business-monitor    # novo
 
           # OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
           - id: pedidos
@@ -85,9 +69,9 @@ gateway:
             team: pedidos-team
             description: Pedidos do usuário, com o token do Entra.
             access:
-              identity-provider: microsoft # obrigatório: a troca usa o token guardado no login
+              identity-provider: microsoft  # obrigatório: a troca usa o token guardado no login
               any-of:
                 - role:pedidos-leitura
-              obo:                         # novo
+              obo:                          # novo
                 scopes:
                   - api://backend-b/pedidos.read

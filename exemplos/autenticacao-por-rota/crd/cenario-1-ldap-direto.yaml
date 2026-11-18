@@ -1,0 +1,38 @@
+# Cenário 1: o gateway faz o LDAP direto. Store: CRD (v2, snapshot no ConfigMap).
+#
+# Profile do gateway: ldap. São as mesmas rotas de
+# properties/cenario-1-ldap-direto.yaml, onde estão a explicação do cenário e a
+# configuração do gateway.
+#
+# Já funciona hoje: nada aqui é novo.
+
+# PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: public-api
+  namespace: platform
+spec:
+  path: /public/**
+  targetUri: http://public-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: platform-team
+  description: Rota pública.
+  access:
+    mode: public
+---
+# LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: abc
+  namespace: platform
+spec:
+  path: /abc/**
+  targetUri: http://abc-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: abc-team
+  description: Membros do grupo abc-users no AD.
+  access:
+    anyOf:
+      - group:abc-users
