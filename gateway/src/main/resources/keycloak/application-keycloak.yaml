@@ -33,6 +33,10 @@ gateway:
       audience: tools-gateway
       # Claim `typ` do Keycloak: impede usar ID token como bearer.
       required-token-type: Bearer
+      # De qual provedor de identidade do realm veio a sessão (mapper de nota de sessão
+      # identity_provider no client). Vazio após login com a senha do diretório; as rotas com
+      # access.identityProvider comparam com ela.
+      identity-provider-claim: identity_provider
       scopes:
         - openid
         - profile

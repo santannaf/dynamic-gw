@@ -2,6 +2,7 @@ package com.example.gateway.security.session;
 
 import org.springframework.web.reactive.function.client.WebClient;
 import java.time.Clock;
+import java.time.Duration;
 import com.example.gateway.security.GatewaySecurityProperties;
 import com.example.gateway.security.ReturnTargets;
 import com.example.gateway.security.SecurityChains;
@@ -25,6 +26,11 @@ public record BrowserSession(SessionCookieCodec codec, SessionCookies cookies, S
     // CookieServerRequestCache only reads relative paths back, and a front on
     // another origin needs an absolute URL.
     private static final String RETURN_TARGET_COOKIE = "GW_RETURN_TO";
+    // Set when the gateway sends a browser to log in through an identity provider. If
+    // the session that comes back is still from another login, the next attempt is a 403,
+    // not another redirect: the provider can be down or the user can pick a password.
+    private static final String IDENTITY_PROVIDER_LOGIN_COOKIE = "GW_IDP_LOGIN";
+    private static final Duration IDENTITY_PROVIDER_LOGIN_WINDOW = Duration.ofMinutes(2);
     private static final URI DEFAULT_TARGET = URI.create("/");
 
     public static BrowserSession from(GatewaySecurityProperties properties, Clock clock) {
@@ -36,13 +42,22 @@ public record BrowserSession(SessionCookieCodec codec, SessionCookies cookies, S
         SessionCookieCodec codec = new SessionCookieCodec(session.getKeys());
         return new BrowserSession(codec, new SessionCookies(session), requestCache,
                 new ReturnTargets(properties.trustedOrigins()),
-                Set.of(session.getCookieName(), session.getAuthzCookieName(), SAVED_REQUEST_COOKIE, RETURN_TARGET_COOKIE),
+                Set.of(session.getCookieName(), session.getAuthzCookieName(), SAVED_REQUEST_COOKIE, RETURN_TARGET_COOKIE,
+                        IDENTITY_PROVIDER_LOGIN_COOKIE),
                 new SessionRevocations(codec, session.getPeers(), session.getCacheMaxEntries(), clock, WebClient.create()));
     }
 
     public void saveReturnTarget(ServerWebExchange exchange, URI target) {
         byte[] value = target.toString().getBytes(StandardCharsets.UTF_8);
         cookies.write(exchange, RETURN_TARGET_COOKIE, Base64.getUrlEncoder().withoutPadding().encodeToString(value), "/");
+    }
+
+    public void rememberIdentityProviderLogin(ServerWebExchange exchange, String identityProvider) {
+        cookies.write(exchange, IDENTITY_PROVIDER_LOGIN_COOKIE, identityProvider, "/", IDENTITY_PROVIDER_LOGIN_WINDOW);
+    }
+
+    public boolean identityProviderLoginTried(ServerWebExchange exchange, String identityProvider) {
+        return cookies.read(exchange, IDENTITY_PROVIDER_LOGIN_COOKIE).filter(identityProvider::equals).isPresent();
     }
 
     /** A login started by a navigation replaces one a front started and abandoned. */

@@ -30,7 +30,7 @@ public final class OAuthSecurity implements IdentityChannel {
         this.properties = properties;
         this.accessTokenDecoder = AccessTokens.decoder(oauth.getJwkSetUri(), oauth.getIssuer(), oauth.getAudience(),
                 oauth.getRequiredTokenType());
-        this.identities = TokenIdentities.from(properties.getAuthorities(), null);
+        this.identities = TokenIdentities.from(properties.getAuthorities(), null, null);
     }
 
     public static OAuthSecurity create(GatewaySecurityProperties properties) {

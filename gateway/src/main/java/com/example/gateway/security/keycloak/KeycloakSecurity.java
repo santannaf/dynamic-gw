@@ -1,5 +1,6 @@
 package com.example.gateway.security.keycloak;
 
+import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.access.UnauthenticatedHandler;
 import com.example.gateway.security.BearerChallengeHandler;
 import com.example.gateway.security.BrowserLoginHandler;
@@ -54,7 +55,8 @@ public final class KeycloakSecurity implements IdentityChannel {
         this.session = session;
         this.registrations = clientRegistrations(properties);
         this.accessTokenDecoder = accessTokenDecoder(properties.getOidc());
-        this.identities = TokenIdentities.from(properties.getAuthorities(), properties.getOidc().getClientId());
+        this.identities = TokenIdentities.from(properties.getAuthorities(), properties.getOidc().getClientId(),
+                properties.getOidc().getIdentityProviderClaim());
         this.sessionManager = new KeycloakSessionManager(session.codec(), session.cookies(), session.revocations(),
                 accessTokenDecoder,
                 tokenClient(properties.getOidc()), identities, properties, clock);
@@ -82,6 +84,11 @@ public final class KeycloakSecurity implements IdentityChannel {
     }
 
     @Override
+    public Set<AccessCapabilities.Feature> accessFeatures() {
+        return Set.of(AccessCapabilities.Feature.IDENTITY_PROVIDER);
+    }
+
+    @Override
     public UnauthenticatedHandler unauthenticatedHandler() {
         return browserLogin;
     }
@@ -105,7 +112,7 @@ public final class KeycloakSecurity implements IdentityChannel {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .oauth2Login(login -> login
                         .clientRegistrationRepository(registrations)
-                        .authorizationRequestResolver(resolver)
+                        .authorizationRequestResolver(new IdentityProviderHintResolver(resolver))
                         .authorizationRequestRepository(new CookieAuthorizationRequestRepository(
                                 session.codec(), session.cookies(), properties.getSession().getAuthzCookieName()))
                         .authenticationMatcher(new PathPatternParserServerWebExchangeMatcher(

@@ -127,6 +127,8 @@ public class GatewaySecurityProperties {
         /** Required value of Keycloak's {@code typ} claim; keeps ID tokens out of the bearer path. */
         private String requiredTokenType = "Bearer";
         private List<String> scopes = new ArrayList<>(List.of("openid", "profile", "email"));
+        /** Claim with the alias of the identity provider the session came from (Keycloak user session note mapper). */
+        private String identityProviderClaim = "identity_provider";
 
         public String getRegistrationId() { return registrationId; }
 
@@ -159,6 +161,10 @@ public class GatewaySecurityProperties {
         public List<String> getScopes() { return scopes; }
 
         public void setScopes(List<String> scopes) { this.scopes = scopes; }
+
+        public String getIdentityProviderClaim() { return identityProviderClaim; }
+
+        public void setIdentityProviderClaim(String identityProviderClaim) { this.identityProviderClaim = identityProviderClaim; }
 
         public String effectiveInternalIssuer() {
             return internalIssuer == null || internalIssuer.isBlank() ? issuer : internalIssuer;

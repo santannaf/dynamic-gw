@@ -171,7 +171,7 @@ public class LdapSessionManager implements GatewaySessionManager {
                 user.groups().stream().map(g -> GatewayIdentity.GROUP_PREFIX + g).collect(Collectors.toSet()),
                 GatewayIdentity.AuthMethod.SESSION,
                 null,
-                expiresAt);
+                expiresAt, null);
     }
 
     private static String text(JsonNode payload, String field) {

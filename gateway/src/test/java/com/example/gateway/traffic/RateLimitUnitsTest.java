@@ -103,7 +103,7 @@ class RateLimitUnitsTest {
         MockServerWebExchange known = MockServerWebExchange.from(MockServerHttpRequest.get("/x")
                 .header("X-Api-Key", "secret-key"));
         known.getAttributes().put(AccessAttributes.IDENTITY, new GatewayIdentity("sub-1", "alice", null, null,
-                "tools-cli", Set.of(), GatewayIdentity.AuthMethod.BEARER, null, null));
+                "tools-cli", Set.of(), GatewayIdentity.AuthMethod.BEARER, null, null, null));
         assertThat(CallerKeys.of("user", known, 1)).isEqualTo("user:sub-1");
         assertThat(CallerKeys.of("client-id", known, 1)).isEqualTo("client:tools-cli");
         assertThat(CallerKeys.of("header:X-Api-Key", known, 1))

@@ -57,19 +57,21 @@ public class GatewayEndpointsController {
         body.put("authorities", identity.authorities().stream().sorted().toList());
         body.put("method", identity.method().auditValue());
         body.put("clientId", identity.clientId());
+        body.put("identityProvider", identity.identityProvider());
         body.put("expiresAt", identity.expiresAt() == null ? null : identity.expiresAt().toString());
         return ResponseEntity.ok(body);
     }
 
     @GetMapping("/login/start")
     public ResponseEntity<Void> startLogin(@RequestParam(name = "returnTo", defaultValue = "/") String returnTo,
+                                           @RequestParam(name = "idp", required = false) String identityProvider,
                                            ServerWebExchange exchange) {
         BrowserLoginHandler login = security.browserLogin();
         if (login == null) {
             return ResponseEntity.notFound().build();
         }
         exchange.getAttributes().put(AccessAttributes.AUDIT_ACTION, LoginOutcomeHandlers.LOGIN_START_ACTION);
-        return login.startLogin(exchange, returnTo)
+        return login.startLogin(exchange, returnTo, identityProvider)
                 .map(target -> ResponseEntity.status(HttpStatus.FOUND).location(target).<Void>build())
                 .orElseGet(() -> ResponseEntity.badRequest().build());
     }

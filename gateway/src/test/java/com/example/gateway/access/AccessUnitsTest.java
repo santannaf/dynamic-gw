@@ -55,7 +55,7 @@ class AccessUnitsTest {
         headers.add("X-Auth-Request-Authorities", "role:gateway-admin");
         headers.add("X-Other", "kept");
         GatewayIdentity identity = new GatewayIdentity("sub-1", "alice", "alice@tools.local", "sid", "tools-cli",
-                Set.of("group:b", "group:a", "role:r", "scope:orders.read"), GatewayIdentity.AuthMethod.BEARER, "token", null);
+                Set.of("group:b", "group:a", "role:r", "scope:orders.read"), GatewayIdentity.AuthMethod.BEARER, "token", null, null);
 
         IdentityHeaders.strip(headers, "X-Auth-Request-");
         assertThat(headers.headerNames()).containsExactly("X-Other");
@@ -72,7 +72,7 @@ class AccessUnitsTest {
     void longGroupListIsTruncatedAtASeparatorAndFlagged() {
         HttpHeaders headers = new HttpHeaders();
         GatewayIdentity identity = new GatewayIdentity("s", "u", null, null, null,
-                Set.of("group:aaaa", "group:bbbb", "group:cccc"), GatewayIdentity.AuthMethod.SESSION, null, null);
+                Set.of("group:aaaa", "group:bbbb", "group:cccc"), GatewayIdentity.AuthMethod.SESSION, null, null, null);
 
         IdentityHeaders.inject(headers, identity, "X-Auth-Request-", 10);
 
@@ -85,7 +85,7 @@ class AccessUnitsTest {
     void commaInAValueCannotForgeAnotherAuthority() {
         HttpHeaders headers = new HttpHeaders();
         GatewayIdentity identity = new GatewayIdentity("s", "u", null, null, null,
-                Set.of("team:x,role:gateway-admin", "team:100%"), GatewayIdentity.AuthMethod.BEARER, null, null);
+                Set.of("team:x,role:gateway-admin", "team:100%"), GatewayIdentity.AuthMethod.BEARER, null, null, null);
 
         IdentityHeaders.inject(headers, identity, "X-Auth-Request-", 4096);
 
@@ -107,7 +107,7 @@ class AccessUnitsTest {
     void controlCharactersNeverReachHeaders() {
         HttpHeaders headers = new HttpHeaders();
         GatewayIdentity identity = new GatewayIdentity("s", "ali\r\nce", null, null, null, Set.of(),
-                GatewayIdentity.AuthMethod.SESSION, null, null);
+                GatewayIdentity.AuthMethod.SESSION, null, null, null);
 
         IdentityHeaders.inject(headers, identity, "X-Auth-Request-", 4096);
 
@@ -117,7 +117,7 @@ class AccessUnitsTest {
     @Test
     void identityToStringNeverShowsTheToken() {
         GatewayIdentity identity = new GatewayIdentity("s", "u", null, null, null, Set.of(),
-                GatewayIdentity.AuthMethod.BEARER, "eyJsecret", null);
+                GatewayIdentity.AuthMethod.BEARER, "eyJsecret", null, null);
 
         assertThat(identity.toString()).doesNotContain("eyJsecret");
     }

@@ -8,6 +8,7 @@ public enum AccessDecision {
     ALLOWED("allowed", true),
     UNAUTHENTICATED("unauthenticated", false),
     FORBIDDEN("forbidden", false),
+    WRONG_IDENTITY_PROVIDER("wrong_identity_provider", false),
     INVALID_TOKEN("invalid_token", false),
     SESSION_EXPIRED("session_expired", false),
     THROTTLED("throttled", false),

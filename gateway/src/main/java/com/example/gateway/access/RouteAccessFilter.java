@@ -56,6 +56,14 @@ public class RouteAccessFilter implements GlobalFilter, Ordered {
         if (identity == null) {
             return rejectWithoutIdentity(exchange);
         }
+        if (policy.identityProvider() != null && !policy.identityProvider().equals(identity.identityProvider())) {
+            exchange.getAttributes().put(AccessAttributes.DECISION, AccessDecision.WRONG_IDENTITY_PROVIDER);
+            // A bearer caller cannot log in again through the gateway.
+            if (identity.method() == GatewayIdentity.AuthMethod.BEARER) {
+                return reject(exchange, AccessDecision.WRONG_IDENTITY_PROVIDER, HttpStatus.FORBIDDEN);
+            }
+            return unauthenticatedHandler.handle(exchange, AccessDecision.WRONG_IDENTITY_PROVIDER);
+        }
         if (!policy.anyOf().isEmpty()) {
             String matched = policy.anyOf().stream().filter(identity::hasAuthority).findFirst().orElse(null);
             if (matched == null) {

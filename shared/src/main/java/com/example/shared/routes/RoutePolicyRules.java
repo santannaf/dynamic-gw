@@ -118,6 +118,11 @@ public final class RoutePolicyRules {
         return Optional.empty();
     }
 
+    /** An alias {@code access.identityProvider} may name; the gateway also takes only these in its login URL. */
+    public static boolean isIdentityProviderAlias(String alias) {
+        return alias != null && IDENTITY_PROVIDER_ALIAS.matcher(alias).matches();
+    }
+
     private static Optional<String> access(RouteAccess access, boolean aggregated) {
         if (access == null) {
             return Optional.empty();
@@ -149,7 +154,7 @@ public final class RoutePolicyRules {
             return problem("access.channel=ldap has no token, so it accepts no forwardToken, identityProvider,"
                     + " audience or obo");
         }
-        if (access.identityProvider() != null && !IDENTITY_PROVIDER_ALIAS.matcher(access.identityProvider()).matches()) {
+        if (access.identityProvider() != null && !isIdentityProviderAlias(access.identityProvider())) {
             return problem("access.identityProvider must be a Keycloak identity provider alias (up to 64 letters,"
                     + " digits, '.', '_' or '-'), but was '" + access.identityProvider() + "'");
         }

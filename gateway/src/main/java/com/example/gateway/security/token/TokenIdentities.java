@@ -12,14 +12,18 @@ import reactor.core.publisher.Mono;
 public class TokenIdentities {
 
     private final ClaimAuthorities authorities;
+    private final String identityProviderClaim;
 
-    public TokenIdentities(ClaimAuthorities authorities) {
+    public TokenIdentities(ClaimAuthorities authorities, String identityProviderClaim) {
         this.authorities = authorities;
+        this.identityProviderClaim = identityProviderClaim;
     }
 
-    public static TokenIdentities from(GatewaySecurityProperties.Authorities authorities, String clientId) {
+    /** {@code identityProviderClaim} is {@code null} for channels whose tokens do not name one. */
+    public static TokenIdentities from(GatewaySecurityProperties.Authorities authorities, String clientId,
+                                       String identityProviderClaim) {
         return new TokenIdentities(new ClaimAuthorities(authorities.getGroupClaims(), authorities.getRoleClaims(),
-                authorities.getClaims(), clientId));
+                authorities.getClaims(), clientId), identityProviderClaim);
     }
 
     public GatewayIdentity identity(Jwt accessToken, String sessionId, GatewayIdentity.AuthMethod method) {
@@ -32,7 +36,8 @@ public class TokenIdentities {
                 authorities.from(accessToken.getClaims()),
                 method,
                 accessToken.getTokenValue(),
-                accessToken.getExpiresAt());
+                accessToken.getExpiresAt(),
+                identityProviderClaim == null ? null : accessToken.getClaimAsString(identityProviderClaim));
     }
 
     public Converter<Jwt, Mono<AbstractAuthenticationToken>> bearerAuthentication() {

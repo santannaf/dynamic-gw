@@ -135,6 +135,9 @@ public final class FakeKeycloak implements AutoCloseable {
         if (user.email() != null) {
             claims.claim("email", user.email());
         }
+        if (user.identityProvider() != null) {
+            claims.claim("identity_provider", user.identityProvider());
+        }
         return claims;
     }
 
@@ -184,7 +187,7 @@ public final class FakeKeycloak implements AutoCloseable {
                     respond(exchange, 400, "{\"error\":\"invalid_grant\",\"error_description\":\"Session not active\"}");
                     return;
                 }
-                user = user.current();
+                user = user.refreshed();
             }
             default -> {
                 respond(exchange, 400, "{\"error\":\"unsupported_grant_type\"}");
@@ -243,35 +246,51 @@ public final class FakeKeycloak implements AutoCloseable {
      * the account between logins and refreshes through {@link Directory}.
      */
     public record User(String subject, String username, String email, String sid, String clientId,
-                       List<String> groups, List<String> roles, boolean disabled, Directory directory) {
+                       List<String> groups, List<String> roles, boolean disabled, Directory directory,
+                       String identityProvider) {
 
         public static User of(String username, List<String> groups, List<String> roles) {
             Directory directory = new Directory();
             User user = new User(UUID.randomUUID().toString(), username, username + "@tools.local",
-                    UUID.randomUUID().toString(), CLIENT_ID, groups, roles, false, directory);
+                    UUID.randomUUID().toString(), CLIENT_ID, groups, roles, false, directory, null);
             directory.state.put(user.subject(), user);
             return user;
         }
 
         public static User serviceAccount(String clientId, List<String> roles) {
             return new User(UUID.randomUUID().toString(), "service-account-" + clientId, null,
-                    null, clientId, List.of(), roles, false, new Directory());
+                    null, clientId, List.of(), roles, false, new Directory(), null);
         }
 
         public User withGroups(List<String> newGroups) {
-            User changed = new User(subject, username, email, sid, clientId, newGroups, roles, disabled, directory);
+            User changed = new User(subject, username, email, sid, clientId, newGroups, roles, disabled, directory,
+                    identityProvider);
             directory.state.put(subject, changed);
             return changed;
         }
 
         public User disable() {
-            User changed = new User(subject, username, email, sid, clientId, groups, roles, true, directory);
+            User changed = new User(subject, username, email, sid, clientId, groups, roles, true, directory,
+                    identityProvider);
             directory.state.put(subject, changed);
             return changed;
         }
 
+        /** The same person in a new session that came through the Keycloak identity provider {@code alias}. */
+        public User viaIdentityProvider(String alias) {
+            return new User(subject, username, email, UUID.randomUUID().toString(), clientId, groups, roles, disabled,
+                    directory, alias);
+        }
+
         User current() {
             return directory.state.getOrDefault(subject, this);
+        }
+
+        // The directory decides groups, roles and disabled; the session keeps its sid and provider.
+        User refreshed() {
+            User latest = current();
+            return new User(subject, latest.username, latest.email, sid, clientId, latest.groups, latest.roles,
+                    latest.disabled, directory, identityProvider);
         }
     }
 

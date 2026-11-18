@@ -13,6 +13,8 @@ import java.util.Set;
  * it produces.
  * {@code accessToken} is only present for Keycloak identities and is kept out
  * of {@link #toString()} so it never reaches a log line by accident.
+ * {@code identityProvider} is the alias of the Keycloak identity provider the
+ * session came from; {@code null} after a login with the directory's password.
  */
 public record GatewayIdentity(
         String subject,
@@ -23,7 +25,8 @@ public record GatewayIdentity(
         Set<String> authorities,
         AuthMethod method,
         String accessToken,
-        Instant expiresAt
+        Instant expiresAt,
+        String identityProvider
 ) {
     public static final String GROUP_PREFIX = "group:";
     public static final String ROLE_PREFIX = "role:";
@@ -55,7 +58,8 @@ public record GatewayIdentity(
     @Override
     public String toString() {
         return "GatewayIdentity[subject=" + subject + ", username=" + username + ", sessionId=" + sessionId
-                + ", clientId=" + clientId + ", method=" + method + ", authorities=" + authorities + "]";
+                + ", clientId=" + clientId + ", method=" + method + ", identityProvider=" + identityProvider
+                + ", authorities=" + authorities + "]";
     }
 
     public enum AuthMethod {
