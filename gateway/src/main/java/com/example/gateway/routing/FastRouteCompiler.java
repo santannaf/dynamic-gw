@@ -182,11 +182,10 @@ public class FastRouteCompiler implements RouteCompiler {
         }
     }
 
-    //noinspection unchecked
     private static <T, F> F pickRequired(List<T> beans, Class<F> type) {
         for (T b : beans) {
             if (type.isInstance(b)) {
-                return (F) b;
+                return type.cast(b);
             }
         }
         throw new IllegalStateException("Required factory bean not found in context: " + type.getName());

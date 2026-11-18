@@ -72,17 +72,19 @@ dependencyManagement {
     }
 }
 
-List<String> quietMockJvmArgs = [
+List<String> quietTestJvmArgs = [
         '-Dnet.bytebuddy.safe=true',
-        '-XX:+EnableDynamicAgentLoading'
+        '-XX:+EnableDynamicAgentLoading',
+        // Netty carrega as bibliotecas nativas (epoll) com System.loadLibrary, restrito desde o Java 24.
+        '--enable-native-access=ALL-UNNAMED'
 ]
 
 tasks.named('test', Test).configure { Test t ->
-    t.jvmArgs(quietMockJvmArgs)
+    t.jvmArgs(quietTestJvmArgs)
 }
 
 tasks.named('processTestAot', JavaExec).configure { JavaExec t ->
-    t.jvmArgs(quietMockJvmArgs)
+    t.jvmArgs(quietTestJvmArgs)
 }
 
 graalvmNative {

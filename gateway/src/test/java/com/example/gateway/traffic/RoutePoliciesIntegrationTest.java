@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.aot.DisabledInAotMode;
+import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -225,7 +226,7 @@ class RoutePoliciesIntegrationTest {
         client.get().uri("/painel/42").header("X-Request-Id", "r-1").header("Cookie", "theme=dark").exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(AggregationFilter.COMPLETED_HEADER, "true")
-                .expectBody().json("{\"pedido\":{\"id\":42,\"nome\":\"Mesa\"},\"cliente\":{\"id\":42,\"nome\":\"Ana\"}}", true);
+                .expectBody().json("{\"pedido\":{\"id\":42,\"nome\":\"Mesa\"},\"cliente\":{\"id\":42,\"nome\":\"Ana\"}}", JsonCompareMode.STRICT);
 
         assertThat(upstream.lastHeaders().get("X-Request-Id")).containsExactly("r-1");
         assertThat(upstream.lastHeaders()).doesNotContainKey("Cookie");
@@ -235,14 +236,14 @@ class RoutePoliciesIntegrationTest {
     void aggregateWithoutGroupsMergesTheFields() {
         client.get().uri("/merge/5").exchange()
                 .expectStatus().isOk()
-                .expectBody().json("{\"id\":5,\"nome\":\"Mesa\",\"senha\":\"x\",\"extra\":true}", true);
+                .expectBody().json("{\"id\":5,\"nome\":\"Mesa\",\"senha\":\"x\",\"extra\":true}", JsonCompareMode.STRICT);
     }
 
     @Test
     void routeTransformAppliesToTheAggregatedAnswer() {
         client.get().uri("/resumo/3").exchange()
                 .expectStatus().isOk()
-                .expectBody().json("{\"cliente\":{\"id\":3,\"nome\":\"Ana\"}}", true);
+                .expectBody().json("{\"cliente\":{\"id\":3,\"nome\":\"Ana\"}}", JsonCompareMode.STRICT);
     }
 
     @Test
@@ -250,7 +251,7 @@ class RoutePoliciesIntegrationTest {
         client.get().uri("/parcial/42").exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(AggregationFilter.COMPLETED_HEADER, "false")
-                .expectBody().json("{\"pedido\":{\"id\":42,\"nome\":\"Mesa\",\"senha\":\"x\"}}", true);
+                .expectBody().json("{\"pedido\":{\"id\":42,\"nome\":\"Mesa\",\"senha\":\"x\"}}", JsonCompareMode.STRICT);
 
         client.get().uri("/falha/1").exchange()
                 .expectStatus().isEqualTo(502)

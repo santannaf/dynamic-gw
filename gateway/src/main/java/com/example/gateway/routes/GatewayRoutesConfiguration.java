@@ -42,11 +42,10 @@ public class GatewayRoutesConfiguration {
                                            ConfigurationService configurationService) {
         AtomicReference<List<RouteDefinition>> input = new AtomicReference<>(List.of());
         RouteDefinitionLocator locator = () -> Flux.fromIterable(input.get());
-        //noinspection unchecked, rawtypes
         RouteDefinitionRouteLocator internal = new RouteDefinitionRouteLocator(
                 locator,
-                (List) predicateFactories,
-                (List) gatewayFilterFactories,
+                List.copyOf(predicateFactories),
+                List.copyOf(gatewayFilterFactories),
                 gatewayProperties,
                 configurationService);
         Function<List<RouteDefinition>, List<Route>> compile = definitions -> {
