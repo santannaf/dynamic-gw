@@ -32,6 +32,7 @@
       "lastName": "Tools",
       "emailVerified": true,
       "enabled": true,
+      "realmRoles": ["offline_access"],
       "credentials": [
         {
           "type": "password",
@@ -47,6 +48,7 @@
       "lastName": "Tools",
       "emailVerified": true,
       "enabled": true,
+      "realmRoles": ["offline_access"],
       "credentials": [
         {
           "type": "password",
@@ -62,6 +64,7 @@
       "lastName": "Tools",
       "emailVerified": true,
       "enabled": true,
+      "realmRoles": ["offline_access"],
       "credentials": [
         {
           "type": "password",
@@ -77,6 +80,7 @@
       "lastName": "Tools",
       "emailVerified": true,
       "enabled": true,
+      "realmRoles": ["offline_access"],
       "credentials": [
         {
           "type": "password",
@@ -92,6 +96,7 @@
       "lastName": "Somente Microsoft",
       "emailVerified": true,
       "enabled": true,
+      "realmRoles": ["offline_access"],
       "credentials": [
         {
           "type": "password",

@@ -38,7 +38,15 @@
 #       MICROSOFT_CLIENT_ID=...      Application (client) ID
 #       MICROSOFT_CLIENT_SECRET=...  client secret do App Registration
 #     Redirect a cadastrar no App Registration: http://localhost:<HOST_PORT>/auth/realms/tools/broker/microsoft/endpoint
+#   MICROSOFT_DEFAULT_SCOPE (openid profile email offline_access): escopos do login com Microsoft. O
+#     Keycloak guarda o token que vem dele (storeToken), que o gateway troca para o OBO; com Entra, ponha
+#     o escopo da API do gateway (api://<app>/<escopo>) para o token sair com a aud do gateway.
 # A conta da Microsoft é associada ao usuário do AD com o mesmo e-mail; sem ele, o login é recusado.
+#
+# Depois que o Keycloak sobe, o `up` configura pela API de administração o que o JSON do realm não
+# expressa sem apagar os client scopes padrão: um client scope opcional de mesmo nome para cada
+# audience de TOKEN_AUDIENCES (httpbin-api), que o gateway pede na troca de token (access.audience),
+# e a permissão da troca V1 do tools-gateway no provedor microsoft (passo 1 do access.obo).
 set -euo pipefail
 LOG_PREFIX=keycloak
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -48,6 +56,8 @@ KEYCLOAK_DB="${KEYCLOAK_DB:-postgres}"
 DIRECTORY="${DIRECTORY:-openldap}"
 GATEWAY_ADMINS_GROUP="${GATEWAY_ADMINS_GROUP:-gateway-admins}"
 MICROSOFT="${MICROSOFT:-sim}"
+MICROSOFT_DEFAULT_SCOPE="${MICROSOFT_DEFAULT_SCOPE:-openid profile email offline_access}"
+TOKEN_AUDIENCES="${TOKEN_AUDIENCES:-httpbin-api}"
 THEME_DIR="k8s/sso/theme/tools/login"
 DB="${ROOT}/scripts/db/${KEYCLOAK_DB}.sh"
 
@@ -214,11 +224,13 @@ setup_microsoft() {
         --from-literal=MICROSOFT_TOKEN_URL="${token}" \
         --from-literal=MICROSOFT_JWKS_URL="${jwks}" \
         --from-literal=MICROSOFT_ISSUER="${issuer}" \
+        --from-literal=MICROSOFT_DEFAULT_SCOPE="${MICROSOFT_DEFAULT_SCOPE}" \
         --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     kubectl -n "${NAMESPACE}" create secret generic keycloak-microsoft \
         --from-literal=client-secret="${secret}" \
         --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    MICROSOFT_CHECKSUM="$(printf '%s|%s|%s|%s' "${MICROSOFT}" "${client}" "${issuer}" "${secret}" | sha256sum | cut -c1-16)"
+    MICROSOFT_CHECKSUM="$(printf '%s|%s|%s|%s|%s' "${MICROSOFT}" "${client}" "${issuer}" "${secret}" \
+        "${MICROSOFT_DEFAULT_SCOPE}" | sha256sum | cut -c1-16)"
 }
 
 # O tema não entra no checksum do realm: mudar só a tela reinicia o Keycloak, sem zerar o banco.
@@ -237,6 +249,56 @@ publish_theme() {
         --from-file=login.ftl="${files[6]}" \
         --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     THEME_CHECKSUM="$(cat "${files[@]}" | sha256sum | cut -c1-16)"
+}
+
+# Idempotente: roda a cada `up`, com o realm recém-importado ou não.
+configure_realm() {
+    local base="http://localhost:${HOST_PORT}/auth" token api gateway audience scope permissions permission resource \
+        management authz policy_name policy exchange_scope attempt
+    for attempt in $(seq 1 60); do
+        curl -sf -o /dev/null "${base}/realms/tools/.well-known/openid-configuration" && break
+        sleep 2
+    done
+    token="$(curl -sf -d grant_type=password -d client_id=admin-cli -d username=admin \
+        --data-urlencode "password=$(secret_value keycloak-admin-password)" \
+        "${base}/realms/master/protocol/openid-connect/token" | jq -r .access_token)"
+    kc() { curl -sf -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' "$@"; }
+    api="${base}/admin/realms/tools"
+    gateway="$(kc "${api}/clients?clientId=tools-gateway" | jq -r '.[0].id')"
+
+    for audience in ${TOKEN_AUDIENCES}; do
+        scope="$(kc "${api}/client-scopes" | jq -r --arg n "${audience}" '.[] | select(.name == $n) | .id')"
+        if [[ -z "${scope}" ]]; then
+            jq -n --arg n "${audience}" '{name: $n, protocol: "openid-connect",
+                attributes: {"include.in.token.scope": "true", "display.on.consent.screen": "false"},
+                protocolMappers: [{name: ("audience: " + $n), protocol: "openid-connect",
+                    protocolMapper: "oidc-audience-mapper",
+                    config: {"included.client.audience": $n, "access.token.claim": "true",
+                        "id.token.claim": "false", "introspection.token.claim": "true"}}]}' \
+                | kc -X POST "${api}/client-scopes" --data @- >/dev/null
+            scope="$(kc "${api}/client-scopes" | jq -r --arg n "${audience}" '.[] | select(.name == $n) | .id')"
+        fi
+        kc -X PUT "${api}/clients/${gateway}/optional-client-scopes/${scope}" >/dev/null
+    done
+
+    permissions="$(kc -X PUT "${api}/identity-provider/instances/microsoft/management/permissions" -d '{"enabled": true}')"
+    permission="$(jq -r '.scopePermissions["token-exchange"]' <<<"${permissions}")"
+    resource="$(jq -r .resource <<<"${permissions}")"
+    management="$(kc "${api}/clients?clientId=realm-management" | jq -r '.[0].id')"
+    authz="${api}/clients/${management}/authz/resource-server"
+    policy_name="tools-gateway exchanges for microsoft"
+    policy="$(kc "${authz}/policy?name=$(jq -rn --arg n "${policy_name}" '$n | @uri')" \
+        | jq -r --arg n "${policy_name}" '.[] | select(.name == $n) | .id')"
+    if [[ -z "${policy}" ]]; then
+        policy="$(jq -n --arg n "${policy_name}" --arg c "${gateway}" '{name: $n, logic: "POSITIVE", clients: [$c]}' \
+            | kc -X POST "${authz}/policy/client" --data @- | jq -r .id)"
+    fi
+    exchange_scope="$(kc "${authz}/permission/${permission}/scopes" | jq -r '.[0].id')"
+    kc "${authz}/permission/scope/${permission}" \
+        | jq --arg r "${resource}" --arg s "${exchange_scope}" --arg p "${policy}" \
+            '. + {resources: [$r], scopes: [$s], policies: [$p]}' \
+        | kc -X PUT "${authz}/permission/scope/${permission}" --data @- >/dev/null
+    log "Token exchange: audiences ${TOKEN_AUDIENCES} for tools-gateway, and tools-gateway may exchange for microsoft"
 }
 
 stop() {
@@ -278,6 +340,7 @@ up() {
     fi
     render k8s/sso/keycloak.yaml | kubectl apply -f - >/dev/null
     wait_rollout deployment/keycloak 600s
+    configure_realm
 }
 
 reset() {
@@ -287,6 +350,7 @@ reset() {
     "${DB}" reset
     kubectl -n "${NAMESPACE}" scale deployment/keycloak --replicas=1 >/dev/null
     wait_rollout deployment/keycloak 600s
+    configure_realm
 }
 
 down() {

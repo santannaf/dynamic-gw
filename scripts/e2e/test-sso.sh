@@ -128,6 +128,34 @@ else
     echo "  skip  login with Microsoft (MICROSOFT=entra: the real Entra ID needs a person at the keyboard)"
 fi
 
+echo "== token exchange (what the realm gives the gateway for access.audience and access.obo)"
+GATEWAY_SECRET="$(secret tools-gateway-client-secret)"
+exchange() {
+    curl -s -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange -d client_id=tools-gateway \
+        --data-urlencode "client_secret=${GATEWAY_SECRET}" --data-urlencode "subject_token=$1" \
+        -d subject_token_type=urn:ietf:params:oauth:token-type:access_token "${@:2}" \
+        "${BASE}/auth/realms/tools/protocol/openid-connect/token"
+}
+curl -s -b "${WORK}/alice" "${BASE}/sso/token/headers" -o "${WORK}/body"
+password_token="$(header Authorization | sed 's/^Bearer //')"
+check "a password login does not say it came from an identity provider" "null" \
+    "$(jwt_claims "${password_token}" | jq -r .identity_provider)"
+check "the standard exchange (V2) gives a token for httpbin-api, still azp tools-gateway" "httpbin-api tools-gateway" \
+    "$(jwt_claims "$(exchange "${password_token}" -d audience=httpbin-api -d scope=httpbin-api | jq -r .access_token)" \
+        | jq -r '"\(.aud) \(.azp)"')"
+check "without the client scope of the same name, the audience is refused" "invalid_request" \
+    "$(exchange "${password_token}" -d audience=httpbin-api | jq -r .error)"
+if [[ -f "${WORK}/ms-alice" ]]; then
+    curl -s -b "${WORK}/ms-alice" "${BASE}/sso/token/headers" -o "${WORK}/body"
+    microsoft_token="$(header Authorization | sed 's/^Bearer //')"
+    check "a Microsoft login says so in the token" "microsoft" "$(jwt_claims "${microsoft_token}" | jq -r .identity_provider)"
+    check "the legacy exchange (V1) returns the Microsoft token Keycloak stored" \
+        "http://localhost:${HOST_PORT}/auth/realms/microsoft-sim" \
+        "$(jwt_claims "$(exchange "${microsoft_token}" -d requested_issuer=microsoft | jq -r .access_token)" | jq -r .iss)"
+else
+    echo "  skip  the stored Microsoft token (MICROSOFT=entra)"
+fi
+
 echo "== directory (Keycloak federates it; the realm keeps no people)"
 admin="$(admin_token)"
 directory="$(api '/components?type=org.keycloak.storage.UserStorageProvider' | jq -r '.[0].id')"

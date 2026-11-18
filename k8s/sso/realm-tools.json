@@ -15,7 +15,8 @@
     "LOGIN", "LOGIN_ERROR", "LOGOUT", "LOGOUT_ERROR",
     "CODE_TO_TOKEN", "CODE_TO_TOKEN_ERROR",
     "REFRESH_TOKEN", "REFRESH_TOKEN_ERROR",
-    "CLIENT_LOGIN", "CLIENT_LOGIN_ERROR"
+    "CLIENT_LOGIN", "CLIENT_LOGIN_ERROR",
+    "TOKEN_EXCHANGE", "TOKEN_EXCHANGE_ERROR"
   ],
   "adminEventsEnabled": true,
   "adminEventsDetailsEnabled": true,
@@ -54,7 +55,8 @@
       "webOrigins": [],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "${GATEWAY_PUBLIC_BASE_URL}/*"
+        "post.logout.redirect.uris": "${GATEWAY_PUBLIC_BASE_URL}/*",
+        "standard.token.exchange.enabled": "true"
       },
       "protocolMappers": [
         {
@@ -78,6 +80,19 @@
             "access.token.claim": "true",
             "id.token.claim": "false",
             "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "identity_provider",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "config": {
+            "user.session.note": "identity_provider",
+            "claim.name": "identity_provider",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
             "introspection.token.claim": "true"
           }
         }
@@ -121,6 +136,18 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "httpbin-api",
+      "name": "go-httpbin of the lab, as the audience of the token the gateway sends it (access.audience)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
     }
   ],
   "clientScopeMappings": {
@@ -288,7 +315,7 @@
       "providerId": "oidc",
       "enabled": true,
       "trustEmail": true,
-      "storeToken": false,
+      "storeToken": true,
       "linkOnly": false,
       "firstBrokerLoginFlowAlias": "vincular-usuario-do-ad",
       "config": {
@@ -303,7 +330,7 @@
         "validateSignature": "true",
         "pkceEnabled": "true",
         "pkceMethod": "S256",
-        "defaultScope": "openid profile email",
+        "defaultScope": "${MICROSOFT_DEFAULT_SCOPE}",
         "syncMode": "IMPORT",
         "guiOrder": "1"
       }

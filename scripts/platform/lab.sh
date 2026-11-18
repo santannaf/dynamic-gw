@@ -55,7 +55,7 @@ architecture() {
 
 # Antes do build: variável errada ou porta ocupada não podem custar uma compilação nativa.
 preflight() {
-    local tools=(docker k3d kubectl curl openssl) missing=() tool image manifest system docker_arch
+    local tools=(docker k3d kubectl curl openssl jq) missing=() tool image manifest system docker_arch
     system="$(uname -s)"
     if [[ -z "${TARGET_OS}" ]]; then
         case "${system}" in
