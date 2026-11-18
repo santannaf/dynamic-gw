@@ -108,7 +108,7 @@ O módulo `shared` propositadamente **não depende** de nada Kubernetes- ou AWS-
 
 ## Stack e versões
 
-Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`. O OSV não liga as CVEs do Vert.x nem as do Bouncy Castle aos pacotes Maven: elas estão no NVD (as do Vert.x também nos advisories do projeto), e o Vert.x 5.2.3 e o Bouncy Castle 1.86 ficam fora das faixas afetadas.
+Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`. O OSV não liga aos pacotes Maven as CVEs do Vert.x, as do Bouncy Castle nem as correções de segurança do Netty: as do Vert.x estão no NVD e nos advisories do projeto, as do Bouncy Castle 1.86 só nas release notes da 1.87, as do Netty 4.2.19 nas release notes da 4.2.20, e o Vert.x 5.2.3, o Bouncy Castle 1.87 e o Netty 4.2.21 ficam fora das faixas afetadas.
 
 | Componente                         | Versão                                                        | Observação                                                             |
 |------------------------------------|---------------------------------------------------------------|------------------------------------------------------------------------|
@@ -117,11 +117,11 @@ Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não t
 | Spring Boot                        | 4.1.2                                                         | plugin no `build.gradle` raiz e BOM nos módulos                        |
 | Spring Cloud                       | 2025.1.4                                                      | Spring Cloud Gateway Server WebFlux 5.0.4                              |
 | Spring Framework / Spring Security | 7.0.10 / 7.1.2                                                | pelo BOM do Boot                                                       |
-| Netty                              | 4.2.19                                                        | pelo BOM do Boot; o binário nativo precisa de `-H:+SharedArenaSupport` |
+| Netty                              | 4.2.21                                                        | sobrescreve o 4.2.19 do Boot; nativo com `-H:+SharedArenaSupport`      |
 | Jackson                            | 3.2.4 (anotações 2.22)                                        | sobrescreve o BOM do Boot (3.1) porque a Fabric8 8 exige 3.2           |
 | Fabric8 Kubernetes Client          | 8.0.0                                                         | gateway e operator; cliente HTTP Vert.x 5                              |
 | Vert.x                             | 5.2.3                                                         | sobrescreve o 5.2.0 da Fabric8 8.0.0, afetado por CVEs                 |
-| Bouncy Castle                      | 1.86                                                          | sobrescreve o 1.85.2 do Spring Cloud no gateway, afetado por CVEs      |
+| Bouncy Castle                      | 1.87                                                          | sobrescreve o 1.85.2 do Spring Cloud e o 1.86 da Fabric8, com CVEs     |
 | AWS SDK v2                         | 2.57.4                                                        | S3 com `url-connection-client`                                         |
 | UnboundID LDAP SDK                 | 7.0.5                                                         | pelo BOM do Boot (provider `ldap`)                                     |
 | GraalVM Native Build Tools         | 1.1.17                                                        | plugin Gradle                                                          |
@@ -245,7 +245,7 @@ O módulo `shared` propositadamente **não depende** de nada Kubernetes- ou AWS-
 
 ## Stack e versões
 
-Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`. O OSV não liga as CVEs do Vert.x nem as do Bouncy Castle aos pacotes Maven: elas estão no NVD (as do Vert.x também nos advisories do projeto), e o Vert.x 5.2.3 e o Bouncy Castle 1.86 ficam fora das faixas afetadas.
+Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não tinha advisory aberto para os classpaths de runtime e de teste do gateway, do operator e do `shared`. O OSV não liga aos pacotes Maven as CVEs do Vert.x, as do Bouncy Castle nem as correções de segurança do Netty: as do Vert.x estão no NVD e nos advisories do projeto, as do Bouncy Castle 1.86 só nas release notes da 1.87, as do Netty 4.2.19 nas release notes da 4.2.20, e o Vert.x 5.2.3, o Bouncy Castle 1.87 e o Netty 4.2.21 ficam fora das faixas afetadas.
 
 | Componente                         | Versão                                                        | Observação                                                             |
 |------------------------------------|---------------------------------------------------------------|------------------------------------------------------------------------|
@@ -254,11 +254,11 @@ Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não t
 | Spring Boot                        | 4.1.2                                                         | plugin no `build.gradle` raiz e BOM nos módulos                        |
 | Spring Cloud                       | 2025.1.4                                                      | Spring Cloud Gateway Server WebFlux 5.0.4                              |
 | Spring Framework / Spring Security | 7.0.10 / 7.1.2                                                | pelo BOM do Boot                                                       |
-| Netty                              | 4.2.19                                                        | pelo BOM do Boot; o binário nativo precisa de `-H:+SharedArenaSupport` |
+| Netty                              | 4.2.21                                                        | sobrescreve o 4.2.19 do Boot; nativo com `-H:+SharedArenaSupport`      |
 | Jackson                            | 3.2.4 (anotações 2.22)                                        | sobrescreve o BOM do Boot (3.1) porque a Fabric8 8 exige 3.2           |
 | Fabric8 Kubernetes Client          | 8.0.0                                                         | gateway e operator; cliente HTTP Vert.x 5                              |
 | Vert.x                             | 5.2.3                                                         | sobrescreve o 5.2.0 da Fabric8 8.0.0, afetado por CVEs                 |
-| Bouncy Castle                      | 1.86                                                          | sobrescreve o 1.85.2 do Spring Cloud no gateway, afetado por CVEs      |
+| Bouncy Castle                      | 1.87                                                          | sobrescreve o 1.85.2 do Spring Cloud e o 1.86 da Fabric8, com CVEs     |
 | AWS SDK v2                         | 2.57.4                                                        | S3 com `url-connection-client`                                         |
 | UnboundID LDAP SDK                 | 7.0.5                                                         | pelo BOM do Boot (provider `ldap`)                                     |
 | GraalVM Native Build Tools         | 1.1.17                                                        | plugin Gradle                                                          |

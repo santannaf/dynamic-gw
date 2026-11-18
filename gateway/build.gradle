@@ -18,10 +18,15 @@ ext {
     // O BOM do Jackson 2 entra porque é ele que fixa a versão de jackson-annotations.
     set('jackson-bom.version', '3.2.4')
     set('jackson-2-bom.version', '2.22.4')
-    // O Spring Cloud 2025.1.4 fixa o Bouncy Castle em 1.85.2 e rebaixa o 1.86 que a Fabric8
-    // pede; as CVEs dele (CVE-2026-17508, CVE-2026-71888, CVE-2026-71889, CVE-2026-71892,
-    // entre outras) só fecham na 1.86. Tire quando o Spring Cloud gerenciar 1.86 ou mais novo.
-    set('bouncycastle.version', '1.86')
+    // O Spring Cloud 2025.1.4 fixa o Bouncy Castle em 1.85.2 (CVE-2026-17508, CVE-2026-71888,
+    // entre outras), e o mockwebserver da Fabric8 8.0.0, nos testes, pede o 1.86
+    // (CVE-2026-103605, CVE-2026-103611, CVE-2026-103617, entre outras): as duas levas só
+    // fecham na 1.87. Tire quando o Spring Cloud gerenciar 1.87 ou mais novo.
+    set('bouncycastle.version', '1.87')
+    // O Boot 4.1.2 gerencia o Netty 4.2.19, afetado pelas correções de segurança das release
+    // notes da 4.2.20 (a IDE aponta WS-2026-0281 a WS-2026-0298). Tire quando o Boot gerenciar
+    // o Netty 4.2.20 ou mais novo.
+    set('netty.version', '4.2.21.Final')
     set('awsSdkVersion', '2.57.4')
     set('mockitoVersion', '5.24.0')
 }

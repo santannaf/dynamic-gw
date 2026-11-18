@@ -12,6 +12,14 @@ ext {
     // no vertx-core, CVE-2026-118489 no vertx-web-client). Tire o override quando uma
     // versão da Fabric8 trouxer o Vert.x 5.2.3 ou mais novo.
     set('vertxVersion', '5.2.3')
+    // O mockwebserver da Fabric8 8.0.0, nos testes, traz o Bouncy Castle 1.86 (CVE-2026-103605,
+    // CVE-2026-103611, CVE-2026-103617, entre outras), que só fecham na 1.87. Tire o override
+    // quando uma versão da Fabric8 trouxer o Bouncy Castle 1.87 ou mais novo.
+    set('bouncycastleVersion', '1.87')
+    // O Boot 4.1.2 gerencia o Netty 4.2.19, afetado pelas correções de segurança das release
+    // notes da 4.2.20 (a IDE aponta WS-2026-0281 a WS-2026-0298). Tire quando o Boot gerenciar
+    // o Netty 4.2.20 ou mais novo.
+    set('netty.version', '4.2.21.Final')
     // Fabric8 8 é feito sobre Jackson 3.2 (anotações 2.22) e o Boot 4.1.2 ainda
     // gerencia 3.1.x/2.21: sobrescreve os dois BOMs até um Boot que traga 3.2.
     // O BOM do Jackson 2 entra porque é ele que fixa a versão de jackson-annotations.
@@ -45,6 +53,7 @@ dependencyManagement {
         mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
         mavenBom "io.fabric8:kubernetes-client-bom:${fabric8Version}"
         mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
+        mavenBom "org.bouncycastle:bc-jdk18on-bom:${bouncycastleVersion}"
     }
     // Módulo a módulo, e não pelo BOM do Vert.x: ele também gerencia Netty e Jackson,
     // que ficam com o Boot.
