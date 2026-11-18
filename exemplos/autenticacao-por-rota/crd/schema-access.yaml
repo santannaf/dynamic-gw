@@ -22,7 +22,7 @@ access:
         pattern: '^[a-z][a-z0-9-]*:.+$'
     forwardToken:
       type: boolean
-      description: When true the gateway forwards the caller's access token upstream as Authorization Bearer.
+      description: When true the gateway sends a token upstream as Authorization Bearer, the caller's access token unless audience or obo picks another one.
     channel:                         # novo
       type: string
       enum:
@@ -37,10 +37,10 @@ access:
     audience:                        # novo
       type: string
       maxLength: 255
-      description: Keycloak client the forwarded token is issued for, by token exchange. The backend validates this aud.
+      description: Keycloak client the forwarded token is issued for, by token exchange. The backend validates this aud. Needs forwardToken.
     obo:                             # novo
       type: object
-      description: Entra On-Behalf-Of. The backend receives the Entra token for these scopes instead of the caller's token.
+      description: Entra On-Behalf-Of. The backend receives the Entra token for these scopes instead of the caller's token. Needs forwardToken and identityProvider.
       required:
         - scopes
       properties:
@@ -61,8 +61,13 @@ access:
     - rule: "!(has(self.channel) && self.channel == 'ldap') || (!has(self.identityProvider) && !has(self.audience) && !has(self.forwardToken) && !has(self.obo))"
       message: access.channel=ldap has no token, so it accepts no identityProvider, audience, forwardToken or obo
     # novo
-    - rule: "!has(self.obo) || (has(self.identityProvider) && !has(self.audience) && !(has(self.forwardToken) && self.forwardToken))"
-      message: access.obo needs access.identityProvider and cannot be combined with audience or forwardToken
+    - rule: "!has(self.obo) || (has(self.forwardToken) && self.forwardToken && has(self.identityProvider) && !has(self.audience))"
+      message: access.obo needs forwardToken true and access.identityProvider, and cannot be combined with audience
     # novo
-    - rule: "!has(self.audience) || !(has(self.forwardToken) && self.forwardToken)"
-      message: access.audience already defines the forwarded token, so it cannot be combined with forwardToken
+    - rule: "!has(self.audience) || (has(self.forwardToken) && self.forwardToken)"
+      message: access.audience needs forwardToken true
+
+# novo, em spec.x-kubernetes-validations (a regra olha o access e o aggregate da rota):
+#
+#   - rule: "!(has(self.aggregate) && has(self.access) && (has(self.access.audience) || has(self.access.obo)))"
+#     message: access.audience and access.obo cannot be combined with aggregate

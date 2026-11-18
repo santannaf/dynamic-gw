@@ -20,6 +20,10 @@ spec:
   description: Rota pública.
   access:
     mode: public
+  rateLimit:                     # 20 a cada 10s por endereço, em cada réplica
+    requests: 20
+    period: 10s
+    key: ip
 ---
 # LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
 apiVersion: platform.saca.pags/v1alpha1
@@ -36,3 +40,11 @@ spec:
   access:
     anyOf:
       - group:abc-users
+  rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
+    requests: 10
+    period: 10s
+    key: user
+  throttle:                      # até 5 ao mesmo tempo; mais 10 esperam até 2s
+    maxConcurrent: 5
+    maxQueue: 10
+    maxWait: 2s

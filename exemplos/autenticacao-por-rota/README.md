@@ -18,16 +18,17 @@ O cenário 4 é o realm do lab de hoje. O 5 é o único com dois canais no mesmo
 - `crd/`: v2 com o snapshot no ConfigMap, o default. Os `GatewayRoute` que o time escreve. `schema-access.yaml` tem o schema proposto do `access`.
 - `s3/`: v2 com o snapshot no S3. O time escreve os mesmos `GatewayRoute` de `crd/`; aqui está o objeto que o operator grava em `s3://<bucket>/snapshots/routes.yaml`, no formato do `SnapshotCodec`.
 
-Os três arquivos de um cenário têm as mesmas rotas, com os mesmos ids e o mesmo `access`.
+Os três arquivos de um cenário têm as mesmas rotas, com os mesmos ids, o mesmo `access` e as mesmas políticas. As rotas também trazem rate limit (`ip` na pública, `user` nas autenticadas) e throttling, que já existem no gateway ([POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md)).
 
 ## Regras novas
 
-Checadas no operator e no reload do gateway, como as de hoje, para o v1 e o v2 aceitarem as mesmas rotas:
+Checadas no operator e no reload do gateway, para o v1 e o v2 aceitarem as mesmas rotas:
 
 - `mode: public` não aceita mais nada no `access`.
-- `channel: ldap` não tem token: recusa `identity-provider`, `audience`, `forward-token` e `obo`.
-- `obo` exige `identity-provider` e não convive com `audience` nem `forward-token`.
-- `audience` e `forward-token` não convivem: com `audience`, o backend recebe um token com a `aud` dele no lugar do token A.
+- `channel: ldap` não tem token: recusa `forward-token`, `identity-provider`, `audience` e `obo`.
+- `forward-token: true` liga o envio de token ao backend. `audience` e `obo` escolhem qual token vai, exigem `forward-token: true` e não convivem. Sem nenhum dos dois, vai o token A.
+- `obo` exige `identity-provider` e de 1 a 16 scopes.
+- `audience` e `obo` não valem em rota com `aggregate`: o mesmo token iria para todos os backends.
 
 ## Antes de implementar
 

@@ -27,6 +27,10 @@ gateway:
             description: Rota pública.
             access:
               mode: public
+            rate-limit:                     # 20 a cada 10s por endereço, em cada réplica
+              requests: 20
+              period: 10s
+              key: ip
 
           # LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
           - id: abc
@@ -38,3 +42,11 @@ gateway:
             access:
               any-of:
                 - group:abc-users
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
+            throttle:                       # até 5 ao mesmo tempo; mais 10 esperam até 2s
+              max-concurrent: 5
+              max-queue: 10
+              max-wait: 2s

@@ -26,6 +26,10 @@ gateway:
             description: Rota pública.
             access:
               mode: public
+            rate-limit:                     # 20 a cada 10s por endereço, em cada réplica
+              requests: 20
+              period: 10s
+              key: ip
 
           # LDAP pelo Keycloak: login no Keycloak, que valida a senha no AD.
           - id: abc
@@ -37,4 +41,13 @@ gateway:
             access:
               any-of:
                 - role:abc-user
-              audience: abc-api             # novo: token da troca V2 com aud=abc-api (client no realm)
+              forward-token: true           # o backend recebe um token
+              audience: abc-api             # novo: o da troca V2, com aud=abc-api (client no realm)
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
+            throttle:                       # até 5 ao mesmo tempo; mais 10 esperam até 2s
+              max-concurrent: 5
+              max-queue: 10
+              max-wait: 2s

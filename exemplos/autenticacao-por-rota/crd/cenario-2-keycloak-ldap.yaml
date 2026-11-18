@@ -22,6 +22,10 @@ spec:
   description: Rota pública.
   access:
     mode: public
+  rateLimit:                     # 20 a cada 10s por endereço, em cada réplica
+    requests: 20
+    period: 10s
+    key: ip
 ---
 # LDAP pelo Keycloak: login no Keycloak, que valida a senha no AD.
 apiVersion: platform.saca.pags/v1alpha1
@@ -38,4 +42,13 @@ spec:
   access:
     anyOf:
       - role:abc-user
-    audience: abc-api            # novo: token da troca V2 com aud=abc-api (client no realm)
+    forwardToken: true           # o backend recebe um token
+    audience: abc-api            # novo: o da troca V2, com aud=abc-api (client no realm)
+  rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
+    requests: 10
+    period: 10s
+    key: user
+  throttle:                      # até 5 ao mesmo tempo; mais 10 esperam até 2s
+    maxConcurrent: 5
+    maxQueue: 10
+    maxWait: 2s

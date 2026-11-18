@@ -23,12 +23,16 @@ routes:
     mode: null
     anyOf:
     - "role:business-monitor-user"
-    forwardToken: null
+    forwardToken: true
     channel: null
     identityProvider: "microsoft"
     audience: "business-monitor"
     obo: null
-  rateLimit: null
+  rateLimit:
+    requests: 10
+    period: "10s"
+    burst: null
+    key: "user"
   throttle: null
   filters: null
   transform: null
@@ -45,15 +49,22 @@ routes:
     mode: null
     anyOf:
     - "role:pedidos-leitura"
-    forwardToken: null
+    forwardToken: true
     channel: null
     identityProvider: "microsoft"
     audience: null
     obo:
       scopes:
       - "api://backend-b/pedidos.read"
-  rateLimit: null
-  throttle: null
+  rateLimit:
+    requests: 5
+    period: "10s"
+    burst: null
+    key: "user"
+  throttle:
+    maxConcurrent: 5
+    maxQueue: 10
+    maxWait: "2s"
   filters: null
   transform: null
   aggregate: null
@@ -73,7 +84,11 @@ routes:
     identityProvider: null
     audience: null
     obo: null
-  rateLimit: null
+  rateLimit:
+    requests: 20
+    period: "10s"
+    burst: null
+    key: "ip"
   throttle: null
   filters: null
   transform: null

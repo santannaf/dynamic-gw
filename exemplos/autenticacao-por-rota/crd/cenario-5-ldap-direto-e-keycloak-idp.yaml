@@ -22,6 +22,10 @@ spec:
   description: Rota pública.
   access:
     mode: public
+  rateLimit:                     # 20 a cada 10s por endereço, em cada réplica
+    requests: 20
+    period: 10s
+    key: ip
 ---
 # LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
 apiVersion: platform.saca.pags/v1alpha1
@@ -39,6 +43,10 @@ spec:
     channel: ldap                # novo: o canal de additional-providers
     anyOf:
       - group:abc-users
+  rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
+    requests: 10
+    period: 10s
+    key: user
 ---
 # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
 # Neste realm todo login vem de lá; o identity-provider garante isso se outro login for ligado.
@@ -57,7 +65,12 @@ spec:
     identityProvider: microsoft  # novo: alias do IdP no realm
     anyOf:
       - role:business-monitor-user
-    audience: business-monitor   # novo
+    forwardToken: true           # o backend recebe um token
+    audience: business-monitor   # novo: o da troca V2, com aud=business-monitor
+  rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
+    requests: 10
+    period: 10s
+    key: user
 ---
 # OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
 apiVersion: platform.saca.pags/v1alpha1
@@ -72,9 +85,18 @@ spec:
   team: pedidos-team
   description: Pedidos do usuário, com o token do Entra.
   access:
-    identityProvider: microsoft  # obrigatório: a troca usa o token guardado no login
+    identityProvider: microsoft  # obrigatório no obo: a troca usa o token do login
     anyOf:
       - role:pedidos-leitura
-    obo:                         # novo
+    forwardToken: true           # o backend recebe um token
+    obo:                         # novo: o do OBO no Entra
       scopes:
         - api://backend-b/pedidos.read
+  rateLimit:                     # 5 a cada 10s por usuário, em cada réplica
+    requests: 5
+    period: 10s
+    key: user
+  throttle:                      # até 5 ao mesmo tempo; mais 10 esperam até 2s
+    maxConcurrent: 5
+    maxQueue: 10
+    maxWait: 2s

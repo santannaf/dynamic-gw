@@ -33,6 +33,10 @@ gateway:
             description: Rota pública.
             access:
               mode: public
+            rate-limit:                     # 20 a cada 10s por endereço, em cada réplica
+              requests: 20
+              period: 10s
+              key: ip
 
           # LDAP pelo Keycloak: aceita quem entrou com senha ou pela Microsoft,
           # porque é o mesmo usuário do AD.
@@ -45,7 +49,12 @@ gateway:
             access:
               any-of:
                 - role:abc-user
-              audience: abc-api             # novo: token da troca V2 com aud=abc-api (client no realm)
+              forward-token: true           # o backend recebe um token
+              audience: abc-api             # novo: o da troca V2, com aud=abc-api (client no realm)
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
 
           # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
           # Quem entrou com senha faz login de novo pela Microsoft.
@@ -59,7 +68,12 @@ gateway:
               identity-provider: microsoft  # novo: alias do IdP no realm
               any-of:
                 - role:business-monitor-user
-              audience: business-monitor    # novo
+              forward-token: true           # o backend recebe um token
+              audience: business-monitor    # novo: o da troca V2, com aud=business-monitor
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
 
           # OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
           - id: pedidos
@@ -69,9 +83,18 @@ gateway:
             team: pedidos-team
             description: Pedidos do usuário, com o token do Entra.
             access:
-              identity-provider: microsoft  # obrigatório: a troca usa o token guardado no login
+              identity-provider: microsoft  # obrigatório no obo: a troca usa o token do login
               any-of:
                 - role:pedidos-leitura
-              obo:                          # novo
+              forward-token: true           # o backend recebe um token
+              obo:                          # novo: o do OBO no Entra
                 scopes:
                   - api://backend-b/pedidos.read
+            rate-limit:                     # 5 a cada 10s por usuário, em cada réplica
+              requests: 5
+              period: 10s
+              key: user
+            throttle:                       # até 5 ao mesmo tempo; mais 10 esperam até 2s
+              max-concurrent: 5
+              max-queue: 10
+              max-wait: 2s

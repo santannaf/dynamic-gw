@@ -28,8 +28,15 @@ routes:
     identityProvider: null
     audience: null
     obo: null
-  rateLimit: null
-  throttle: null
+  rateLimit:
+    requests: 10
+    period: "10s"
+    burst: null
+    key: "user"
+  throttle:
+    maxConcurrent: 5
+    maxQueue: 10
+    maxWait: "2s"
   filters: null
   transform: null
   aggregate: null
@@ -49,7 +56,11 @@ routes:
     identityProvider: null
     audience: null
     obo: null
-  rateLimit: null
+  rateLimit:
+    requests: 20
+    period: "10s"
+    burst: null
+    key: "ip"
   throttle: null
   filters: null
   transform: null
