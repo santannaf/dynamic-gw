@@ -43,10 +43,13 @@ spec:
     spec:
       containers:
         - name: keycloak
-          # quay.io/keycloak/keycloak:26.1, ou keycloak-oracle:local (com o driver da Oracle).
+          # quay.io/keycloak/keycloak:26.8.2, ou keycloak-oracle:local (com o driver da Oracle).
           image: __KEYCLOAK_IMAGE__
           imagePullPolicy: IfNotPresent
-          args: ["start", "--import-realm"]
+          # Troca de token: a V2 (aud por rota) vem ligada; a V1 (token do IdP, para o OBO) pede
+          # token-exchange e o FGAP v1, porque o v2 não tem a permissão de troca. Iguais ao build
+          # do docker/keycloak-oracle, para o `start` não refazer o build.
+          args: ["start", "--import-realm", "--features=token-exchange,admin-fine-grained-authz:v1"]
           ports:
             - name: http
               containerPort: 8080

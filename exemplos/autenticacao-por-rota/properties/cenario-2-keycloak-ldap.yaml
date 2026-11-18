@@ -5,7 +5,7 @@
 # Provider no realm não há OBO.
 #
 # Já funciona hoje, menos o audience: a aud por rota sai da troca V2 do
-# Keycloak 26.2 ou mais novo (o lab está no 26.1).
+# Keycloak 26.2 ou mais novo (o lab usa o 26.8.2).
 
 gateway:
   security:

@@ -133,8 +133,8 @@ Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não t
 | `ghcr.io/graalvm/native-image-community`      | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway                        |
 | `debian:stable-slim`                          | 13                     | runtime do gateway (build com `--pull`)                     |
 | `eclipse-temurin`                             | 25-jre (25.0.4)        | runtime do operator (build com `--pull`)                    |
-| `quay.io/keycloak/keycloak`                   | 26.1                   | IdP do lab (`k8s/sso/`), em modo produção                   |
-| `keycloak-oracle:local`                       | 26.1 + ojdbc11 23.6    | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
+| `quay.io/keycloak/keycloak`                   | 26.8.2                 | IdP do lab (`k8s/sso/`), em modo produção                   |
+| `keycloak-oracle:local`                       | 26.8.2 + ojdbc11 23.6  | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
 | `postgres`                                    | 17.5-alpine            | banco do Keycloak (default)                                 |
 | `container-registry.oracle.com/database/free` | 23.26.0.0-lite (26ai)  | banco do Keycloak com `KEYCLOAK_DB=oracle`                  |
 | `osixia/openldap`                             | 1.5.0                  | diretório do lab, no lugar do AD                            |
@@ -270,8 +270,8 @@ Versões declaradas nos `build.gradle` (nov/2026). Nessa data, a base OSV não t
 | `ghcr.io/graalvm/native-image-community`      | 25 (GraalVM CE 25.0.2) | builder do binário nativo do gateway                        |
 | `debian:stable-slim`                          | 13                     | runtime do gateway (build com `--pull`)                     |
 | `eclipse-temurin`                             | 25-jre (25.0.4)        | runtime do operator (build com `--pull`)                    |
-| `quay.io/keycloak/keycloak`                   | 26.1                   | IdP do lab (`k8s/sso/`), em modo produção                   |
-| `keycloak-oracle:local`                       | 26.1 + ojdbc11 23.6    | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
+| `quay.io/keycloak/keycloak`                   | 26.8.2                 | IdP do lab (`k8s/sso/`), em modo produção                   |
+| `keycloak-oracle:local`                       | 26.8.2 + ojdbc11 23.6  | Keycloak com o driver da Oracle (`docker/keycloak-oracle/`) |
 | `postgres`                                    | 17.5-alpine            | banco do Keycloak (default)                                 |
 | `container-registry.oracle.com/database/free` | 23.26.0.0-lite (26ai)  | banco do Keycloak com `KEYCLOAK_DB=oracle`                  |
 | `osixia/openldap`                             | 1.5.0                  | diretório do lab, no lugar do AD                            |

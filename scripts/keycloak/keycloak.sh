@@ -43,7 +43,7 @@ set -euo pipefail
 LOG_PREFIX=keycloak
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
 
-KEYCLOAK_BASE_IMAGE="quay.io/keycloak/keycloak:26.1"
+KEYCLOAK_BASE_IMAGE="quay.io/keycloak/keycloak:26.8.2"
 KEYCLOAK_DB="${KEYCLOAK_DB:-postgres}"
 DIRECTORY="${DIRECTORY:-openldap}"
 GATEWAY_ADMINS_GROUP="${GATEWAY_ADMINS_GROUP:-gateway-admins}"

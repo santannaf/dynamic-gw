@@ -34,5 +34,5 @@ Checadas no operator e no reload do gateway, para o v1 e o v2 aceitarem as mesma
 
 - O gateway de hoje não recusa os campos novos: ignora o que não conhece (no binding das properties e no `SnapshotCodec`) e serviria as rotas sem as checagens novas. Na implantação, o gateway novo sobe antes do operator novo.
 - O `hashAccess` do `GatewayRouteReloadService` só lê `mode`, `anyOf` e `forwardToken`. Sem os campos novos, mudar só o `audience` de uma rota não a recarrega.
-- O `audience` usa a troca V2 do Keycloak 26.2 ou mais novo; o lab está no 26.1.
+- O `audience` usa a troca V2 do Keycloak 26.2 ou mais novo; o lab usa o 26.8.2.
 - Mudar o `access` mexe em `RouteAccess` (shared), `GatewayRouteAccess` e `RouteEntries.toAccess` (operator), `RoutePolicyRules`, `hashAccess` e o schema do CRD.
