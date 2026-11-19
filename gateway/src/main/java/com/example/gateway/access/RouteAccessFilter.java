@@ -108,7 +108,10 @@ public class RouteAccessFilter implements GlobalFilter, Ordered {
                     }
                     IdentityHeaders.inject(headers, identity, settings.identityHeaderPrefix(),
                             settings.identityHeaderMaxLength());
-                    if (policy.forwardToken() && identity.accessToken() != null) {
+                    if (policy.picksUpstreamToken()) {
+                        // UpstreamTokenFilter adds it, after the rate limit and the throttling.
+                        headers.remove(HttpHeaders.AUTHORIZATION);
+                    } else if (policy.forwardToken() && identity.accessToken() != null) {
                         headers.setBearerAuth(identity.accessToken());
                     } else if (identity.method() == GatewayIdentity.AuthMethod.BEARER) {
                         // The token was meant for the gateway; the backend gets the

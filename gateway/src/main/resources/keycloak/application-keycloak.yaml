@@ -13,6 +13,12 @@
 #   GATEWAY_SECURITY_OIDC_CLIENT_SECRET      client secret do client tools-gateway
 #   GATEWAY_SECURITY_SESSION_KEYS_0_ID       id da chave do cookie de sessão (ex.: k1)
 #   GATEWAY_SECURITY_SESSION_KEYS_0_SECRET   base64 de 32 bytes (openssl rand -base64 32)
+#
+# OBO no Entra (rotas com access.obo), só quando o gateway tem um app no Entra; sem o
+# client-id, a rota com obo não é servida:
+#   GATEWAY_SECURITY_OBO_TENANT_ID           tenant do Entra
+#   GATEWAY_SECURITY_OBO_CLIENT_ID           Application (client) ID do app do gateway
+#   GATEWAY_SECURITY_OBO_CLIENT_SECRET       client secret desse app (segredo)
 
 gateway:
   security:

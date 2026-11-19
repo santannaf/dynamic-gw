@@ -91,6 +91,7 @@ class GatewayProfilesTest {
         assertThat(security.getOidc().getClientSecret()).isNull();
         assertThat(security.getLdap().getBindPassword()).isNull();
         assertThat(security.getSession().getKeys()).isEmpty();
+        assertThat(security.getObo().getClientSecret()).isNull();
     }
 
     @Test

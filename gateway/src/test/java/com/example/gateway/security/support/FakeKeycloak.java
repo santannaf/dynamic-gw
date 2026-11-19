@@ -46,6 +46,9 @@ public final class FakeKeycloak implements AutoCloseable {
     private final Set<String> endedSessions = ConcurrentHashMap.newKeySet();
     private final AtomicInteger refreshCalls = new AtomicInteger();
     private final AtomicInteger logoutCalls = new AtomicInteger();
+    private final AtomicInteger exchangeCalls = new AtomicInteger();
+    private final Set<String> exchangeAudiences = ConcurrentHashMap.newKeySet();
+    private final Map<String, StoredToken> storedTokens = new ConcurrentHashMap<>();
     private volatile User nextLogin;
     private volatile String nextNonce;
     private volatile boolean down;
@@ -108,6 +111,25 @@ public final class FakeKeycloak implements AutoCloseable {
     public void resetCounters() {
         refreshCalls.set(0);
         logoutCalls.set(0);
+        exchangeCalls.set(0);
+    }
+
+    /** An audience the standard exchange gives, as if the client scope of that name were on the client. */
+    public void allowAudience(String audience) {
+        exchangeAudiences.add(audience);
+    }
+
+    public int exchangeCalls() {
+        return exchangeCalls.get();
+    }
+
+    /** The token Keycloak keeps from the user's login through {@code alias} (storeToken), until {@code expiresAt}. */
+    public void storeIdentityProviderToken(User user, String alias, String token, Instant expiresAt) {
+        storedTokens.put(user.subject() + "|" + alias, new StoredToken(token, expiresAt));
+    }
+
+    public void forgetIdentityProviderTokens() {
+        storedTokens.clear();
     }
 
     public String accessToken(User user, String audience, String typ, Duration lifetime) {
@@ -189,6 +211,11 @@ public final class FakeKeycloak implements AutoCloseable {
                 }
                 user = user.refreshed();
             }
+            case "urn:ietf:params:oauth:grant-type:token-exchange" -> {
+                exchangeCalls.incrementAndGet();
+                tokenExchange(exchange, form);
+                return;
+            }
             default -> {
                 respond(exchange, 400, "{\"error\":\"unsupported_grant_type\"}");
                 return;
@@ -200,6 +227,59 @@ public final class FakeKeycloak implements AutoCloseable {
                 + accessTokenLifetime.toSeconds() + ",\"refresh_token\":\"" + refreshToken + "\",\"id_token\":\""
                 + idToken(user, nonce) + "\",\"scope\":\"openid profile email\"}";
         respond(exchange, 200, body);
+    }
+
+    // Standard exchange (V2): the audience must reach the client through the scope of the same
+    // name, as in Keycloak; the token keeps the caller and is still issued to this client.
+    private void tokenExchange(HttpExchange exchange, Map<String, String> form) throws IOException {
+        JWTClaimsSet subject;
+        try {
+            subject = SignedJWT.parse(form.getOrDefault("subject_token", "")).getJWTClaimsSet();
+        } catch (java.text.ParseException e) {
+            respond(exchange, 400, "{\"error\":\"invalid_request\",\"error_description\":\"Invalid token\"}");
+            return;
+        }
+        String requestedIssuer = form.get("requested_issuer");
+        if (requestedIssuer != null) {
+            storedTokenExchange(exchange, subject, requestedIssuer);
+            return;
+        }
+        String audience = form.get("audience");
+        if (audience == null || !exchangeAudiences.contains(audience) || !audience.equals(form.get("scope"))) {
+            respond(exchange, 400, "{\"error\":\"invalid_request\",\"error_description\":\"Requested audience not available: "
+                    + audience + "\"}");
+            return;
+        }
+        Instant now = Instant.now();
+        String token = sign(new JWTClaimsSet.Builder(subject)
+                .audience(audience)
+                .claim("azp", CLIENT_ID)
+                .claim("scope", "profile email " + audience)
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plus(accessTokenLifetime)))
+                .build());
+        respond(exchange, 200, "{\"access_token\":\"" + token + "\",\"token_type\":\"Bearer\",\"expires_in\":"
+                + accessTokenLifetime.toSeconds()
+                + ",\"issued_token_type\":\"urn:ietf:params:oauth:token-type:access_token\"}");
+    }
+
+    // Legacy exchange (V1) to an identity provider: the token stored at the user's last login through it.
+    private void storedTokenExchange(HttpExchange exchange, JWTClaimsSet subject, String alias) throws IOException {
+        StoredToken stored = storedTokens.get(subject.getSubject() + "|" + alias);
+        if (stored == null) {
+            respond(exchange, 400, "{\"error\":\"invalid_request\",\"error_description\":\"requested_issuer is not linked\"}");
+            return;
+        }
+        long remaining = Duration.between(Instant.now(), stored.expiresAt()).toSeconds();
+        if (remaining <= 0) {
+            respond(exchange, 400, "{\"error\":\"invalid_token\",\"error_description\":\"requested_issuer token expired\"}");
+            return;
+        }
+        respond(exchange, 200, "{\"access_token\":\"" + stored.token() + "\",\"expires_in\":" + remaining
+                + ",\"issued_token_type\":\"urn:ietf:params:oauth:token-type:access_token\"}");
+    }
+
+    private record StoredToken(String token, Instant expiresAt) {
     }
 
     private String sign(JWTClaimsSet claims) {
@@ -280,6 +360,15 @@ public final class FakeKeycloak implements AutoCloseable {
         public User viaIdentityProvider(String alias) {
             return new User(subject, username, email, UUID.randomUUID().toString(), clientId, groups, roles, disabled,
                     directory, alias);
+        }
+
+        /**
+         * A new login through {@code alias} in the session the browser still holds in
+         * Keycloak: with {@code prompt=login} Keycloak keeps the {@code sid} and records
+         * the new identity provider on it.
+         */
+        public User joinedThrough(String alias) {
+            return new User(subject, username, email, sid, clientId, groups, roles, disabled, directory, alias);
         }
 
         User current() {

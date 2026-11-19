@@ -72,6 +72,17 @@ spec:
             - name: GATEWAY_SECURITY_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef: {name: sso-secrets, key: tools-gateway-client-secret}
+            # OBO no Entra (access.obo): o app do gateway no Entra, no ConfigMap e no Secret gateway-obo.
+            # Opcionais: sem eles, a rota com obo não é servida (TESTE_SSO.md, OBO com o Entra real).
+            - name: GATEWAY_SECURITY_OBO_TENANT_ID
+              valueFrom:
+                configMapKeyRef: {name: gateway-obo, key: tenant-id, optional: true}
+            - name: GATEWAY_SECURITY_OBO_CLIENT_ID
+              valueFrom:
+                configMapKeyRef: {name: gateway-obo, key: client-id, optional: true}
+            - name: GATEWAY_SECURITY_OBO_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: gateway-obo, key: client-secret, optional: true}
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

@@ -66,6 +66,36 @@ ensure_sso_secrets() {
         --from-literal=ldap-readonly-password="$(openssl rand -hex 16)" >/dev/null
 }
 
+# App do gateway no Entra para o OBO (access.obo), no ConfigMap e no Secret gateway-obo, que os
+# manifests do gateway leem como opcionais. Com MICROSOFT=entra é o próprio App Registration do
+# login com Microsoft: o token que o Keycloak guarda desse login sai com a aud desse app, e só ele
+# pode trocá-lo no OBO. Fora do entra não há OBO, e a rota com obo não é servida. O segredo vai
+# por arquivo, nunca na linha de comando. Retorna 0 quando o conteúdo mudou (o gateway reinicia).
+publish_gateway_obo() {
+    local before after secret_file
+    before="$(kubectl -n "${NAMESPACE}" get configmap gateway-obo -o 'jsonpath={.metadata.annotations.checksum}' \
+        2>/dev/null || true)"
+    if [[ "${MICROSOFT:-sim}" != "entra" ]]; then
+        kubectl -n "${NAMESPACE}" delete configmap gateway-obo --ignore-not-found >/dev/null
+        kubectl -n "${NAMESPACE}" delete secret gateway-obo --ignore-not-found >/dev/null
+        [[ -n "${before}" ]]
+        return
+    fi
+    after="$(printf '%s|%s|%s' "${MICROSOFT_TENANT_ID:?}" "${MICROSOFT_CLIENT_ID:?}" "${MICROSOFT_CLIENT_SECRET:?}" \
+        | sha256sum | cut -c1-16)"
+    secret_file="$(mktemp)"
+    printf '%s' "${MICROSOFT_CLIENT_SECRET}" > "${secret_file}"
+    kubectl -n "${NAMESPACE}" create secret generic gateway-obo --from-file=client-secret="${secret_file}" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    rm -f "${secret_file}"
+    kubectl -n "${NAMESPACE}" create configmap gateway-obo \
+        --from-literal=tenant-id="${MICROSOFT_TENANT_ID}" --from-literal=client-id="${MICROSOFT_CLIENT_ID}" \
+        --dry-run=client -o yaml \
+        | kubectl annotate --local -f - checksum="${after}" -o yaml | kubectl apply -f - >/dev/null
+    log "OBO no Entra: app ${MICROSOFT_CLIENT_ID} (ConfigMap e Secret gateway-obo)"
+    [[ "${before}" != "${after}" ]]
+}
+
 # Conexão que o Keycloak usa (envFrom em k8s/sso/keycloak.yaml): o ConfigMap
 # keycloak-db leva KC_DB e KC_DB_URL, e o Secret keycloak-db, usuário e senha
 # copiados do Secret do banco. Cada script de scripts/db/ publica a sua no `up`.

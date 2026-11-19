@@ -156,6 +156,46 @@ else
     echo "  skip  the stored Microsoft token (MICROSOFT=entra)"
 fi
 
+echo "== the route picks the token (access.audience) and the login (access.identityProvider)"
+curl -s -b "${WORK}/alice" "${BASE}/sso/aud/headers" -o "${WORK}/body"
+routed_token="$(header Authorization | sed 's/^Bearer //')"
+check "the backend gets a token for its client, still issued to the gateway" "httpbin-api tools-gateway" \
+    "$(jwt_claims "${routed_token}" | jq -r '"\(.aud) \(.azp)"')"
+check "the token A does not reach it" "no" "$([[ "${routed_token}" == "${password_token}" ]] && echo yes || echo no)"
+check "without the gateway's app in Entra (gateway-obo), the OBO route is not served" "404" \
+    "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/alice" "${BASE}/sso/obo/headers")"
+if [[ -f "${WORK}/ms-alice" ]]; then
+    check "a password session is sent to log in with Microsoft" \
+        "302 ${BASE}/_gateway/oauth2/authorization/keycloak?idp=microsoft" \
+        "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "${WORK}/alice" -H 'Accept: text/html' \
+            "${BASE}/sso/idp/headers")"
+    check "an API call with that session gets the step-up challenge" "401 insufficient_user_authentication" \
+        "$(curl -s -o /dev/null -D - -b "${WORK}/alice" "${BASE}/sso/idp/headers" \
+            | tr -d '\r' | awk 'NR == 1 {s = $2} /^[Ww][Ww][Ww]-[Aa]uthenticate:/ {e = $0} END {
+                sub(/.*error="/, "", e); sub(/".*/, "", e); print s " " e}')"
+    check "a Microsoft session reaches the route" "200" \
+        "$(curl -s -o /dev/null -w '%{http_code}' -b "${WORK}/ms-alice" "${BASE}/sso/idp/headers")"
+    # O caminho inteiro: com a sessão por senha, o Keycloak vai direto para a Microsoft (kc_idp_hint)
+    # e pede o login de novo (prompt=login); depois do formulário do sim, a rota responde.
+    cp "${WORK}/alice" "${WORK}/alice-step-up"
+    sim_form="$(curl -s -L -c "${WORK}/alice-step-up" -b "${WORK}/alice-step-up" -H 'Accept: text/html' \
+        "${BASE}/sso/idp/headers")"
+    sim_action="$(printf '%s' "${sim_form}" | grep -o 'action="[^"]*login-actions/authenticate[^"]*"' | head -1 \
+        | sed -e 's/^action="//' -e 's/"$//' -e 's/&amp;/\&/g')"
+    check "the redirect lands on the Microsoft login, not on the password page" "microsoft-sim" \
+        "$(printf '%s' "${sim_action}" | grep -o 'realms/microsoft-sim' | cut -d/ -f2)"
+    check "after the Microsoft login the same browser reaches the route" "200" \
+        "$(curl -s -L -c "${WORK}/alice-step-up" -b "${WORK}/alice-step-up" -H 'Accept: text/html' -o "${WORK}/body" \
+            -w '%{http_code}' --data-urlencode "username=alice" --data-urlencode "password=${PASSWORD}" "${sim_action}")"
+    check "and lands on it as alice" "alice" "$(header X-Auth-Request-User)"
+    # O Keycloak mantém o sid no login novo: a outra réplica não pode servir a sessão do login por senha.
+    check "the new login reaches it on every replica" "200 200 200 200 200 200 " \
+        "$(for _ in 1 2 3 4 5 6; do
+            curl -s -o /dev/null -w '%{http_code} ' -b "${WORK}/alice-step-up" "${BASE}/sso/idp/headers"; done)"
+else
+    echo "  skip  the route that needs the Microsoft login (MICROSOFT=entra)"
+fi
+
 echo "== directory (Keycloak federates it; the realm keeps no people)"
 admin="$(admin_token)"
 directory="$(api '/components?type=org.keycloak.storage.UserStorageProvider' | jq -r '.[0].id')"

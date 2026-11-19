@@ -28,6 +28,7 @@ public class GatewaySecurityProperties {
     private Session session = new Session();
     private Ldap ldap = new Ldap();
     private OAuth oauth = new OAuth();
+    private Obo obo = new Obo();
 
     public boolean isEnabled() { return enabled; }
 
@@ -88,6 +89,54 @@ public class GatewaySecurityProperties {
     public OAuth getOauth() { return oauth; }
 
     public void setOauth(OAuth oauth) { this.oauth = oauth; }
+
+    public Obo getObo() { return obo; }
+
+    public void setObo(Obo obo) { this.obo = obo; }
+
+    /**
+     * The gateway's app in Entra, for {@code access.obo}. Without {@code client-id}
+     * the gateway does no On-Behalf-Of and serves no route that asks for it.
+     */
+    public static class Obo {
+        private String tenantId;
+        private String clientId;
+        /** From GATEWAY_SECURITY_OBO_CLIENT_SECRET, never from a profile file. */
+        private String clientSecret;
+        /** Entra's token endpoint; by default the one of {@code tenant-id}. */
+        private String tokenUri;
+        private Duration timeout = Duration.ofSeconds(10);
+
+        public boolean configured() {
+            return clientId != null && !clientId.isBlank();
+        }
+
+        public String effectiveTokenUri() {
+            return tokenUri != null && !tokenUri.isBlank()
+                    ? tokenUri
+                    : "https://login.microsoftonline.com/" + tenantId + "/oauth2/v2.0/token";
+        }
+
+        public String getTenantId() { return tenantId; }
+
+        public void setTenantId(String tenantId) { this.tenantId = tenantId; }
+
+        public String getClientId() { return clientId; }
+
+        public void setClientId(String clientId) { this.clientId = clientId; }
+
+        public String getClientSecret() { return clientSecret; }
+
+        public void setClientSecret(String clientSecret) { this.clientSecret = clientSecret; }
+
+        public String getTokenUri() { return tokenUri; }
+
+        public void setTokenUri(String tokenUri) { this.tokenUri = tokenUri; }
+
+        public Duration getTimeout() { return timeout; }
+
+        public void setTimeout(Duration timeout) { this.timeout = timeout; }
+    }
 
     public static class OAuth {
         /** Must match the {@code iss} claim of the tokens. */

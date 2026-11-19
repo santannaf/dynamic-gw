@@ -31,16 +31,20 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Keycloak keeps the session; the gateway keeps only a cookie and a cache.
  *
- * The {@code GW_SESSION} cookie is a JWE with {@code {sid, sub, rt}} (rt = the
- * Keycloak refresh token). Each replica caches the identity and access token
- * per {@code sid} until the access token expires. On a cache miss, the replica
- * runs a refresh-token grant, which both fetches fresh tokens and proves the
- * Keycloak session is still alive, then re-issues the cookie with the new
- * refresh token.
+ * The {@code GW_SESSION} cookie is a JWE with {@code {sid, li, sub, rt}} (rt = the
+ * Keycloak refresh token, li = an id of the login that wrote the cookie). Each
+ * replica caches the identity and access token per {@code sid} and {@code li}
+ * until the access token expires. A new login can keep Keycloak's {@code sid}
+ * (with {@code prompt=login}, Keycloak joins the session the browser still holds
+ * there), and {@code li} is what keeps the other replicas from serving the
+ * identity of the previous login. On a cache miss, the replica runs a
+ * refresh-token grant, which both fetches fresh tokens and proves the Keycloak
+ * session is still alive, then re-issues the cookie with the new refresh token.
  */
 public class KeycloakSessionManager implements GatewaySessionManager {
 
@@ -62,6 +66,7 @@ public class KeycloakSessionManager implements GatewaySessionManager {
     private final String postLogoutRedirectUri;
     private final SessionRevocations revocations;
     private final Duration revokedFor;
+    private final Consumer<String> sessionEnded;
 
     public KeycloakSessionManager(SessionCookieCodec codec,
                                   SessionCookies cookies,
@@ -70,7 +75,8 @@ public class KeycloakSessionManager implements GatewaySessionManager {
                                   KeycloakTokenClient tokenClient,
                                   TokenIdentities identities,
                                   GatewaySecurityProperties properties,
-                                  Clock clock) {
+                                  Clock clock,
+                                  Consumer<String> sessionEnded) {
         this.codec = codec;
         this.cookies = cookies;
         this.revocations = revocations;
@@ -84,6 +90,7 @@ public class KeycloakSessionManager implements GatewaySessionManager {
         this.endSessionUri = properties.getOidc().getIssuer() + "/protocol/openid-connect/logout";
         this.clientId = properties.getOidc().getClientId();
         this.postLogoutRedirectUri = properties.getPublicBaseUrl() + GatewayEndpointsController.LOGGED_OUT_PATH;
+        this.sessionEnded = sessionEnded;
     }
 
     /** Called once the OIDC callback succeeded: caches the session and sets the cookie. */
@@ -91,9 +98,10 @@ public class KeycloakSessionManager implements GatewaySessionManager {
                                            String idToken, String keycloakSessionId) {
         return accessTokenDecoder.decode(accessToken).map(jwt -> {
             String sid = firstNonBlank(keycloakSessionId, jwt.getClaimAsString("sid"), randomId());
+            String login = randomId();
             GatewayIdentity identity = identities.identity(jwt, sid, GatewayIdentity.AuthMethod.SESSION);
-            cache.put(sid, new CachedSession(identity, idToken), cacheExpiry(jwt));
-            writeCookie(exchange, sid, jwt.getSubject(), refreshToken);
+            cache.put(cacheKey(sid, login), new CachedSession(identity, idToken), cacheExpiry(jwt));
+            writeCookie(exchange, sid, login, jwt.getSubject(), refreshToken);
             exchange.getAttributes().put(AccessAttributes.IDENTITY, identity);
             return identity;
         });
@@ -113,16 +121,16 @@ public class KeycloakSessionManager implements GatewaySessionManager {
         }
         String sid = text(payload.get(), "sid");
         if (revocations.isRevoked(sid)) {
-            cache.evict(sid);
+            forget(sid);
             cookies.expire(exchange, cookieName, "/");
             exchange.getAttributes().put(AccessAttributes.PROBLEM, AccessProblem.SESSION_EXPIRED);
             return Mono.empty();
         }
-        return cache.getOrLoad(sid, () -> refresh(exchange, payload.get()))
+        return cache.getOrLoad(cacheKey(sid, text(payload.get(), "li")), () -> refresh(exchange, payload.get()))
                 .map(CachedSession::identity)
                 .onErrorResume(SessionRejectedException.class, e -> {
                     log.info("Keycloak session ended sid={} reason={}", sid, e.getMessage());
-                    cache.evict(sid);
+                    forget(sid);
                     cookies.expire(exchange, cookieName, "/");
                     exchange.getAttributes().put(AccessAttributes.PROBLEM, AccessProblem.SESSION_EXPIRED);
                     return Mono.empty();
@@ -146,10 +154,11 @@ public class KeycloakSessionManager implements GatewaySessionManager {
         }
         String sid = text(payload.get(), "sid");
         if (sid != null) {
-            cache.getIfValid(sid)
+            cache.getIfValid(cacheKey(sid, text(payload.get(), "li")))
                     .map(CachedSession::idToken)
                     .ifPresent(idToken -> target.queryParam("id_token_hint", idToken));
-            cache.evict(sid);
+            forget(sid);
+            sessionEnded.accept(sid);
         }
         Mono<Void> revoke = sid == null ? Mono.empty() : revocations.revoke(sid, clock.instant().plus(revokedFor));
         return Mono.when(revoke, tokenClient.logout(text(payload.get(), "rt")))
@@ -171,21 +180,34 @@ public class KeycloakSessionManager implements GatewaySessionManager {
                         .map(jwt -> {
                             GatewayIdentity identity = identities.identity(jwt, sid, GatewayIdentity.AuthMethod.SESSION);
                             String refreshToken = tokens.refreshToken() != null ? tokens.refreshToken() : oldRefreshToken;
-                            writeCookie(exchange, sid, jwt.getSubject(), refreshToken);
+                            writeCookie(exchange, sid, text(payload, "li"), jwt.getSubject(), refreshToken);
                             return new SessionCache.Loaded<>(new CachedSession(identity, tokens.idToken()), cacheExpiry(jwt));
                         }));
     }
 
-    private void writeCookie(ServerWebExchange exchange, String sid, String subject, String refreshToken) {
+    private void writeCookie(ServerWebExchange exchange, String sid, String login, String subject,
+                             String refreshToken) {
         ObjectNode payload = SessionCookieCodec.newPayload()
                 .put("v", 1)
                 .put("p", PROVIDER)
                 .put("sid", sid)
                 .put("sub", subject);
+        if (login != null) {
+            payload.put("li", login);
+        }
         if (refreshToken != null) {
             payload.put("rt", refreshToken);
         }
         cookies.write(exchange, cookieName, codec.encode(payload), "/");
+    }
+
+    private static String cacheKey(String sid, String login) {
+        return sid + "|" + (login == null ? "" : login);
+    }
+
+    private void forget(String sid) {
+        String logins = sid + "|";
+        cache.evictWhere(key -> key.startsWith(logins));
     }
 
     private Instant cacheExpiry(Jwt jwt) {

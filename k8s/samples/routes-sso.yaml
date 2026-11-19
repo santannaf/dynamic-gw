@@ -10,6 +10,12 @@
 #                   gateway-admin não abre esta rota: ela só opera o gateway.
 #   /sso/token/**   como /sso/group, e repassa o access token ao backend
 #   /sso/rw/**      leitura (GET/HEAD) para tools-httpbin ou tools-admins; escrita só tools-admins
+#   /sso/idp/**     como /sso/group, só para quem entrou com Microsoft (identityProvider)
+#   /sso/aud/**     como /sso/token, mas o backend recebe um token trocado para o client
+#                   httpbin-api do realm (audience), ainda emitido para o tools-gateway
+#   /sso/obo/**     como /sso/idp, e o backend recebe o token do Entra para api://backend-b/pedidos.read,
+#                   pelo OBO do gateway (obo); sem o app do gateway no Entra (gateway-obo), não é servida
+# As três últimas pedem o canal keycloak: no ldap, o gateway não as serve.
 apiVersion: platform.saca.pags/v1alpha1
 kind: GatewayRoute
 metadata:
@@ -115,3 +121,56 @@ spec:
   access:
     anyOf:
       - group:tools-admins
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-idp
+  namespace: platform
+spec:
+  path: /sso/idp/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Members of tools-httpbin who logged in with Microsoft, Keycloak's identity provider.
+  access:
+    identityProvider: microsoft
+    anyOf:
+      - group:tools-httpbin
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-aud
+  namespace: platform
+spec:
+  path: /sso/aud/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Like /sso/token, but the backend gets a token exchanged for its own client (aud httpbin-api).
+  access:
+    anyOf:
+      - group:tools-httpbin
+    forwardToken: true
+    audience: httpbin-api
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: sso-obo
+  namespace: platform
+spec:
+  path: /sso/obo/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Microsoft login, and the backend gets the Entra token of the gateway's On-Behalf-Of.
+  access:
+    identityProvider: microsoft
+    anyOf:
+      - group:tools-httpbin
+    forwardToken: true
+    obo:
+      scopes:
+        - api://backend-b/pedidos.read

@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -67,6 +68,10 @@ public class SessionCache<V> {
 
     public void evict(String key) {
         entries.remove(key);
+    }
+
+    public void evictWhere(Predicate<String> key) {
+        entries.keySet().removeIf(key);
     }
 
     public int size() {

@@ -316,6 +316,45 @@ make sso-test     # passed=44 failed=0
 
 A tela de login já aparece com o tema `tools`, em português: usuário, senha, **Entrar** e **Entrar com Microsoft**. 🌐 Numa janela anônima, abra `http://localhost:18080/sso/group/headers` e clique em **Entrar com Microsoft**. Na tela "Microsoft (simulado)", entre como alice, com a senha do diretório. A volta é na rota, como alice, com `X-Auth-Request-Groups: tools-httpbin`: a conta "da Microsoft" foi associada à alice do diretório pelo e-mail. Como eve, que só existe na Microsoft, o Keycloak recusa. Para o Entra ID de verdade, veja a seção 9 do [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md).
 
+### 1.17 A rota escolhe o login e o token (`identityProvider`, `audience`, `obo`)
+
+As rotas `/sso/idp`, `/sso/aud` e `/sso/obo` de [`k8s/samples/routes-sso.yaml`](k8s/samples/routes-sso.yaml) usam os campos de [`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf). O `make sso-test` confere as duas primeiras com a Microsoft simulada.
+
+🌐 **Login pela Microsoft.** Entre como alice com senha (seção 1.2) e abra `http://localhost:18080/sso/idp/headers`. O gateway manda o navegador para o login com `?idp=microsoft`, e o Keycloak vai direto para a tela "Microsoft (simulado)", pedindo o login de novo. Depois dela, a rota responde como alice. Por AJAX, a mesma sessão por senha recebe `401` com `WWW-Authenticate: Bearer error="insufficient_user_authentication"` (RFC 9470), e o front chama `/_gateway/login/start?idp=microsoft&returnTo=...`.
+
+🌐 **Token para o client do backend.** Na mesma janela, abra `http://localhost:18080/sso/aud/headers`. O `Authorization` que chegou no backend não é o token A da sessão: é um token trocado no Keycloak (troca padrão, V2), só com a `aud` do backend. Copie o token, sem o `Bearer `, e decodifique:
+
+```bash
+cut -d. -f2 <<<'<cole o token>' | tr '_-' '/+' | base64 -d 2>/dev/null | jq '{aud, azp, preferred_username}'
+# {"aud": "httpbin-api", "azp": "tools-gateway", "preferred_username": "alice"}
+```
+
+**OBO.** Com a Microsoft simulada, `/sso/obo/headers` dá `404`: sem o app do gateway no Entra (ConfigMap e Secret `gateway-obo`), o gateway não serve rota com `obo`. Com o Entra de verdade:
+
+1. No App Registration do login com Microsoft (seção 9 do [`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md)), em **Expose an API**, defina o Application ID URI `api://<client id>` e o escopo `access_as_user`. É o app do gateway: o token que o Keycloak guarda do login precisa sair com a `aud` dele para o OBO aceitar.
+2. Crie o App Registration do backend com o Application ID URI `api://backend-b` e o escopo `pedidos.read`. No app do gateway, em **API permissions**, adicione a permissão delegada `pedidos.read` do backend e dê o **admin consent** (sem ele, o Entra recusa com `AADSTS65001`).
+3. Suba com o escopo da API do gateway no login. O `deploy-sso.sh` cria o `gateway-obo` com o mesmo app e reinicia o gateway:
+
+```bash
+MICROSOFT=entra \
+MICROSOFT_TENANT_ID=<tenant id> \
+MICROSOFT_CLIENT_ID=<client id do app do gateway> \
+MICROSOFT_CLIENT_SECRET='…' \
+MICROSOFT_DEFAULT_SCOPE="openid profile email offline_access api://<client id do app do gateway>/access_as_user" \
+HOST_PORT=18080 make lab linux
+```
+
+4. Se o escopo do backend tiver outro nome, troque o `api://backend-b/pedidos.read` da rota `sso-obo` e aplique o `routes-sso.yaml`.
+5. 🌐 Abra `http://localhost:18080/sso/obo/headers` e entre pela Microsoft. O eco do go-httpbin mostra o `Authorization` com o token do Entra: decodificado (como acima), ele tem a `aud` do backend (`api://backend-b` ou o client id dele, conforme a versão do token), `scp` igual a `pedidos.read` e o `oid` da pessoa.
+
+| O que acontece | Resposta | Auditoria (`reason`) |
+|---|---|---|
+| O Keycloak não tem o token da Microsoft dessa pessoa (entrou por senha, ou o vínculo venceu) | navegação: login pela Microsoft de novo; AJAX: `401` | `identity_provider_login_required` |
+| O Entra recusa o OBO (sem consentimento, escopo errado) | `502` | `token_exchange_failed` |
+| O Entra não responde | `503` | `token_exchange_failed` |
+
+No log do gateway, a recusa aparece com o código do Entra (`Entra refused the On-Behalf-Of for [...]: invalid_grant`), nunca com o token.
+
 ## 2. Provider `ldap` (v2)
 
 O gateway faz o login sozinho, direto no diretório. O OpenLDAP faz o papel do AD: OU `tools` com os grupos de acesso, usuários em `ou=people`, e um grupo `finance` fora da OU da aplicação.

@@ -2,6 +2,7 @@ package com.example.gateway.security;
 
 import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.access.RouteAccessFilter;
+import com.example.gateway.access.UpstreamTokenFilter;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.gateway.routing.RouteDefinitionMapper;
 import org.slf4j.Logger;
@@ -59,6 +60,14 @@ public class SecurityConfiguration {
             return (exchange, chain) -> chain.filter(exchange);
         }
         return new RouteAccessFilter(activeSecurity.accessSettings(), activeSecurity.unauthenticatedHandler());
+    }
+
+    @Bean
+    GlobalFilter upstreamTokenFilter(ActiveSecurity activeSecurity) {
+        if (!activeSecurity.enabled()) {
+            return (exchange, chain) -> chain.filter(exchange);
+        }
+        return new UpstreamTokenFilter(activeSecurity.upstreamTokens(), activeSecurity.unauthenticatedHandler());
     }
 
     @Bean

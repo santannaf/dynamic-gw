@@ -2,6 +2,7 @@ package com.example.gateway.security;
 
 import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.access.UnauthenticatedHandler;
+import com.example.gateway.access.UpstreamTokens;
 import com.example.gateway.security.session.GatewaySessionManager;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 
@@ -38,6 +39,11 @@ public interface IdentityChannel extends AutoCloseable {
     /** Cookies owned by this channel, which never reach upstream services. */
     default Set<String> gatewayCookieNames() {
         return Set.of();
+    }
+
+    /** Gets the token a route picks for its backend; only channels with tokens have one. */
+    default UpstreamTokens upstreamTokens() {
+        return UpstreamTokens.NONE;
     }
 
     /** Route access fields beyond anyOf this channel enforces; the reload refuses routes that need others. */

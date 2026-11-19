@@ -2,12 +2,14 @@ package com.example.gateway.security.keycloak;
 
 import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.access.UnauthenticatedHandler;
+import com.example.gateway.access.UpstreamTokens;
 import com.example.gateway.security.BearerChallengeHandler;
 import com.example.gateway.security.BrowserLoginHandler;
 import com.example.gateway.security.GatewaySecurityProperties;
 import com.example.gateway.security.IdentityChannel;
 import com.example.gateway.security.LoginOutcomeHandlers;
 import com.example.gateway.security.SecurityChains;
+import com.example.gateway.security.entra.EntraOboClient;
 import com.example.gateway.security.session.BrowserSession;
 import com.example.gateway.security.session.GatewaySessionManager;
 import com.example.gateway.security.session.SessionSecurityContextRepository;
@@ -48,6 +50,7 @@ public final class KeycloakSecurity implements IdentityChannel {
     private final ReactiveJwtDecoder accessTokenDecoder;
     private final TokenIdentities identities;
     private final KeycloakSessionManager sessionManager;
+    private final KeycloakUpstreamTokens upstreamTokens;
     private final BrowserLoginHandler browserLogin;
 
     private KeycloakSecurity(GatewaySecurityProperties properties, BrowserSession session, Clock clock) {
@@ -57,9 +60,11 @@ public final class KeycloakSecurity implements IdentityChannel {
         this.accessTokenDecoder = accessTokenDecoder(properties.getOidc());
         this.identities = TokenIdentities.from(properties.getAuthorities(), properties.getOidc().getClientId(),
                 properties.getOidc().getIdentityProviderClaim());
+        KeycloakTokenClient tokenClient = tokenClient(properties.getOidc());
+        this.upstreamTokens = new KeycloakUpstreamTokens(tokenClient, oboClient(properties.getObo()),
+                properties.getSession().getCacheMaxEntries(), clock);
         this.sessionManager = new KeycloakSessionManager(session.codec(), session.cookies(), session.revocations(),
-                accessTokenDecoder,
-                tokenClient(properties.getOidc()), identities, properties, clock);
+                accessTokenDecoder, tokenClient, identities, properties, clock, upstreamTokens::forgetSession);
         this.browserLogin = new BrowserLoginHandler(session, loginPath(), new BearerChallengeHandler());
     }
 
@@ -70,6 +75,13 @@ public final class KeycloakSecurity implements IdentityChannel {
         SecurityChains.requireText(oidc.getClientId(), "gateway.security.oidc.client-id");
         SecurityChains.requireText(oidc.getClientSecret(), "gateway.security.oidc.client-secret");
         SecurityChains.requireText(oidc.getAudience(), "gateway.security.oidc.audience");
+        GatewaySecurityProperties.Obo obo = properties.getObo();
+        if (obo.configured()) {
+            SecurityChains.requireText(obo.getClientSecret(), "gateway.security.obo.client-secret");
+            if (obo.getTokenUri() == null || obo.getTokenUri().isBlank()) {
+                SecurityChains.requireText(obo.getTenantId(), "gateway.security.obo.tenant-id");
+            }
+        }
         return new KeycloakSecurity(properties, session, clock);
     }
 
@@ -85,7 +97,15 @@ public final class KeycloakSecurity implements IdentityChannel {
 
     @Override
     public Set<AccessCapabilities.Feature> accessFeatures() {
-        return Set.of(AccessCapabilities.Feature.IDENTITY_PROVIDER);
+        return properties.getObo().configured()
+                ? Set.of(AccessCapabilities.Feature.IDENTITY_PROVIDER, AccessCapabilities.Feature.AUDIENCE,
+                        AccessCapabilities.Feature.OBO)
+                : Set.of(AccessCapabilities.Feature.IDENTITY_PROVIDER, AccessCapabilities.Feature.AUDIENCE);
+    }
+
+    @Override
+    public UpstreamTokens upstreamTokens() {
+        return upstreamTokens;
     }
 
     @Override
@@ -156,6 +176,14 @@ public final class KeycloakSecurity implements IdentityChannel {
     private static ReactiveJwtDecoder accessTokenDecoder(GatewaySecurityProperties.Oidc oidc) {
         return AccessTokens.decoder(oidc.effectiveInternalIssuer() + "/protocol/openid-connect/certs",
                 oidc.getIssuer(), oidc.getAudience(), oidc.getRequiredTokenType());
+    }
+
+    private static EntraOboClient oboClient(GatewaySecurityProperties.Obo obo) {
+        if (!obo.configured()) {
+            return null;
+        }
+        return new EntraOboClient(WebClient.builder().build(), obo.effectiveTokenUri(), obo.getClientId(),
+                obo.getClientSecret(), obo.getTimeout());
     }
 
     private static KeycloakTokenClient tokenClient(GatewaySecurityProperties.Oidc oidc) {

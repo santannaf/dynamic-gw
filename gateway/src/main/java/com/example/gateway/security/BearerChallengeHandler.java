@@ -20,7 +20,8 @@ public class BearerChallengeHandler implements UnauthenticatedHandler {
     public Mono<Void> handle(ServerWebExchange exchange, AccessDecision decision) {
         String challenge = switch (decision) {
             case INVALID_TOKEN -> "Bearer realm=\"dynamic-gateway\", error=\"invalid_token\"";
-            case WRONG_IDENTITY_PROVIDER -> "Bearer realm=\"dynamic-gateway\", error=\"insufficient_user_authentication\","
+            case WRONG_IDENTITY_PROVIDER, IDENTITY_PROVIDER_LOGIN_REQUIRED -> "Bearer realm=\"dynamic-gateway\","
+                    + " error=\"insufficient_user_authentication\","
                     + " error_description=\"log in through " + identityProvider(exchange) + "\"";
             case null, default -> "Bearer realm=\"dynamic-gateway\"";
         };

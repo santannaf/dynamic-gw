@@ -107,6 +107,8 @@ down() {
         render k8s/s3/minio.yaml | kubectl delete --ignore-not-found -f -
         kubectl -n "${NAMESPACE}" delete secret minio-credentials --ignore-not-found
     fi
+    kubectl -n "${NAMESPACE}" delete configmap gateway-obo --ignore-not-found >/dev/null
+    kubectl -n "${NAMESPACE}" delete secret gateway-obo --ignore-not-found >/dev/null
     "${KEYCLOAK}" down
     "${ROOT}/scripts/db/postgres.sh" down
     "${ROOT}/scripts/db/oracle.sh" down
@@ -178,6 +180,10 @@ case "${PROVIDER}" in
     keycloak|oauth) "${KEYCLOAK}" up ;;
     ldap) "${OPENLDAP}" up ;;
 esac
+obo_changed=0
+if [[ "${PROVIDER}" == "keycloak" ]] && publish_gateway_obo; then
+    obo_changed=1
+fi
 
 if [[ "${MODE}" == "s3" ]]; then
     setup_s3_backend
@@ -198,6 +204,10 @@ if [[ "${MODE}" == "s3" ]]; then
 fi
 
 render "${GATEWAY_MANIFEST}" | kubectl apply -f -
+if [[ "${obo_changed}" == 1 ]]; then
+    # O gateway lê o gateway-obo por variável de ambiente, só no startup.
+    kubectl -n "${NAMESPACE}" rollout restart deployment/dynamic-gateway >/dev/null
+fi
 kubectl apply -f k8s/samples/httpbin-in-cluster.yaml >/dev/null
 if [[ "${MODE}" == "standalone" ]]; then
     kubectl apply -f k8s/gateway-standalone/service.yaml -f k8s/gateway-standalone/ingress.yaml >/dev/null

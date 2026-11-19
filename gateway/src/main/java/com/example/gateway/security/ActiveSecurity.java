@@ -4,6 +4,7 @@ import com.example.gateway.access.AccessCapabilities;
 import com.example.gateway.access.AccessPolicy;
 import com.example.gateway.access.AccessSettings;
 import com.example.gateway.access.UnauthenticatedHandler;
+import com.example.gateway.access.UpstreamTokens;
 import com.example.gateway.security.keycloak.KeycloakSecurity;
 import com.example.gateway.security.ldap.LdapSecurity;
 import com.example.gateway.security.oauth.OAuthSecurity;
@@ -90,6 +91,10 @@ public final class ActiveSecurity implements DisposableBean {
                 properties.getIdentityHeaders().getPrefix(),
                 properties.getIdentityHeaders().getMaxLength(),
                 channel.gatewayCookieNames());
+    }
+
+    public UpstreamTokens upstreamTokens() {
+        return channel == null ? UpstreamTokens.NONE : channel.upstreamTokens();
     }
 
     public AccessCapabilities accessCapabilities() {

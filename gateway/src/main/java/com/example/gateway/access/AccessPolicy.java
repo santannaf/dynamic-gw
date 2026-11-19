@@ -50,6 +50,11 @@ public record AccessPolicy(Mode mode, List<String> anyOf, boolean forwardToken, 
         return mode == Mode.AUTHENTICATED;
     }
 
+    /** The backend gets a token the route chooses, not the caller's own. */
+    public boolean picksUpstreamToken() {
+        return forwardToken && (audience != null || !oboScopes.isEmpty());
+    }
+
     public enum Mode {
         PUBLIC("public"),
         AUTHENTICATED("authenticated");
