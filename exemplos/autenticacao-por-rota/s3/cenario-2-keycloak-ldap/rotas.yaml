@@ -1,12 +1,13 @@
-# Cenário 1: o gateway faz o LDAP direto. Store: S3 (v2).
+# Cenário 2: o gateway usa o Keycloak com LDAP. Store: S3 (v2).
 #
-# Profiles do gateway: s3,ldap. O time escreve os GatewayRoute de
-# crd/cenario-1-ldap-direto.yaml; este é o objeto que o operator grava em
-# s3://<bucket>/snapshots/routes.yaml e que o gateway lê por polling de ETag.
-# Formato do SnapshotCodec: rotas em ordem de id, strings entre aspas e campo
-# vazio como null. Os campos da ETT-1452 entram depois do forwardToken.
+# O time escreve os GatewayRoute de crd/cenario-2-keycloak-ldap/rotas.yaml; este é o
+# objeto que o operator grava em s3://<bucket>/snapshots/routes.yaml e que o
+# gateway do application.yaml, ao lado, lê por polling de ETag. Formato do
+# SnapshotCodec: rotas em ordem de id, strings entre aspas e campo vazio como
+# null. Os campos da ETT-1452 entram depois do forwardToken.
 #
-# Os campos do access que a rota não usa saem como null.
+# Um gateway anterior à ETT-1452 lê este objeto, descarta esses campos e serve
+# as rotas sem as checagens: atualize o gateway antes do operator.
 version: "2026-11-18T21:00:00Z"
 generatedAt: "2026-11-18T21:00:00Z"
 routes:
@@ -17,15 +18,15 @@ routes:
   methods: null
   enabled: true
   team: "abc-team"
-  description: "Membros do grupo abc-users no AD."
+  description: "Usuários com a role abc-user."
   access:
     mode: null
     anyOf:
-    - "group:abc-users"
-    forwardToken: null
+    - "role:abc-user"
+    forwardToken: true
     channel: null
     identityProvider: null
-    audience: null
+    audience: "abc-api"
     obo: null
   rateLimit:
     requests: 10

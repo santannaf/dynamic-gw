@@ -1,6 +1,6 @@
 # Autenticação por rota: exemplos por cenário
 
-Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implementado na ETT-1452. Cada arquivo é um cenário de gateway em um store, com uma rota por estratégia que o cenário comporta. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts: as rotas que o lab usa estão na seção [No lab](#no-lab).
+Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implementado na ETT-1452. Cada pasta é um cenário de gateway em um store, com a configuração do gateway (`application.yaml`) e as rotas (`rotas.yaml`), uma por estratégia que o cenário comporta. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts: as rotas que o lab usa estão na seção [No lab](#no-lab).
 
 | Cenário | O gateway | Estratégias | Profiles do gateway (properties · crd · s3) | Campos da ETT-1452 |
 |---|---|---|---|---|
@@ -14,11 +14,27 @@ O cenário 4 é o realm do lab. O 5 é o único com dois canais no mesmo gateway
 
 ## Pastas
 
-- `properties/`: v1, rotas no YAML do gateway. Cada arquivo explica o cenário (realm, login, campos da ETT-1452) e traz a configuração do gateway que ele pede.
-- `crd/`: v2 com o snapshot no ConfigMap, o default. Os `GatewayRoute` que o time escreve. `schema-access.yaml` é o schema do `access`, o mesmo do CRD em `k8s/crd/`.
-- `s3/`: v2 com o snapshot no S3. O time escreve os mesmos `GatewayRoute` de `crd/`; aqui está o objeto que o operator grava em `s3://<bucket>/snapshots/routes.yaml`, no formato do `SnapshotCodec`.
+Uma pasta por store e, dentro dela, uma por cenário (`properties/cenario-3-keycloak-idp/`, por exemplo), com dois arquivos:
 
-Os três arquivos de um cenário têm as mesmas rotas, com os mesmos ids, o mesmo `access` e as mesmas políticas. As rotas também trazem rate limit (`ip` na pública, `user` nas autenticadas) e throttling ([POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md)).
+- `application.yaml`: a configuração do gateway no cenário, num arquivo só, com a explicação do cenário (realm, login, segredos). É o que os profiles da tabela acima montam neste gateway, com os valores do lab.
+- `rotas.yaml`: as rotas do cenário, no formato do store.
+
+| Store | `application.yaml` | `rotas.yaml` |
+|---|---|---|
+| `properties/` (v1) | `type: properties`; importa o `rotas.yaml` ao lado (`spring.config.import`) | As rotas no YAML do gateway, em `gateway.routes.store.properties` |
+| `crd/` (v2, snapshot no ConfigMap, o default) | `type: configmap` | Os `GatewayRoute` que o time escreve |
+| `s3/` (v2, snapshot no S3) | `type: s3` | O objeto que o operator grava em `s3://<bucket>/snapshots/routes.yaml`, no formato do `SnapshotCodec`, a partir dos `GatewayRoute` de `crd/` |
+
+`crd/schema-access.yaml` é o schema do `access`, o mesmo do CRD em `k8s/crd/`.
+
+Num cenário, os três `rotas.yaml` têm as mesmas rotas, com os mesmos ids, o mesmo `access` e as mesmas políticas, e os três `application.yaml` só mudam em `gateway.routes.store`. As rotas também trazem rate limit (`ip` na pública, `user` nas autenticadas) e throttling ([POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md)).
+
+## O application.yaml de cada cenário
+
+- `gateway.security` muda com o cenário: `ldap` no 1; `oidc` do Keycloak do 2 ao 5; `obo`, o app do gateway no Entra, do 3 ao 5; e, no 5, `additional-providers: [ldap]` com o `ldap` do diretório ao lado do `oidc`.
+- O que vem entre `<` e `>` é do ambiente: `tenant-id` e `client-id` do `obo` e o `bucket` do S3. Troque no arquivo ou passe por variável (`GATEWAY_SECURITY_OBO_CLIENT_ID`, `GATEWAY_ROUTES_STORE_S3_BUCKET`).
+- Segredo nenhum entra no arquivo: o cabeçalho de cada um lista as variáveis que o cenário pede (client secret do Keycloak, chave do cookie de sessão, senha do diretório, segredo do app no Entra).
+- `gateway.traffic.trusted-proxies` é o número de proxies na frente do gateway (o nginx-lb). É dele que o rate limit com `key: ip` tira o endereço do cliente.
 
 ## Regras entre os campos
 

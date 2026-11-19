@@ -1,20 +1,15 @@
 # Cenário 2: o gateway usa o Keycloak com LDAP. Store: properties (v1).
 #
-# Profiles: standalone-sso,keycloak. O login é com usuário e senha na tela do
-# Keycloak, que valida a senha no AD pela federação LDAP do realm. Sem Identity
-# Provider no realm não há OBO.
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
 #
-# A aud por rota sai da troca V2 do Keycloak 26.2 ou mais novo (o lab usa o
-# 26.8.2): o realm precisa do client abc-api e de um client scope opcional de
-# mesmo nome, que o gateway pede na troca.
+# Campo da ETT-1452: audience.
+# Cada audience é um client do realm, com um client scope opcional de mesmo nome:
+# o gateway pede audience=<client> e scope=<client> na troca V2.
 
 gateway:
-  security:
-    enabled: true
-    default-access: authenticated
   routes:
     store:
-      type: properties
       properties:
         version: "cenario-2-keycloak-ldap"
         routes:

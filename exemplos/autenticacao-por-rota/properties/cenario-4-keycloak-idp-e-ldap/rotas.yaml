@@ -1,27 +1,17 @@
-# Cenário 3: o gateway usa o Keycloak com Identity Provider. Store: properties (v1).
+# Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: properties (v1).
 #
-# Profiles: standalone-sso,keycloak. O login é pela Microsoft: o Keycloak faz o
-# broker com o Entra (IdP microsoft) e não tem federação LDAP. No realm, o IdP
-# precisa de storeToken, offline_access e do escopo da API do gateway no login
-# (para o OBO), e de um first broker login que crie o usuário: o
-# vincular-usuario-do-ad do lab recusa quem não está no AD federado.
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
 #
-# Campos da ETT-1452: identity-provider, audience, obo e o bloco obo do gateway.
+# Campos da ETT-1452: identity-provider, audience e obo.
+# Cada audience é um client do realm, com um client scope opcional de mesmo nome:
+# o gateway pede audience=<client> e scope=<client> na troca V2.
 
 gateway:
-  security:
-    enabled: true
-    default-access: authenticated
-    # O app do gateway no Entra, usado pelo access.obo. O segredo vem por
-    # variável, como os outros: GATEWAY_SECURITY_OBO_CLIENT_SECRET.
-    obo:
-      tenant-id: <tenant do Entra>
-      client-id: <client id do app do gateway no Entra>
   routes:
     store:
-      type: properties
       properties:
-        version: "cenario-3-keycloak-idp"
+        version: "cenario-4-keycloak-idp-e-ldap"
         routes:
           # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
           - id: public-api
@@ -37,8 +27,26 @@ gateway:
               period: 10s
               key: ip
 
+          # LDAP pelo Keycloak: aceita quem entrou com senha ou pela Microsoft,
+          # porque é o mesmo usuário do AD.
+          - id: abc
+            path: /abc/**
+            target-uri: http://abc-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: abc-team
+            description: Usuários com a role abc-user.
+            access:
+              any-of:
+                - role:abc-user
+              forward-token: true           # o backend recebe um token
+              audience: abc-api             # troca V2: aud=abc-api (client no realm)
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
+
           # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
-          # Neste realm todo login vem de lá; o identity-provider garante isso se outro login for ligado.
+          # Quem entrou com senha faz login de novo pela Microsoft.
           - id: business-monitor
             path: /business-monitor/**
             target-uri: http://business-monitor.platform.svc.cluster.local:8080

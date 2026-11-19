@@ -1,0 +1,136 @@
+# Cenário 3: o gateway usa o Keycloak com Identity Provider. Store: S3 (v2).
+#
+# A configuração do gateway neste cenário, num arquivo só; as rotas estão em
+# rotas.yaml, ao lado. No gateway deste repositório é o que os profiles montam:
+# SPRING_PROFILES_ACTIVE=s3,keycloak (gateway/src/main/resources).
+#
+# O login é pela Microsoft: o Keycloak faz o broker com o Entra (IdP microsoft)
+# e não tem federação LDAP. No realm, o IdP precisa de storeToken, offline_access
+# e do escopo da API do gateway no login (para o OBO), e de um first broker login
+# que crie o usuário: o vincular-usuario-do-ad do lab recusa quem não está no AD
+# federado.
+#
+# Valores do lab (k3d). Em outro ambiente, sobrescreva por variável de ambiente
+# (gateway.security.public-base-url -> GATEWAY_SECURITY_PUBLIC_BASE_URL).
+# Segredos nunca ficam neste arquivo, só por variável de ambiente ou Secret:
+#   GATEWAY_SECURITY_OIDC_CLIENT_SECRET      client secret do client tools-gateway
+#   GATEWAY_SECURITY_SESSION_KEYS_0_ID       id da chave do cookie de sessão (ex.: k1)
+#   GATEWAY_SECURITY_SESSION_KEYS_0_SECRET   base64 de 32 bytes (openssl rand -base64 32)
+#   GATEWAY_SECURITY_OBO_CLIENT_SECRET       client secret do app do gateway no Entra
+#   AWS_ACCESS_KEY_ID                        chave de acesso ao bucket (cadeia padrão do AWS SDK)
+#   AWS_SECRET_ACCESS_KEY                    segredo dessa chave
+
+spring:
+  application:
+    name: dynamic-gateway
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            pool:
+              # NAT e firewall no caminho até um backend externo derrubam conexão parada
+              # sem avisar; reaproveitada, ela pendurava a requisição até o nginx-lb dar 504.
+              # Ociosa por mais de 20s, a conexão é fechada em vez de voltar ao uso.
+              max-idle-time: 20s
+              eviction-interval: 10s
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+gateway:
+  routes:
+    store:
+      # v2: o operator grava o snapshot dos GatewayRoute neste objeto (rotas.yaml é
+      # o conteúdo dele), e o gateway acompanha o objeto por polling de ETag.
+      type: s3
+      s3:
+        bucket: <bucket>                     # GATEWAY_ROUTES_STORE_S3_BUCKET
+        key: snapshots/routes.yaml
+        region: us-east-1
+        poll-interval: 15s
+  security:
+    enabled: true
+    provider: keycloak
+    # Rota sem bloco access exige login. Com "public", só as rotas com access protegem.
+    default-access: authenticated
+    # URL que o navegador usa para chegar no gateway (redirect do login e do logout).
+    public-base-url: http://localhost:8080
+    oidc:
+      registration-id: keycloak
+      # Issuer público: tem que ser igual ao iss dos tokens (KC_HOSTNAME do Keycloak).
+      issuer: ${gateway.security.public-base-url}/auth/realms/tools
+      # O mesmo realm visto de dentro do cluster (token, troca de token, JWKS e logout).
+      internal-issuer: http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools
+      client-id: tools-gateway
+      # O access token do login (token A) precisa trazer este aud.
+      audience: tools-gateway
+      # Claim typ do Keycloak: impede usar ID token como bearer.
+      required-token-type: Bearer
+      # De qual provedor de identidade do realm veio a sessão (mapper de nota de
+      # sessão identity_provider no client): as rotas com access.identityProvider
+      # comparam com ela.
+      identity-provider-claim: identity_provider
+      scopes:
+        - openid
+        - profile
+        - email
+    authorities:
+      # Grupos do token -> group:<nome>. Sem federação LDAP no realm, as rotas daqui
+      # usam roles.
+      group-claims:
+        - groups
+      # Só as roles do client do gateway -> role:<nome>. Role de realm fica de fora:
+      # uma role de mesmo nome criada para outra aplicação liberaria rotas aqui.
+      role-claims:
+        - "resource_access.{client-id}.roles"
+      # Outros tipos: <tipo> -> claims. Claim em texto é separado por espaço.
+      claims:
+        scope:
+          - scope
+    internal:
+      # Quem opera o gateway (GET /internal/routes). Não abre nenhuma ferramenta.
+      any-of:
+        - role:gateway-admin
+    identity-headers:
+      prefix: X-Auth-Request-
+      max-length: 4096
+    session:
+      cookie-name: GW_SESSION
+      authz-cookie-name: GW_AUTHZ
+      # Em http local: GATEWAY_SECURITY_SESSION_COOKIE_SECURE=false.
+      cookie-secure: true
+      cache-max-entries: 10000
+      # O logout avisa as outras réplicas por aqui (Service headless, um endereço por
+      # pod), para a cópia do cookie parar de valer em todas na hora.
+      peers: dynamic-gateway-headless:8080
+    # O app do gateway no Entra, para as rotas com access.obo; sem o client-id, a rota
+    # com obo não é servida. É o mesmo App Registration do provedor microsoft do
+    # realm: o token da Microsoft que o Keycloak guarda no login (storeToken) e que vai
+    # no OBO sai com a aud dele.
+    obo:
+      tenant-id: <tenant do Entra>
+      client-id: <client id do app do gateway no Entra>
+  audit:
+    # Um evento JSON por requisição no logger AUDIT, para o SIEM, sem a query string.
+    enabled: true
+    include-query: false
+  traffic:
+    # Proxies na frente do gateway que acrescentam o cliente ao X-Forwarded-For (o
+    # nginx-lb). O rate limit com key: ip lê a entrada do proxy mais externo, nunca
+    # uma que o cliente mandou.
+    trusted-proxies: 1

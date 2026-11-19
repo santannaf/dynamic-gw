@@ -1,10 +1,11 @@
 # Cenário 1: o gateway faz o LDAP direto. Store: CRD (v2, snapshot no ConfigMap).
 #
-# Profile do gateway: ldap. São as mesmas rotas de
-# properties/cenario-1-ldap-direto.yaml, onde estão a explicação do cenário e a
-# configuração do gateway.
+# Os GatewayRoute que o time aplica. O operator consolida as rotas num snapshot
+# no ConfigMap gateway-routes, que o gateway do application.yaml, ao lado,
+# acompanha. São as mesmas rotas de properties/cenario-1-ldap-direto/rotas.yaml.
 #
 # Nenhum campo da ETT-1452.
+# Sem token, forward-token, audience, identity-provider e obo não se aplicam.
 
 # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
 apiVersion: platform.saca.pags/v1alpha1

@@ -1,10 +1,10 @@
 # Cenário 3: o gateway usa o Keycloak com Identity Provider. Store: S3 (v2).
 #
-# Profiles do gateway: s3,keycloak. O time escreve os GatewayRoute de
-# crd/cenario-3-keycloak-idp.yaml; este é o objeto que o operator grava em
-# s3://<bucket>/snapshots/routes.yaml e que o gateway lê por polling de ETag.
-# Formato do SnapshotCodec: rotas em ordem de id, strings entre aspas e campo
-# vazio como null. Os campos da ETT-1452 entram depois do forwardToken.
+# O time escreve os GatewayRoute de crd/cenario-3-keycloak-idp/rotas.yaml; este é o
+# objeto que o operator grava em s3://<bucket>/snapshots/routes.yaml e que o
+# gateway do application.yaml, ao lado, lê por polling de ETag. Formato do
+# SnapshotCodec: rotas em ordem de id, strings entre aspas e campo vazio como
+# null. Os campos da ETT-1452 entram depois do forwardToken.
 #
 # Um gateway anterior à ETT-1452 lê este objeto, descarta esses campos e serve
 # as rotas sem as checagens: atualize o gateway antes do operator.

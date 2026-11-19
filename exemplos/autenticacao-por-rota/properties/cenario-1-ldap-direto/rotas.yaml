@@ -1,18 +1,14 @@
 # Cenário 1: o gateway faz o LDAP direto. Store: properties (v1).
 #
-# Profiles: standalone-sso,ldap. O gateway mostra o próprio formulário de login
-# (/_gateway/login) e valida usuário e senha no AD; o endereço do AD, a conta de
-# serviço e as buscas vêm de ldap-directory/application-ldap-directory.yaml.
-# Não há token: o backend recebe só os headers X-Auth-Request-*, então
-# forward-token, audience, identity-provider e obo não se aplicam.
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
+#
+# Nenhum campo da ETT-1452.
+# Sem token, forward-token, audience, identity-provider e obo não se aplicam.
 
 gateway:
-  security:
-    enabled: true
-    default-access: authenticated
   routes:
     store:
-      type: properties
       properties:
         version: "cenario-1-ldap-direto"
         routes:

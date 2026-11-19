@@ -1,28 +1,18 @@
-# Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: properties (v1).
+# Cenário 5: o gateway faz o LDAP direto e usa o Keycloak com Identity Provider. Store: properties (v1).
 #
-# Profiles: standalone-sso,keycloak. É o realm do lab: login com usuário
-# e senha (federação LDAP) ou pela Microsoft (IdP microsoft, com o fluxo
-# vincular-usuario-do-ad, que associa pelo e-mail ao usuário do AD). Rota sem
-# identity-provider aceita os dois logins, porque é o mesmo usuário do AD. Rota
-# com identity-provider: microsoft só aceita quem entrou pela Microsoft; quem
-# entrou com senha faz login de novo (kc_idp_hint=microsoft e prompt=login).
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
 #
-# Campos da ETT-1452: identity-provider, audience, obo e o bloco obo do gateway.
+# Campos da ETT-1452: channel, identity-provider, audience e obo.
+# A rota sem access.channel é do canal principal (keycloak).
+# Cada audience é um client do realm, com um client scope opcional de mesmo nome:
+# o gateway pede audience=<client> e scope=<client> na troca V2.
 
 gateway:
-  security:
-    enabled: true
-    default-access: authenticated
-    # O app do gateway no Entra, usado pelo access.obo. O segredo vem por
-    # variável, como os outros: GATEWAY_SECURITY_OBO_CLIENT_SECRET.
-    obo:
-      tenant-id: <tenant do Entra>
-      client-id: <client id do app do gateway no Entra>
   routes:
     store:
-      type: properties
       properties:
-        version: "cenario-4-keycloak-idp-e-ldap"
+        version: "cenario-5-ldap-direto-e-keycloak-idp"
         routes:
           # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
           - id: public-api
@@ -38,26 +28,24 @@ gateway:
               period: 10s
               key: ip
 
-          # LDAP pelo Keycloak: aceita quem entrou com senha ou pela Microsoft,
-          # porque é o mesmo usuário do AD.
+          # LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
           - id: abc
             path: /abc/**
             target-uri: http://abc-api.platform.svc.cluster.local:8080
             strip-prefix: 1
             team: abc-team
-            description: Usuários com a role abc-user.
+            description: Membros do grupo abc-users no AD.
             access:
+              channel: ldap                 # o canal de additional-providers
               any-of:
-                - role:abc-user
-              forward-token: true           # o backend recebe um token
-              audience: abc-api             # troca V2: aud=abc-api (client no realm)
+                - group:abc-users
             rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
               requests: 10
               period: 10s
               key: user
 
           # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
-          # Quem entrou com senha faz login de novo pela Microsoft.
+          # Neste realm todo login vem de lá; o identity-provider garante isso se outro login for ligado.
           - id: business-monitor
             path: /business-monitor/**
             target-uri: http://business-monitor.platform.svc.cluster.local:8080

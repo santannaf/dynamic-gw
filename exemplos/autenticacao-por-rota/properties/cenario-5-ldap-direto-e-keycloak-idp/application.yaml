@@ -1,0 +1,174 @@
+# Cenário 5: o gateway faz o LDAP direto e usa o Keycloak com Identity Provider. Store: properties (v1).
+#
+# A configuração do gateway neste cenário, num arquivo só; as rotas estão em
+# rotas.yaml, ao lado. No gateway deste repositório é o que os profiles montam:
+# SPRING_PROFILES_ACTIVE=standalone-sso,keycloak-ldap (gateway/src/main/resources).
+#
+# Dois canais no mesmo gateway, o único cenário assim. O keycloak é o principal
+# e faz o login pela Microsoft, como no cenário 3. O ldap (additional-providers)
+# faz o LDAP direto, como no cenário 1, só nas rotas com access.channel: ldap,
+# com a sessão no cookie GW_SESSION_LDAP. O gateway tem a configuração dos dois:
+# oidc e obo do lado do Keycloak, ldap do lado do diretório.
+#
+# Valores do lab (k3d). Em outro ambiente, sobrescreva por variável de ambiente
+# (gateway.security.public-base-url -> GATEWAY_SECURITY_PUBLIC_BASE_URL).
+# Segredos nunca ficam neste arquivo, só por variável de ambiente ou Secret:
+#   GATEWAY_SECURITY_OIDC_CLIENT_SECRET      client secret do client tools-gateway
+#   GATEWAY_SECURITY_SESSION_KEYS_0_ID       id da chave do cookie de sessão (ex.: k1)
+#   GATEWAY_SECURITY_SESSION_KEYS_0_SECRET   base64 de 32 bytes (openssl rand -base64 32)
+#   GATEWAY_SECURITY_LDAP_BIND_PASSWORD      senha da conta de serviço do diretório
+#   GATEWAY_SECURITY_OBO_CLIENT_SECRET       client secret do app do gateway no Entra
+
+spring:
+  application:
+    name: dynamic-gateway
+  config:
+    # As rotas do v1, ao lado. No binário nativo, registre rotas.yaml como recurso
+    # (RuntimeHints): o Spring Boot só embarca sozinho os application*.yaml.
+    import: rotas.yaml
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            pool:
+              # NAT e firewall no caminho até um backend externo derrubam conexão parada
+              # sem avisar; reaproveitada, ela pendurava a requisição até o nginx-lb dar 504.
+              # Ociosa por mais de 20s, a conexão é fechada em vez de voltar ao uso.
+              max-idle-time: 20s
+              eviction-interval: 10s
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+gateway:
+  routes:
+    store:
+      # v1: as rotas vêm de rotas.yaml (gateway.routes.store.properties), sem
+      # operator nem CRD. Mudar rota é rebuild da imagem e rollout.
+      type: properties
+  security:
+    enabled: true
+    provider: keycloak                       # canal principal: rotas sem access.channel
+    # Rota sem bloco access exige login. Com "public", só as rotas com access protegem.
+    default-access: authenticated
+    # O canal ldap ao lado do keycloak, para as rotas com access.channel: ldap.
+    additional-providers:
+      - ldap
+    # URL que o navegador usa para chegar no gateway (redirect do login e do logout).
+    public-base-url: http://localhost:8080
+    oidc:
+      registration-id: keycloak
+      # Issuer público: tem que ser igual ao iss dos tokens (KC_HOSTNAME do Keycloak).
+      issuer: ${gateway.security.public-base-url}/auth/realms/tools
+      # O mesmo realm visto de dentro do cluster (token, troca de token, JWKS e logout).
+      internal-issuer: http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools
+      client-id: tools-gateway
+      # O access token do login (token A) precisa trazer este aud.
+      audience: tools-gateway
+      # Claim typ do Keycloak: impede usar ID token como bearer.
+      required-token-type: Bearer
+      # De qual provedor de identidade do realm veio a sessão (mapper de nota de
+      # sessão identity_provider no client): as rotas com access.identityProvider
+      # comparam com ela.
+      identity-provider-claim: identity_provider
+      scopes:
+        - openid
+        - profile
+        - email
+    authorities:
+      # Grupos do token -> group:<nome>. Sem federação LDAP no realm, as rotas do
+      # canal keycloak usam roles.
+      group-claims:
+        - groups
+      # Só as roles do client do gateway -> role:<nome>. Role de realm fica de fora:
+      # uma role de mesmo nome criada para outra aplicação liberaria rotas aqui.
+      role-claims:
+        - "resource_access.{client-id}.roles"
+      # Outros tipos: <tipo> -> claims. Claim em texto é separado por espaço.
+      claims:
+        scope:
+          - scope
+    internal:
+      # Quem opera o gateway (GET /internal/routes) entra por qualquer um dos dois canais.
+      any-of:
+        - role:gateway-admin                 # pelo Keycloak
+        - group:gateway-admins               # pelo LDAP direto
+    identity-headers:
+      prefix: X-Auth-Request-
+      max-length: 4096
+    session:
+      cookie-name: GW_SESSION
+      authz-cookie-name: GW_AUTHZ
+      # Em http local: GATEWAY_SECURITY_SESSION_COOKIE_SECURE=false.
+      cookie-secure: true
+      # Tempo máximo da sessão do canal ldap (GW_SESSION_LDAP): no LDAP direto não
+      # existe sessão central para encerrar.
+      max-age: 10h
+      cache-max-entries: 10000
+      # O logout avisa as outras réplicas por aqui (Service headless, um endereço por
+      # pod), para a cópia do cookie parar de valer em todas na hora.
+      peers: dynamic-gateway-headless:8080
+    # O diretório do lab (OpenLDAP no lugar do AD). AD de produção, para referência:
+    #   url: ldaps://ad.corp.local:636            trusted-certificates: /etc/ssl/corp-ca.pem
+    #   bind-dn: CN=svc-tools-gateway,OU=Services,DC=corp,DC=local
+    #   user-search:  base OU=Users,DC=corp,DC=local        filter (sAMAccountName={0})
+    #   username-attribute: sAMAccountName                  subject-attribute: objectGUID
+    #   group-search: base OU=Tools,OU=Groups,DC=corp,DC=local
+    #                 filter (member:1.2.840.113556.1.4.1941:={0})   (grupos aninhados)
+    ldap:
+      url: ldap://openldap.platform.svc.cluster.local:389
+      start-tls: false
+      connect-timeout: 5s
+      response-timeout: 5s
+      pool-size: 4
+      # Conta de serviço SOMENTE LEITURA, que acha usuários e grupos.
+      bind-dn: cn=readonly,dc=tools,dc=local
+      user-search:
+        base: ou=people,dc=tools,dc=local
+        filter: "(uid={0})"
+      username-attribute: uid
+      email-attribute: mail
+      subject-attribute: entryUUID
+      group-search:
+        # A OU da aplicação: só grupos daqui viram autoridades group:<cn>.
+        base: ou=tools,dc=tools,dc=local
+        filter: "(member={0})"
+        name-attribute: cn
+      # De quanto em quanto tempo cada réplica relê o usuário no diretório (conta
+      # desabilitada ou removida do grupo perde o acesso nesse prazo).
+      revalidate-after: 5m
+      login-attempts:
+        max-failures: 5
+        max-failures-per-client: 20
+        window: 5m
+    # O app do gateway no Entra, para as rotas com access.obo; sem o client-id, a rota
+    # com obo não é servida. É o mesmo App Registration do provedor microsoft do
+    # realm: o token da Microsoft que o Keycloak guarda no login (storeToken) e que vai
+    # no OBO sai com a aud dele.
+    obo:
+      tenant-id: <tenant do Entra>
+      client-id: <client id do app do gateway no Entra>
+  audit:
+    # Um evento JSON por requisição no logger AUDIT, para o SIEM, sem a query string.
+    enabled: true
+    include-query: false
+  traffic:
+    # Proxies na frente do gateway que acrescentam o cliente ao X-Forwarded-For (o
+    # nginx-lb). O rate limit com key: ip lê a entrada do proxy mais externo, nunca
+    # uma que o cliente mandou.
+    trusted-proxies: 1

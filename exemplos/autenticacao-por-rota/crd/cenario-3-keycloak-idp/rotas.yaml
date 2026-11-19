@@ -1,12 +1,14 @@
-# Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: CRD (v2, snapshot no ConfigMap).
+# Cenário 3: o gateway usa o Keycloak com Identity Provider. Store: CRD (v2, snapshot no ConfigMap).
 #
-# Profile do gateway: keycloak. São as mesmas rotas de
-# properties/cenario-4-keycloak-idp-e-ldap.yaml, onde estão a explicação do cenário e a
-# configuração do gateway.
+# Os GatewayRoute que o time aplica. O operator consolida as rotas num snapshot
+# no ConfigMap gateway-routes, que o gateway do application.yaml, ao lado,
+# acompanha. São as mesmas rotas de properties/cenario-3-keycloak-idp/rotas.yaml.
 #
-# Campos da ETT-1452: identity-provider, audience e obo.
+# Campos da ETT-1452: identityProvider, audience e obo.
+# Cada audience é um client do realm, com um client scope opcional de mesmo nome:
+# o gateway pede audience=<client> e scope=<client> na troca V2.
 # O schema do access, com as regras entre os campos em CEL, está em
-# schema-access.yaml (o mesmo de k8s/crd/).
+# ../schema-access.yaml (o mesmo de k8s/crd/).
 
 # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
 apiVersion: platform.saca.pags/v1alpha1
@@ -27,31 +29,8 @@ spec:
     period: 10s
     key: ip
 ---
-# LDAP pelo Keycloak: aceita quem entrou com senha ou pela Microsoft,
-# porque é o mesmo usuário do AD.
-apiVersion: platform.saca.pags/v1alpha1
-kind: GatewayRoute
-metadata:
-  name: abc
-  namespace: platform
-spec:
-  path: /abc/**
-  targetUri: http://abc-api.platform.svc.cluster.local:8080
-  stripPrefix: 1
-  team: abc-team
-  description: Usuários com a role abc-user.
-  access:
-    anyOf:
-      - role:abc-user
-    forwardToken: true           # o backend recebe um token
-    audience: abc-api            # troca V2: aud=abc-api (client no realm)
-  rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
-    requests: 10
-    period: 10s
-    key: user
----
 # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
-# Quem entrou com senha faz login de novo pela Microsoft.
+# Neste realm todo login vem de lá; o identity-provider garante isso se outro login for ligado.
 apiVersion: platform.saca.pags/v1alpha1
 kind: GatewayRoute
 metadata:
