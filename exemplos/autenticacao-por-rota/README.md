@@ -12,6 +12,20 @@ Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implem
 
 O cenário 4 é o realm do lab. O 5 é o único com dois canais no mesmo gateway: duas sessões (`GW_SESSION` e `GW_SESSION_LDAP`), dois logins e a configuração dos dois provedores juntas.
 
+## Desenhos
+
+Um PNG por cenário e estratégia, em `desenhos/<cenário>/`. Cada desenho mostra o sistema do cenário, e o que a estratégia não usa fica em cinza claro. O caminho da requisição vem numerado, passando pelas etapas do gateway (acesso, rate limit, throttling, token do backend e proxy). Ao lado ficam o passo a passo, a rota, o que o backend recebe e as recusas. O desenho vale para os três stores, porque o store só muda de onde o gateway lê as rotas.
+
+| Cenário | PUBLIC | LDAP | IDENTITY_PROVIDER | OBO |
+|---|---|---|---|---|
+| 1 | [public](desenhos/cenario-1-ldap-direto/1-public.png) | [direto](desenhos/cenario-1-ldap-direto/2-ldap-direto.png) | | |
+| 2 | [public](desenhos/cenario-2-keycloak-ldap/1-public.png) | [pelo Keycloak](desenhos/cenario-2-keycloak-ldap/2-ldap-keycloak.png) | | |
+| 3 | [public](desenhos/cenario-3-keycloak-idp/1-public.png) | | [identity-provider](desenhos/cenario-3-keycloak-idp/2-identity-provider.png) | [obo](desenhos/cenario-3-keycloak-idp/3-obo.png) |
+| 4 | [public](desenhos/cenario-4-keycloak-idp-e-ldap/1-public.png) | [pelo Keycloak](desenhos/cenario-4-keycloak-idp-e-ldap/2-ldap-keycloak.png) | [identity-provider](desenhos/cenario-4-keycloak-idp-e-ldap/3-identity-provider.png) | [obo](desenhos/cenario-4-keycloak-idp-e-ldap/4-obo.png) |
+| 5 | [public](desenhos/cenario-5-ldap-direto-e-keycloak-idp/1-public.png) | [direto](desenhos/cenario-5-ldap-direto-e-keycloak-idp/2-ldap-direto.png) | [identity-provider](desenhos/cenario-5-ldap-direto-e-keycloak-idp/3-identity-provider.png) | [obo](desenhos/cenario-5-ldap-direto-e-keycloak-idp/4-obo.png) |
+
+Tracejado é o login, uma vez por sessão; contínuo, o que acontece a cada requisição; pontilhado, a auditoria. Laranja é Keycloak, azul é Entra ID e verde é AD.
+
 ## Pastas
 
 Uma pasta por store e, dentro dela, uma por cenário (`properties/cenario-3-keycloak-idp/`, por exemplo), com dois arquivos:
