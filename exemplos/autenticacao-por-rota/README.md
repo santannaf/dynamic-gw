@@ -1,6 +1,6 @@
 # Autenticação por rota: exemplos por cenário
 
-Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implementado na ETT-1452. Cada pasta é um cenário de gateway em um store, com a configuração do gateway (`application.yaml`) e as rotas (`rotas.yaml`), uma por estratégia que o cenário comporta. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts: as rotas que o lab usa estão na seção [No lab](#no-lab).
+Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implementado na ETT-1452. Cada pasta é um cenário de gateway em um store, com a configuração do gateway (`application.yaml`), as rotas (`rotas.yaml`, uma por estratégia que o cenário comporta) e um desenho por estratégia. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts: as rotas que o lab usa estão na seção [No lab](#no-lab).
 
 | Cenário | O gateway | Estratégias | Profiles do gateway (properties · crd · s3) | Campos da ETT-1452 |
 |---|---|---|---|---|
@@ -14,24 +14,25 @@ O cenário 4 é o realm do lab. O 5 é o único com dois canais no mesmo gateway
 
 ## Desenhos
 
-Um PNG por cenário e estratégia, em `desenhos/<cenário>/`. Cada desenho mostra o sistema do cenário, e o que a estratégia não usa fica em cinza claro. O caminho da requisição vem numerado, passando pelas etapas do gateway (acesso, rate limit, throttling, token do backend e proxy). Ao lado ficam o passo a passo, a rota, o que o backend recebe e as recusas. O desenho vale para os três stores, porque o store só muda de onde o gateway lê as rotas.
+Cada pasta de cenário tem, ao lado dos YAML, um PNG por estratégia: `desenho-<n>-<estratégia>.png`. O desenho mostra o sistema do cenário, e o que a estratégia não usa fica em cinza claro. O caminho da requisição vem numerado, passando pelas etapas do gateway (acesso, rate limit, throttling, token do backend e proxy). Embaixo aparece de onde vêm as rotas naquele store: o `rotas.yaml` na imagem (properties) ou o operator gravando o snapshot no ConfigMap (crd) ou no S3 (s3). Ao lado ficam o passo a passo, a rota como está no `rotas.yaml` da pasta, o que o backend recebe e as recusas. Exemplo: [`crd/cenario-4-keycloak-idp-e-ldap/desenho-4-obo.png`](crd/cenario-4-keycloak-idp-e-ldap/desenho-4-obo.png).
 
-| Cenário | PUBLIC | LDAP | IDENTITY_PROVIDER | OBO |
-|---|---|---|---|---|
-| 1 | [public](desenhos/cenario-1-ldap-direto/1-public.png) | [direto](desenhos/cenario-1-ldap-direto/2-ldap-direto.png) | | |
-| 2 | [public](desenhos/cenario-2-keycloak-ldap/1-public.png) | [pelo Keycloak](desenhos/cenario-2-keycloak-ldap/2-ldap-keycloak.png) | | |
-| 3 | [public](desenhos/cenario-3-keycloak-idp/1-public.png) | | [identity-provider](desenhos/cenario-3-keycloak-idp/2-identity-provider.png) | [obo](desenhos/cenario-3-keycloak-idp/3-obo.png) |
-| 4 | [public](desenhos/cenario-4-keycloak-idp-e-ldap/1-public.png) | [pelo Keycloak](desenhos/cenario-4-keycloak-idp-e-ldap/2-ldap-keycloak.png) | [identity-provider](desenhos/cenario-4-keycloak-idp-e-ldap/3-identity-provider.png) | [obo](desenhos/cenario-4-keycloak-idp-e-ldap/4-obo.png) |
-| 5 | [public](desenhos/cenario-5-ldap-direto-e-keycloak-idp/1-public.png) | [direto](desenhos/cenario-5-ldap-direto-e-keycloak-idp/2-ldap-direto.png) | [identity-provider](desenhos/cenario-5-ldap-direto-e-keycloak-idp/3-identity-provider.png) | [obo](desenhos/cenario-5-ldap-direto-e-keycloak-idp/4-obo.png) |
+| Cenário | Desenhos na pasta do cenário, em cada store |
+|---|---|
+| 1 | `desenho-1-public.png`, `desenho-2-ldap-direto.png` |
+| 2 | `desenho-1-public.png`, `desenho-2-ldap-keycloak.png` |
+| 3 | `desenho-1-public.png`, `desenho-2-identity-provider.png`, `desenho-3-obo.png` |
+| 4 | `desenho-1-public.png`, `desenho-2-ldap-keycloak.png`, `desenho-3-identity-provider.png`, `desenho-4-obo.png` |
+| 5 | `desenho-1-public.png`, `desenho-2-ldap-direto.png`, `desenho-3-identity-provider.png`, `desenho-4-obo.png` |
 
-Tracejado é o login, uma vez por sessão; contínuo, o que acontece a cada requisição; pontilhado, a auditoria. Laranja é Keycloak, azul é Entra ID e verde é AD.
+Tracejado é o login, uma vez por sessão; contínuo, o que acontece a cada requisição; pontilhado, a auditoria. Laranja é Keycloak, azul é Entra ID, verde é AD e cinza, as rotas que vêm do store.
 
 ## Pastas
 
-Uma pasta por store e, dentro dela, uma por cenário (`properties/cenario-3-keycloak-idp/`, por exemplo), com dois arquivos:
+Uma pasta por store e, dentro dela, uma por cenário (`properties/cenario-3-keycloak-idp/`, por exemplo), com:
 
 - `application.yaml`: a configuração do gateway no cenário, num arquivo só, com a explicação do cenário (realm, login, segredos). É o que os profiles da tabela acima montam neste gateway, com os valores do lab.
 - `rotas.yaml`: as rotas do cenário, no formato do store.
+- `desenho-<n>-<estratégia>.png`: um desenho por estratégia ([Desenhos](#desenhos)).
 
 | Store | `application.yaml` | `rotas.yaml` |
 |---|---|---|
