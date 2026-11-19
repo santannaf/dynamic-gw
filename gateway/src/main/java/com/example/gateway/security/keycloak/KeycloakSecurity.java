@@ -69,7 +69,11 @@ public final class KeycloakSecurity implements IdentityChannel {
     }
 
     public static KeycloakSecurity create(GatewaySecurityProperties properties, Clock clock) {
-        BrowserSession session = BrowserSession.from(properties, clock);
+        return create(properties, BrowserSession.from(properties, clock), clock);
+    }
+
+    /** With the browser session another channel of the same gateway shares. */
+    public static KeycloakSecurity create(GatewaySecurityProperties properties, BrowserSession session, Clock clock) {
         GatewaySecurityProperties.Oidc oidc = properties.getOidc();
         SecurityChains.requireText(oidc.getIssuer(), "gateway.security.oidc.issuer");
         SecurityChains.requireText(oidc.getClientId(), "gateway.security.oidc.client-id");

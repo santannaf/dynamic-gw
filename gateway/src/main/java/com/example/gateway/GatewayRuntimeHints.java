@@ -23,7 +23,8 @@ public class GatewayRuntimeHints implements RuntimeHintsRegistrar {
         hints.resources().registerPattern("static/favicon.ico");
         // Spring Boot only embeds the application*.yaml at the classpath root; the profile
         // files live in folders and application.yaml imports them.
-        for (String folder : new String[]{"keycloak", "ldap", "oauth", "s3", "properties"}) {
+        for (String folder : new String[]{"keycloak", "keycloak-ldap", "ldap", "ldap-directory", "oauth", "s3",
+                "properties"}) {
             hints.resources().registerPattern(folder + "/*.yaml");
         }
         hints.reflection()

@@ -19,6 +19,8 @@ import org.springframework.security.web.server.util.matcher.ServerWebExchangeMat
 /** Pieces of the Spring Security chain shared by every channel and by the disabled mode. */
 public final class SecurityChains {
 
+    public static final String INTERNAL_ROUTES_PATH = "/internal/routes";
+
     private SecurityChains() {
     }
 
@@ -65,7 +67,7 @@ public final class SecurityChains {
                         .authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(new HttpStatusServerAccessDeniedHandler(HttpStatus.FORBIDDEN)))
                 .authorizeExchange(exchanges -> exchanges
-                        .pathMatchers(HttpMethod.GET, "/internal/routes").hasAnyAuthority(internalAuthorities)
+                        .pathMatchers(HttpMethod.GET, INTERNAL_ROUTES_PATH).hasAnyAuthority(internalAuthorities)
                         .anyExchange().permitAll());
     }
 

@@ -13,23 +13,27 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.Optional;
+
 /**
  * Enforces the matched route's access policy before any route filter runs
  * and before the request is forwarded. The policy travels as route metadata
  * (see {@link RouteDefinitionMapper#ACCESS_METADATA_KEY}), so routes stay on
- * the fast compile path. The caller's identity was resolved earlier by the
- * security layer and left in {@link AccessAttributes#IDENTITY}.
+ * the fast compile path. The caller is the one of the route's channel
+ * ({@link AccessChannels}), and only that one stays in
+ * {@link AccessAttributes#IDENTITY} for the rate limit, the identity headers
+ * and the audit.
  */
 public class RouteAccessFilter implements GlobalFilter, Ordered {
 
     public static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 50;
 
     private final AccessSettings settings;
-    private final UnauthenticatedHandler unauthenticatedHandler;
+    private final AccessChannels channels;
 
-    public RouteAccessFilter(AccessSettings settings, UnauthenticatedHandler unauthenticatedHandler) {
+    public RouteAccessFilter(AccessSettings settings, AccessChannels channels) {
         this.settings = settings;
-        this.unauthenticatedHandler = unauthenticatedHandler;
+        this.channels = channels;
     }
 
     @Override
@@ -48,13 +52,25 @@ public class RouteAccessFilter implements GlobalFilter, Ordered {
                 : null;
         AccessPolicy policy = AccessPolicy.of(route.getId(), declared, settings.defaultMode());
         exchange.getAttributes().put(AccessAttributes.POLICY, policy);
-        GatewayIdentity identity = exchange.getAttribute(AccessAttributes.IDENTITY);
+        UnauthenticatedHandler unauthenticatedHandler = channels.unauthenticatedHandler(policy.channel());
+        return channels.identity(exchange, policy.channel())
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(found -> decide(exchange, chain, policy, found.orElse(null), unauthenticatedHandler));
+    }
 
+    private Mono<Void> decide(ServerWebExchange exchange, GatewayFilterChain chain, AccessPolicy policy,
+                              GatewayIdentity identity, UnauthenticatedHandler unauthenticatedHandler) {
+        if (identity == null) {
+            exchange.getAttributes().remove(AccessAttributes.IDENTITY);
+        } else {
+            exchange.getAttributes().put(AccessAttributes.IDENTITY, identity);
+        }
         if (!policy.requiresIdentity()) {
             return allow(exchange, chain, identity, policy);
         }
         if (identity == null) {
-            return rejectWithoutIdentity(exchange);
+            return rejectWithoutIdentity(exchange, unauthenticatedHandler);
         }
         if (policy.identityProvider() != null && !policy.identityProvider().equals(identity.identityProvider())) {
             exchange.getAttributes().put(AccessAttributes.DECISION, AccessDecision.WRONG_IDENTITY_PROVIDER);
@@ -74,7 +90,8 @@ public class RouteAccessFilter implements GlobalFilter, Ordered {
         return allow(exchange, chain, identity, policy);
     }
 
-    private Mono<Void> rejectWithoutIdentity(ServerWebExchange exchange) {
+    private static Mono<Void> rejectWithoutIdentity(ServerWebExchange exchange,
+                                                    UnauthenticatedHandler unauthenticatedHandler) {
         AccessProblem problem = exchange.getAttribute(AccessAttributes.PROBLEM);
         if (problem == AccessProblem.PROVIDER_UNAVAILABLE) {
             // Redirecting to a login that depends on the same unavailable

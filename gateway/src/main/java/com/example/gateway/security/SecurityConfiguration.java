@@ -59,7 +59,7 @@ public class SecurityConfiguration {
         if (!activeSecurity.enabled()) {
             return (exchange, chain) -> chain.filter(exchange);
         }
-        return new RouteAccessFilter(activeSecurity.accessSettings(), activeSecurity.unauthenticatedHandler());
+        return new RouteAccessFilter(activeSecurity.accessSettings(), activeSecurity.accessChannels());
     }
 
     @Bean

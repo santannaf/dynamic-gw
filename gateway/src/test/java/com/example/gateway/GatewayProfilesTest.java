@@ -47,7 +47,9 @@ class GatewayProfilesTest {
 
     private static final Map<String, String> PROFILE_FILES = Map.of(
             "keycloak", "keycloak/application-keycloak.yaml",
+            "keycloak-ldap", "keycloak-ldap/application-keycloak-ldap.yaml",
             "ldap", "ldap/application-ldap.yaml",
+            "ldap-directory", "ldap-directory/application-ldap-directory.yaml",
             "oauth", "oauth/application-oauth.yaml",
             "s3", "s3/application-s3.yaml",
             "standalone", "properties/application-standalone.yaml",
@@ -64,7 +66,10 @@ class GatewayProfilesTest {
                 Arguments.of(List.of("standalone-sso", "keycloak"), "properties", "keycloak"),
                 Arguments.of(List.of("standalone-sso", "ldap"), "properties", "ldap"),
                 Arguments.of(List.of("oauth"), "configmap", "oauth"),
-                Arguments.of(List.of("s3", "oauth"), "s3", "oauth"));
+                Arguments.of(List.of("s3", "oauth"), "s3", "oauth"),
+                Arguments.of(List.of("keycloak-ldap"), "configmap", "keycloak"),
+                Arguments.of(List.of("s3", "keycloak-ldap"), "s3", "keycloak"),
+                Arguments.of(List.of("standalone-sso", "keycloak-ldap"), "properties", "keycloak"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -156,6 +161,19 @@ class GatewayProfilesTest {
     }
 
     @Test
+    void keycloakLdapRunsTheLdapChannelNextToKeycloak() {
+        GatewaySecurityProperties security = bindStrictly(environment(List.of("keycloak-ldap"), Map.of()),
+                "gateway.security", GatewaySecurityProperties.class);
+
+        assertThat(security.getProvider()).isEqualTo("keycloak");
+        assertThat(security.getAdditionalProviders()).containsExactly("ldap");
+        assertThat(security.getOidc().getClientId()).isEqualTo("tools-gateway");
+        assertThat(security.getLdap().getUrl()).isEqualTo("ldap://openldap.platform.svc.cluster.local:389");
+        assertThat(security.getLdap().getGroupSearch().getBase()).isEqualTo("ou=tools,dc=tools,dc=local");
+        assertThat(security.getInternal().getAnyOf()).containsExactly("role:gateway-admin", "group:gateway-admins");
+    }
+
+    @Test
     void ldapOperatorsAreTheirOwnGroupBecauseTheDirectoryHasNoRoles() {
         GatewaySecurityProperties security = bindStrictly(environment(List.of("ldap"), Map.of()),
                 "gateway.security", GatewaySecurityProperties.class);
@@ -206,10 +224,17 @@ class GatewayProfilesTest {
         return PROFILE_FILES.keySet().stream().sorted();
     }
 
+    // Profile groups of application.yaml, in the order their files take precedence.
+    private static final Map<String, List<String>> PROFILE_GROUPS = Map.of(
+            "ldap", List.of("ldap", "ldap-directory"),
+            "keycloak-ldap", List.of("keycloak-ldap", "ldap-directory", "keycloak"));
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("profiles")
-    void eachProfileImportsOnlyTheFileInItsFolder(String profile) {
-        assertThat(importedFiles(environment(List.of(profile), Map.of()))).containsExactly(PROFILE_FILES.get(profile));
+    void eachProfileImportsOnlyTheFilesOfItsFolderAndItsGroup(String profile) {
+        assertThat(importedFiles(environment(List.of(profile), Map.of())))
+                .containsExactlyElementsOf(PROFILE_GROUPS.getOrDefault(profile, List.of(profile)).stream()
+                        .map(PROFILE_FILES::get).toList());
     }
 
     @Test
@@ -222,7 +247,8 @@ class GatewayProfilesTest {
         assertThat(importedFiles(environment(List.of("s3", "keycloak"), Map.of())))
                 .containsExactly(PROFILE_FILES.get("keycloak"), PROFILE_FILES.get("s3"));
         assertThat(importedFiles(environment(List.of("ldap", "standalone-sso"), Map.of())))
-                .containsExactly(PROFILE_FILES.get("ldap"), PROFILE_FILES.get("standalone-sso"));
+                .containsExactly(PROFILE_FILES.get("ldap"), PROFILE_FILES.get("ldap-directory"),
+                        PROFILE_FILES.get("standalone-sso"));
     }
 
     @ParameterizedTest(name = "{0}")

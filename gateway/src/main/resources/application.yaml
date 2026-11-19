@@ -1,6 +1,11 @@
 spring:
   application:
     name: dynamic-gateway
+  profiles:
+    group:
+      # A conexão com o diretório vale para o canal ldap sozinho e ao lado do keycloak.
+      ldap: ldap-directory
+      keycloak-ldap: keycloak, ldap-directory
   threads:
     virtual:
       enabled: true
@@ -84,6 +89,12 @@ spring:
 spring:
   config:
     activate:
+      on-profile: ldap-directory
+    import: classpath:ldap-directory/application-ldap-directory.yaml
+---
+spring:
+  config:
+    activate:
       on-profile: ldap
     import: classpath:ldap/application-ldap.yaml
 ---
@@ -92,3 +103,10 @@ spring:
     activate:
       on-profile: oauth
     import: classpath:oauth/application-oauth.yaml
+# Depois do keycloak: troca o internal.any-of dele pelo dos dois canais.
+---
+spring:
+  config:
+    activate:
+      on-profile: keycloak-ldap
+    import: classpath:keycloak-ldap/application-keycloak-ldap.yaml

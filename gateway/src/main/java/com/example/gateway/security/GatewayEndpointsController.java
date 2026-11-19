@@ -39,16 +39,28 @@ public class GatewayEndpointsController {
         this.security = security;
     }
 
+    /** The caller on the main channel, or on {@code channel} when the gateway has more than one. */
     @GetMapping("/whoami")
-    public ResponseEntity<Map<String, Object>> whoami(ServerWebExchange exchange) {
-        if (!security.enabled()) {
-            return ResponseEntity.notFound().build();
+    public Mono<ResponseEntity<Map<String, Object>>> whoami(
+            @RequestParam(name = "channel", required = false) String channel, ServerWebExchange exchange) {
+        if (!security.enabled() || (channel != null && !security.hasChannel(channel))) {
+            return Mono.just(ResponseEntity.notFound().build());
         }
         exchange.getAttributes().put(AccessAttributes.AUDIT_ACTION, WHOAMI_ACTION);
-        GatewayIdentity identity = exchange.getAttribute(AccessAttributes.IDENTITY);
-        if (identity == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("authenticated", false));
-        }
+        return security.identity(exchange, channel)
+                .map(identity -> {
+                    exchange.getAttributes().put(AccessAttributes.IDENTITY, identity);
+                    return ResponseEntity.ok(body(identity));
+                })
+                .defaultIfEmpty(ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("authenticated", false)))
+                .doOnNext(response -> {
+                    if (!response.getStatusCode().is2xxSuccessful()) {
+                        exchange.getAttributes().remove(AccessAttributes.IDENTITY);
+                    }
+                });
+    }
+
+    private static Map<String, Object> body(GatewayIdentity identity) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("authenticated", true);
         body.put("user", identity.username());
@@ -59,7 +71,7 @@ public class GatewayEndpointsController {
         body.put("clientId", identity.clientId());
         body.put("identityProvider", identity.identityProvider());
         body.put("expiresAt", identity.expiresAt() == null ? null : identity.expiresAt().toString());
-        return ResponseEntity.ok(body);
+        return body;
     }
 
     @GetMapping("/login/start")

@@ -206,6 +206,23 @@ class SecurityUnitsTest {
     }
 
     @Test
+    void onlyTheLdapChannelRunsNextToKeycloak() {
+        GatewaySecurityProperties oauthNextToKeycloak = enabledProperties();
+        oauthNextToKeycloak.setAdditionalProviders(List.of("oauth"));
+        GatewaySecurityProperties ldapNextToLdap = enabledProperties();
+        ldapNextToLdap.setProvider("ldap");
+        ldapNextToLdap.setAdditionalProviders(List.of("ldap"));
+        GatewaySecurityProperties ldapTwice = enabledProperties();
+        ldapTwice.setAdditionalProviders(List.of("ldap", "ldap"));
+
+        for (GatewaySecurityProperties properties : List.of(oauthNextToKeycloak, ldapNextToLdap, ldapTwice)) {
+            assertThatThrownBy(() -> ActiveSecurity.from(properties, Clock.systemUTC()))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("gateway.security.additional-providers supports only [ldap], next to provider keycloak");
+        }
+    }
+
+    @Test
     void channelWithoutSessionNeedsNoCookieKeyNorPublicUrl() {
         GatewaySecurityProperties properties = new GatewaySecurityProperties();
         properties.setEnabled(true);

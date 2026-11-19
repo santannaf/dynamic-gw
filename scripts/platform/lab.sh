@@ -12,7 +12,8 @@
 # Variáveis:
 #   HOST_PORT=18080      outra porta, na criação do cluster (default 8080)
 #   KEYCLOAK_DB=oracle   Keycloak sobre Oracle 26ai Free (default PostgreSQL)
-#   PROVIDER=ldap        login direto no OpenLDAP, sem Keycloak; PROVIDER=oauth: só tokens (default keycloak)
+#   PROVIDER=ldap        login direto no OpenLDAP, sem Keycloak; PROVIDER=oauth: só tokens (default keycloak);
+#                        PROVIDER=keycloak-ldap: os dois canais no mesmo gateway (só MODE=v2)
 #   MODE=s3              snapshot das rotas no MinIO; MODE=standalone: v1, sem operator (default v2)
 #   SKIP_BUILD=1         reusa as imagens locais, sem compilar
 #   MICROSOFT=entra      botão "Entrar com Microsoft" no Entra ID real, com MICROSOFT_TENANT_ID,
@@ -94,9 +95,9 @@ preflight() {
         *) fail "MODE must be v2, s3 or standalone (got '${MODE}')" ;;
     esac
     case "${PROVIDER}" in
-        keycloak|oauth) "${ROOT}/scripts/keycloak/keycloak.sh" check ;;
+        keycloak|oauth|keycloak-ldap) "${ROOT}/scripts/keycloak/keycloak.sh" check ;;
         ldap) ;;
-        *) fail "PROVIDER must be keycloak, ldap or oauth (got '${PROVIDER}')" ;;
+        *) fail "PROVIDER must be keycloak, ldap, oauth or keycloak-ldap (got '${PROVIDER}')" ;;
     esac
     [[ -f "${manifest}" ]] || fail "MODE=${MODE} has no manifest for PROVIDER=${PROVIDER} (${manifest})"
 
@@ -216,14 +217,15 @@ restart_with_new_images() {
 
 summary() {
     local elapsed=$(( $(date +%s) - STARTED )) test port_prefix=""
+    [[ "${HOST_PORT}" == "8080" ]] || port_prefix="HOST_PORT=${HOST_PORT} "
     case "${MODE}:${PROVIDER}" in
         standalone:*) test=standalone-sso-test ;;
         s3:*) test=s3-sso-test ;;
         *:ldap) test=ldap-test ;;
         *:oauth) test=oauth-test ;;
+        *:keycloak-ldap) test="sso-test; ${port_prefix}make two-channels-test" ;;
         *) test=sso-test ;;
     esac
-    [[ "${HOST_PORT}" == "8080" ]] || port_prefix="HOST_PORT=${HOST_PORT} "
     echo
     log "Lab ready in $((elapsed / 60))m$((elapsed % 60))s (${TARGET_OS} build, ${PLATFORM} images). kubectl context: $(kubectl config current-context)"
     echo "      Tests:              ${port_prefix}make ${test}; ${port_prefix}make policies-test"

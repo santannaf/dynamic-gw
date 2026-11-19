@@ -54,14 +54,15 @@ public class LdapSessionManager implements GatewaySessionManager {
     private final Duration revalidateAfter;
 
     public LdapSessionManager(SessionCookieCodec codec, SessionCookies cookies, SessionRevocations revocations,
-                              LdapDirectory directory, GatewaySecurityProperties properties, Clock clock) {
+                              LdapDirectory directory, GatewaySecurityProperties properties, Clock clock,
+                              String cookieName) {
         this.codec = codec;
         this.cookies = cookies;
         this.revocations = revocations;
         this.directory = directory;
         this.clock = clock;
         this.cache = new SessionCache<>(properties.getSession().getCacheMaxEntries(), clock);
-        this.cookieName = properties.getSession().getCookieName();
+        this.cookieName = cookieName;
         this.maxAge = properties.getSession().getMaxAge();
         this.revalidateAfter = properties.getLdap().getRevalidateAfter();
     }

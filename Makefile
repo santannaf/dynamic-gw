@@ -1,6 +1,7 @@
 .PHONY: lab linux mac cluster down clean-build jars images load-images bootstrap deploy \
         standalone-up standalone-down nginx-lb-up nginx-lb-down nginx-lb-pf \
         sso-up sso-down sso-test ldap-up ldap-test keycloak-reset keycloak-db-shell \
+        two-channels-up two-channels-test \
         oauth-up oauth-down oauth-test frontend-test \
         second-gateway-up second-gateway-down second-gateway-test \
         standalone-sso-up standalone-sso-down standalone-sso-test \
@@ -210,6 +211,15 @@ keycloak-db-shell:
 
 ldap-test:
 	./scripts/e2e/test-ldap.sh
+
+# Dois canais no mesmo gateway (provider keycloak + additional-providers ldap): as rotas de
+# routes-sso.yaml pelo Keycloak e as de routes-two-channels.yaml pelo formulário do gateway.
+# Derruba com make sso-down. O make sso-test também passa nesse gateway.
+two-channels-up:
+	PROVIDER=keycloak-ldap ./scripts/sso/deploy-sso.sh
+
+two-channels-test:
+	./scripts/e2e/test-two-channels.sh
 
 # Canal de exemplo sem sessão (provider=oauth): API pública, só tokens. O Keycloak
 # local faz o papel do authorization server.

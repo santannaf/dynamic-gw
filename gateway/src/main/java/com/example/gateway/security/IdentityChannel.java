@@ -41,6 +41,15 @@ public interface IdentityChannel extends AutoCloseable {
         return Set.of();
     }
 
+    /**
+     * Adds this channel next to the main one, for the routes with
+     * {@code access.channel}: its login, and nothing that takes over the main
+     * channel's requests (security context, entry point).
+     */
+    default ServerHttpSecurity configureAdditional(ServerHttpSecurity http) {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " cannot run next to another channel");
+    }
+
     /** Gets the token a route picks for its backend; only channels with tokens have one. */
     default UpstreamTokens upstreamTokens() {
         return UpstreamTokens.NONE;

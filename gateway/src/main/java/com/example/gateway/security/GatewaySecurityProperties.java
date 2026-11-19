@@ -17,6 +17,8 @@ public class GatewaySecurityProperties {
 
     private boolean enabled = false;
     private String provider = PROVIDER_KEYCLOAK;
+    /** Channels next to {@code provider}, for the routes with {@code access.channel}. */
+    private List<String> additionalProviders = new ArrayList<>();
     private String defaultAccess = "authenticated";
     private String publicBaseUrl;
     /** Origins of fronts served outside the gateway, such as a static site on a CDN. */
@@ -37,6 +39,10 @@ public class GatewaySecurityProperties {
     public String getProvider() { return provider; }
 
     public void setProvider(String provider) { this.provider = provider; }
+
+    public List<String> getAdditionalProviders() { return additionalProviders; }
+
+    public void setAdditionalProviders(List<String> additionalProviders) { this.additionalProviders = additionalProviders; }
 
     public String getDefaultAccess() { return defaultAccess; }
 

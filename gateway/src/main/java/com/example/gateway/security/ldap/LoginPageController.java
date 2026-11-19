@@ -29,7 +29,7 @@ public class LoginPageController {
 
     @GetMapping(path = LdapLogin.LOGIN_PATH, produces = MediaType.TEXT_HTML_VALUE)
     public Mono<ResponseEntity<String>> loginPage(ServerWebExchange exchange) {
-        if (!security.provider(GatewaySecurityProperties.PROVIDER_LDAP)) {
+        if (!security.hasChannel(GatewaySecurityProperties.PROVIDER_LDAP)) {
             return Mono.just(ResponseEntity.notFound().build());
         }
         exchange.getAttributes().put(AccessAttributes.AUDIT_ACTION, LoginOutcomeHandlers.LOGIN_START_ACTION);

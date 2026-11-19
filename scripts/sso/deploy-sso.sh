@@ -6,6 +6,8 @@
 #   PROVIDER=keycloak scripts/sso/deploy-sso.sh     # Keycloak como ponte/IdP (default)
 #   PROVIDER=ldap     scripts/sso/deploy-sso.sh     # gateway direto no diretório (OpenLDAP no lugar do AD)
 #   PROVIDER=oauth    scripts/sso/deploy-sso.sh     # API pública: só tokens, sem sessão (Keycloak como emissor)
+#   PROVIDER=keycloak-ldap scripts/sso/deploy-sso.sh  # dois canais: Keycloak e, nas rotas com access.channel: ldap,
+#                                                     # o login direto no diretório (só MODE=v2; routes-two-channels.yaml)
 #   scripts/sso/deploy-sso.sh down                  # volta o gateway sem SSO e remove Keycloak, banco e OpenLDAP
 #
 # MODE escolhe o cenário de rotas (um .md na raiz para cada):
@@ -100,6 +102,7 @@ down() {
         kubectl apply -f k8s/gateway/deployment.yaml
         kubectl -n "${NAMESPACE}" delete -f k8s/samples/routes-sso.yaml --ignore-not-found
         kubectl -n "${NAMESPACE}" delete -f k8s/samples/routes-oauth.yaml --ignore-not-found
+        kubectl -n "${NAMESPACE}" delete -f k8s/samples/routes-two-channels.yaml --ignore-not-found
         # O cenário S3 troca o operator; v2 e s3 voltam para a ConfigMap.
         if operator_exists; then
             kubectl apply -f k8s/operator/deployment.yaml
@@ -131,6 +134,14 @@ case "${PROVIDER}" in
     keycloak|oauth)
         "${KEYCLOAK}" check
         ;;
+    keycloak-ldap)
+        "${KEYCLOAK}" check
+        if [[ "${DIRECTORY}" != "openldap" ]]; then
+            echo "PROVIDER=keycloak-ldap points the gateway's ldap channel at the lab's OpenLDAP; with another" >&2
+            echo "directory, set GATEWAY_SECURITY_LDAP_* in k8s/sso/gateway-keycloak-ldap.yaml" >&2
+            exit 2
+        fi
+        ;;
     ldap)
         if [[ "${DIRECTORY}" != "openldap" ]]; then
             echo "DIRECTORY only applies to the Keycloak federation; with PROVIDER=ldap the gateway reads" >&2
@@ -139,7 +150,7 @@ case "${PROVIDER}" in
         fi
         ;;
     *)
-        echo "PROVIDER must be keycloak, ldap or oauth (got '${PROVIDER}')" >&2
+        echo "PROVIDER must be keycloak, ldap, oauth or keycloak-ldap (got '${PROVIDER}')" >&2
         exit 2
         ;;
 esac
@@ -177,11 +188,11 @@ fi
 ensure_sso_secrets
 
 case "${PROVIDER}" in
-    keycloak|oauth) "${KEYCLOAK}" up ;;
+    keycloak|oauth|keycloak-ldap) "${KEYCLOAK}" up ;;
     ldap) "${OPENLDAP}" up ;;
 esac
 obo_changed=0
-if [[ "${PROVIDER}" == "keycloak" ]] && publish_gateway_obo; then
+if [[ "${PROVIDER}" == keycloak* ]] && publish_gateway_obo; then
     obo_changed=1
 fi
 
@@ -218,6 +229,9 @@ else
     if [[ "${PROVIDER}" == "oauth" ]]; then
         kubectl apply -f k8s/samples/routes-oauth.yaml
         TRY_PATH=/oauth/orders/headers
+    fi
+    if [[ "${PROVIDER}" == "keycloak-ldap" ]]; then
+        kubectl apply -f k8s/samples/routes-two-channels.yaml
     fi
 fi
 kubectl apply -f k8s/nginx-lb/ >/dev/null

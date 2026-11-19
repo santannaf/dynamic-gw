@@ -1,0 +1,40 @@
+# Rotas do canal ldap num gateway com dois canais (PROVIDER=keycloak-ldap make two-channels-up).
+# Ficam ao lado das de routes-sso.yaml, que são do canal principal (keycloak):
+#
+#   /canal-ldap/**        login direto no diretório (formulário do gateway), grupo tools-httpbin
+#   /canal-ldap-aberta/** qualquer pessoa logada pelo formulário do gateway
+#
+# Num gateway sem o canal ldap (sem additional-providers), estas rotas não são servidas.
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: canal-ldap
+  namespace: platform
+spec:
+  path: /canal-ldap/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: platform-team
+  description: Login direto no diretório, ao lado do Keycloak, para o grupo tools-httpbin.
+  access:
+    channel: ldap
+    anyOf:
+      - group:tools-httpbin
+  rateLimit:
+    requests: 10
+    period: 10s
+    key: user
+---
+apiVersion: platform.saca.pags/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: canal-ldap-aberta
+  namespace: platform
+spec:
+  path: /canal-ldap-aberta/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: platform-team
+  description: Qualquer pessoa logada pelo formulário do gateway.
+  access:
+    channel: ldap

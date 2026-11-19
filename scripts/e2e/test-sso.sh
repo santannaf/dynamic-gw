@@ -64,7 +64,9 @@ api() { curl -s -H "Authorization: Bearer ${admin}" "${BASE}/auth/admin/realms/t
 echo "== scenario"
 PROFILES="$(kubectl -n "${NAMESPACE}" get deployment dynamic-gateway \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SPRING_PROFILES_ACTIVE")].value}')"
-check "gateway runs the keycloak profile" "yes" "$([[ ",${PROFILES}," == *",keycloak,"* ]] && echo yes || echo no)"
+# keycloak-ldap: o mesmo canal keycloak, com o ldap ao lado (make two-channels-test).
+check "gateway runs the keycloak profile" "yes" \
+    "$([[ ",${PROFILES}," == *",keycloak,"* || ",${PROFILES}," == *",keycloak-ldap,"* ]] && echo yes || echo no)"
 if [[ ",${PROFILES}," == *",s3,"* ]]; then
     # grep -c lê tudo: com pipefail, grep -q fecharia o pipe e o kubectl sairia com erro.
     loaded="$(kubectl -n "${NAMESPACE}" logs -l app.kubernetes.io/name=dynamic-gateway --tail=-1 --prefix=false \
