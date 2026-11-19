@@ -275,7 +275,9 @@ O botão **Entrar com Microsoft** é o provedor de identidade `microsoft` do rea
 2. A Microsoft devolve o usuário ao Keycloak, que procura no AD, pela federação LDAP, quem tem o mesmo e-mail e associa as duas contas sem perguntar (fluxo `vincular-usuario-do-ad`).
 3. A sessão é a desse usuário do AD: os grupos continuam vindo da OU da aplicação, e as rotas não mudam.
 
-Quem existe na Microsoft mas não no AD é recusado: o Keycloak não cria usuário local. O token da Microsoft não chega ao gateway.
+Quem existe na Microsoft mas não no AD é recusado: o Keycloak não cria usuário local. O token da Microsoft fica guardado no Keycloak (`storeToken`) e só sai de lá numa rota com `access.obo`: o gateway o troca no Keycloak e faz o On-Behalf-Of no Entra, e o backend recebe o token do Entra para o escopo dele. Nas outras rotas, o backend recebe os headers de identidade e, com `forwardToken`, o token do Keycloak.
+
+Uma rota pode exigir o login pela Microsoft (`access.identityProvider: microsoft`): quem entrou com a senha do diretório é mandado entrar de novo pela Microsoft, e o Keycloak vai direto para lá (`kc_idp_hint`, com `prompt=login`). O passo a passo está na seção 1.17 do [`TESTE_SSO.md`](TESTE_SSO.md).
 
 ### No lab: a Microsoft simulada
 
@@ -298,3 +300,15 @@ HOST_PORT=18080 make lab linux
 ```
 
 O realm simulado deixa de ser importado, e o provedor `microsoft` passa a apontar para `login.microsoftonline.com/<tenant>/v2.0`. Trocar de `sim` para `entra`, ou de tenant, reimporta o realm, e as sessões abertas caem. O Keycloak e o navegador precisam alcançar `login.microsoftonline.com`.
+
+Com `MICROSOFT=entra`, o mesmo App Registration é o app do gateway no OBO (ConfigMap e Secret `gateway-obo`): o token que o Keycloak guarda do login sai com a `aud` dele, e só ele pode trocá-lo. Para isso, exponha a API do app (`api://<client id>/access_as_user`), ponha esse escopo em `MICROSOFT_DEFAULT_SCOPE` e dê o consentimento aos escopos dos backends. O roteiro completo está na seção 1.17 do [`TESTE_SSO.md`](TESTE_SSO.md).
+
+## 10. Dois canais no mesmo gateway
+
+Com o profile `keycloak-ldap`, o gateway roda o Keycloak como canal principal e o login direto no diretório como segundo canal (`additional-providers: [ldap]`). A rota escolhe com `access.channel: ldap`; sem ele, vale o Keycloak.
+
+- Cada canal tem a sua sessão: `GW_SESSION` (Keycloak) e `GW_SESSION_LDAP` (formulário do gateway, em `/_gateway/login`). A sessão de um não abre as rotas do outro, e cada rota vê só a pessoa do canal dela, nos headers, no rate limit e na auditoria.
+- Quem opera o gateway entra por qualquer um dos dois: `role:gateway-admin` pelo Keycloak ou `group:gateway-admins` pelo diretório.
+- `/_gateway/whoami` responde pelo Keycloak; `/_gateway/whoami?channel=ldap`, pelo diretório. O `/_gateway/logout` encerra as duas sessões, em todas as réplicas.
+
+No lab: `make two-channels-up` (ou `PROVIDER=keycloak-ldap make lab linux`), com as rotas de `k8s/samples/routes-two-channels.yaml`, e `make two-channels-test`.

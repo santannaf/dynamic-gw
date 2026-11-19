@@ -2,11 +2,9 @@
 #
 # Profiles: standalone-sso,ldap. O gateway mostra o próprio formulário de login
 # (/_gateway/login) e valida usuário e senha no AD; o endereço do AD, a conta de
-# serviço e as buscas vêm de ldap/application-ldap.yaml. Não há token: o backend
-# recebe só os headers X-Auth-Request-*, então forward-token, audience,
-# identity-provider e obo não se aplicam.
-#
-# Já funciona hoje: nada aqui é novo.
+# serviço e as buscas vêm de ldap-directory/application-ldap-directory.yaml.
+# Não há token: o backend recebe só os headers X-Auth-Request-*, então
+# forward-token, audience, identity-provider e obo não se aplicam.
 
 gateway:
   security:

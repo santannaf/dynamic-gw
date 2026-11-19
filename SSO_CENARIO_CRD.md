@@ -90,8 +90,8 @@ Os quatro vivem no OpenLDAP, que faz o papel do AD: o Keycloak federa o diretór
 ## Testar
 
 ```bash
-make sso-test      # passed=44 failed=0
-make ldap-test     # passed=23 failed=0
+make sso-test      # passed=69 failed=0
+make ldap-test     # passed=25 failed=0
 ```
 
 À mão:
@@ -115,6 +115,16 @@ curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Accept: text/html' 
 | `/sso/rw/**` POST/PUT/PATCH/DELETE               | `anyOf: [group:tools-admins]`                        | 403   | 403 | 200   | 403  |
 | `/anything/**`, `/httpbin/**` (do `make deploy`) | nenhum                                               | 200   | 200 | 200   | 200  |
 | `GET /internal/routes`                           | `security.internal.any-of`                           | 403   | 403 | 403   | 200  |
+
+Com o Keycloak, três rotas escolhem o login e o token ([`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf)). No LDAP, o gateway não as serve:
+
+| Rota            | `access`                                                                   | O que acontece                                                                                     |
+|-----------------|----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| `/sso/idp/**`   | `identityProvider: microsoft`, `anyOf: [group:tools-httpbin]`              | Quem entrou com senha é mandado entrar pela Microsoft; depois, alice e carol passam               |
+| `/sso/aud/**`   | `anyOf: [group:tools-httpbin]`, `forwardToken: true`, `audience: httpbin-api` | O backend recebe um token com `aud=httpbin-api`, e não o da sessão                              |
+| `/sso/obo/**`   | `identityProvider: microsoft`, `forwardToken: true`, `obo.scopes`          | 404 sem o app do gateway no Entra; com `MICROSOFT=entra`, o backend recebe o token do Entra       |
+
+Com `PROVIDER=keycloak-ldap` (`make two-channels-up`), as rotas de `k8s/samples/routes-two-channels.yaml` usam o login direto no diretório ao lado do Keycloak ([`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md), seção 10).
 
 ## Mudar quem acessa uma rota
 

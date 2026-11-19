@@ -2,19 +2,18 @@
 #
 # Dois canais no mesmo gateway, o único cenário assim. O keycloak é o principal
 # e faz o login pela Microsoft, como no cenário 3. O ldap faz o LDAP direto, como
-# no cenário 1, só nas rotas com access.channel: ldap. Profiles:
-# standalone-sso,keycloak, mais o bloco gateway.security.ldap do profile ldap,
-# sem o provider: ldap dele (hoje os dois profiles juntos se sobrescrevem).
+# no cenário 1, só nas rotas com access.channel: ldap, com a sessão no cookie
+# GW_SESSION_LDAP. Profiles: standalone-sso,keycloak-ldap (o grupo keycloak-ldap
+# ativa keycloak, ldap-directory e o próprio keycloak-ldap).
 #
-# Novo: additional-providers, access.channel, um cookie de sessão por canal
-# (hoje os dois usariam GW_SESSION) e tudo o que é novo no cenário 3.
+# Campos da ETT-1452: additional-providers, access.channel e os do cenário 3.
 
 gateway:
   security:
     enabled: true
     provider: keycloak                 # canal principal: rotas sem access.channel
     default-access: authenticated
-    # novo: o canal ldap junto com o keycloak, para as rotas com access.channel: ldap.
+    # O canal ldap junto com o keycloak, para as rotas com access.channel: ldap.
     additional-providers:
       - ldap
     # Quem opera o gateway entra por qualquer um dos dois canais.
@@ -22,7 +21,7 @@ gateway:
       any-of:
         - role:gateway-admin           # pelo Keycloak
         - group:gateway-admins         # pelo LDAP direto
-    # novo: o app do gateway no Entra, usado pelo access.obo. O segredo vem por
+    # O app do gateway no Entra, usado pelo access.obo. O segredo vem por
     # variável, como os outros: GATEWAY_SECURITY_OBO_CLIENT_SECRET.
     obo:
       tenant-id: <tenant do Entra>
@@ -55,7 +54,7 @@ gateway:
             team: abc-team
             description: Membros do grupo abc-users no AD.
             access:
-              channel: ldap                 # novo: o canal de additional-providers
+              channel: ldap                 # o canal de additional-providers
               any-of:
                 - group:abc-users
             rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
@@ -72,11 +71,11 @@ gateway:
             team: monitor-team
             description: Login com Microsoft e a role business-monitor-user.
             access:
-              identity-provider: microsoft  # novo: alias do IdP no realm
+              identity-provider: microsoft  # alias do IdP no realm
               any-of:
                 - role:business-monitor-user
               forward-token: true           # o backend recebe um token
-              audience: business-monitor    # novo: o da troca V2, com aud=business-monitor
+              audience: business-monitor    # troca V2: aud=business-monitor
             rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
               requests: 10
               period: 10s
@@ -94,7 +93,7 @@ gateway:
               any-of:
                 - role:pedidos-leitura
               forward-token: true           # o backend recebe um token
-              obo:                          # novo: o do OBO no Entra
+              obo:                          # escopos do OBO no Entra
                 scopes:
                   - api://backend-b/pedidos.read
             rate-limit:                     # 5 a cada 10s por usuário, em cada réplica

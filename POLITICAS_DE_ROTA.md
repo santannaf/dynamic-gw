@@ -90,11 +90,12 @@ No v1, mudar a rota é gerar a imagem de novo. Rota inválida não é servida: o
 ### A ordem em cada requisição
 
 ```
-access → rate limit → throttle → filtros da rota → proxy ou agregação → transformação da resposta
+access → rate limit → throttle → token do backend → filtros da rota → proxy ou agregação → transformação da resposta
 ```
 
 - Quem o `access` barra (401, 403 ou o redirect para o login) não gasta rate limit nem ocupa vaga de throttle.
 - Quem o rate limit barra (429) não ocupa vaga de throttle.
+- O token do backend é o que a rota escolhe com `access.audience` ou `access.obo` ([`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf)): a troca no Keycloak, ou no Entra, só acontece para quem passou pelo rate limit e pelo throttling. `audience` e `obo` não valem em rota com `aggregate`, porque o mesmo token iria para todos os backends.
 - A transformação vale tanto para a resposta do backend quanto para a resposta montada pela agregação.
 
 ### Quando uma política recusa

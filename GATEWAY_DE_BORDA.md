@@ -30,7 +30,14 @@ spec:
 - **`anyOf`**: quem chama precisa de pelo menos uma destas permissões, no formato `<tipo>:<nome>`.
 - **`<tipo>`**: letras minúsculas, dígitos e hífen, começando por letra. É livre, e cada gateway define os seus.
 - **`forwardToken`**: repassa o access token ao backend. Só vale em canal com token. Em canal sem token, é ignorado.
-- **`channel`**, **`identityProvider`**, **`audience`** e **`obo`**: entram com a ETT-1452 (o desenho está em [`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf) e os exemplos em [`exemplos/autenticacao-por-rota/`](exemplos/autenticacao-por-rota/)). `channel` escolhe o canal da rota quando o gateway roda dois; `identityProvider` exige uma sessão que veio daquele IdP do Keycloak; `audience` e `obo` escolhem qual token o backend recebe e exigem `forwardToken: true`. O snapshot e o CRD já os carregam, com as regras entre eles (`RoutePolicyRules`). Enquanto o canal não aplica um deles, o gateway não serve a rota que o declara, pelo mesmo motivo das políticas.
+- **`forwardToken: true`** liga o envio de token ao backend; **`audience`** e **`obo`** só escolhem qual vai (o desenho está em [`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf) e os exemplos em [`exemplos/autenticacao-por-rota/`](exemplos/autenticacao-por-rota/)):
+  - sem os dois, vai o token de quem chamou (o token A);
+  - **`audience: <client>`**: um token trocado no Keycloak (troca padrão, V2) só com `aud=<client>`, ainda emitido para o client do gateway (`azp`);
+  - **`obo.scopes`**: o token do Entra para esses escopos, pelo On-Behalf-Of do app do gateway no Entra (`gateway.security.obo`). Exige `identityProvider`, porque a troca parte do token que o Keycloak guardou daquele login.
+- **`identityProvider: <alias>`**: só passa sessão que veio desse provedor de identidade do Keycloak (claim `identity_provider`). Senha do diretório na rota da Microsoft não passa.
+- **`channel`**: o canal da rota num gateway com dois (`additional-providers`); sem ele, vale o principal.
+
+Regras entre os campos, iguais no operator e no reload do gateway (`RoutePolicyRules`): `public` não aceita mais nada; `audience` e `obo` exigem `forwardToken: true` e não convivem; `obo` tem de 1 a 16 escopos; nenhum dos dois em rota com `aggregate`; `channel: ldap` não aceita `forwardToken`, `identityProvider`, `audience` nem `obo`. E rota que pede o que o gateway não tem (canal inativo, `identityProvider`, `audience` ou `obo` num canal que não os aplica, `obo` sem o app no Entra) não é servida: servida, ela rodaria sem a checagem que declara.
 
 Permissão por método usa duas rotas com o mesmo `path` e `methods` diferentes, como `/sso/rw/**` em `k8s/samples/routes-sso.yaml`.
 
@@ -60,6 +67,17 @@ Depois aplique a decisão:
 | `authenticated` | Com itens | Não tem nenhuma        | 403                          |
 | `authenticated` | Qualquer  | Ausente                | Resposta do canal            |
 | `authenticated` | Qualquer  | Provedor fora do ar    | 503, sem redirecionar        |
+
+A identidade é a do canal da rota (`channel`, ou o principal): a sessão de um canal não abre rota de outro. Com `identityProvider` e `forwardToken`, mais duas etapas, nesta ordem:
+
+| Situação                                                        | Resultado                                                                                   |
+|-----------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| A sessão veio de outro provedor (ou da senha)                   | Navegação: login de novo por aquele provedor. AJAX: 401 com `insufficient_user_authentication` (RFC 9470). Bearer: 403. Auditoria `wrong_identity_provider` |
+| O Keycloak não tem o token daquele provedor (`obo`)             | Como na linha de cima, com `identity_provider_login_required`                               |
+| A troca (`audience`) ou o OBO (`obo`) é recusado                | 502, `token_exchange_failed`                                                                |
+| O Keycloak ou o Entra não responde                              | 503, `token_exchange_failed`                                                                |
+
+A troca acontece depois do rate limit e do throttling: requisição recusada por eles não custa chamada ao provedor. O token trocado fica em cache por sessão até pouco antes de vencer, e o backend nunca recebe o token A nessas rotas.
 
 Permissão de um tipo que o gateway não produz não autoriza ninguém, e a rota responde 403. Por isso nenhum gateway pode tratar `anyOf` como opcional.
 
@@ -117,9 +135,9 @@ O prefixo `/_gateway/` é do gateway, e o operator rejeita rotas sob ele.
 
 | Endpoint                                   | Função                                                         |
 |--------------------------------------------|----------------------------------------------------------------|
-| `GET /_gateway/whoami`                     | Identidade atual, ou 401                                       |
-| `GET /_gateway/login/start?returnTo=<url>` | Inicia o login e volta para `returnTo`. 404 em canal sem login |
-| `GET` ou `POST /_gateway/logout`           | Encerra a sessão (no Keycloak, também a de lá). 404 em canal sem sessão |
+| `GET /_gateway/whoami`                     | Identidade atual, ou 401. Com dois canais, `?channel=ldap` responde pelo outro |
+| `GET /_gateway/login/start?returnTo=<url>` | Inicia o login e volta para `returnTo`. `&idp=<alias>` entra por aquele provedor de identidade. 404 em canal sem login |
+| `GET` ou `POST /_gateway/logout`           | Encerra a sessão (no Keycloak, também a de lá; com dois canais, as duas). 404 em canal sem sessão |
 | `GET /_gateway/logged-out`                 | Página de sessão encerrada, para onde o Keycloak devolve o browser depois do logout, com o link para entrar de novo. Fica fora da auditoria, porque o logout já foi auditado. 404 em canal sem sessão |
 
 **Logout em todas as réplicas.** Cada réplica guarda a sessão em cache, e a sessão do LDAP é só o cookie. Sem aviso, uma cópia do cookie continuaria valendo nas outras réplicas depois do logout. A réplica que atende o logout recusa a sessão e manda um aviso a todos os endereços de `gateway.security.session.peers` (o Service headless `dynamic-gateway-headless:8080`, um endereço por pod), em `POST /internal/sessions/revoked`. O aviso vai cifrado com a chave da sessão, então só uma réplica escreve um válido. O nginx-lb recusa esse caminho de fora, como o reload, e a auditoria registra `event.action=internal.sessions.revoke`. Uma réplica que sobe depois do logout não recebe o aviso: no Keycloak, quem recusa a sessão é o próprio Keycloak; no LDAP, a cópia do cookie vale nela até expirar.
@@ -131,7 +149,7 @@ Cada decisão gera uma linha JSON no logger `AUDIT`. Esse formato é consumido p
 | Campo                                     | Conteúdo                                                                                                           |
 |-------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
 | `event.action`                            | `route.access`, `auth.login`, `auth.logout` e outros                                                               |
-| `event.outcome` e `event.reason`          | `success` ou `failure`, e o motivo (`allowed`, `forbidden`, `unauthenticated`, `invalid_token`, `session_expired`, `rate_limited`, `throttled`) |
+| `event.outcome` e `event.reason`          | `success` ou `failure`, e o motivo (`allowed`, `forbidden`, `unauthenticated`, `invalid_token`, `session_expired`, `rate_limited`, `throttled`, `wrong_identity_provider`, `identity_provider_login_required`, `token_exchange_failed`) |
 | `user.id`, `user.name`, `user.email`      | Quem chamou                                                                                                        |
 | `gateway.auth.method`                     | `session`, `bearer` ou `none`                                                                                      |
 | `gateway.route.id` e `gateway.route.team` | A rota                                                                                                             |
@@ -139,6 +157,8 @@ Cada decisão gera uma linha JSON no logger `AUDIT`. Esse formato é consumido p
 | `gateway.access.matched`                  | A permissão que liberou o acesso                                                                                   |
 
 Nunca registre token, cookie, `Authorization`, senha ou query string. Preflight de CORS respondido pelo gateway não gera evento, porque não chega a uma rota. Já uma chamada de origem recusada gera evento com `event.reason=forbidden`.
+
+`wrong_identity_provider`, `identity_provider_login_required` e `token_exchange_failed` são motivos novos (ETT-1452), de rotas com `identityProvider`, `audience` ou `obo`: avise o SOC antes de ligar essas rotas, porque é mudança no contrato do evento. Nenhum campo mudou de nome ou de forma.
 
 `rate_limited` (429) e `throttled` (503 em rota) vêm das políticas da rota. `throttled` já existia para o limite de tentativas de login do canal LDAP (429, `event.action=auth.login`): use o `event.action` e o status para separar os dois.
 
@@ -209,6 +229,12 @@ Para um gateway que já tem sessão, como o SACA ou o MIB:
 3. Em `gatewayCookieNames()`, liste os cookies que só o gateway lê.
 
 Se o provedor da sessão estiver fora do ar, lance `ProviderUnavailableException`: a rota responde 503 em vez de mandar o usuário para um login que também vai falhar.
+
+### Token por rota e segundo canal
+
+- **`accessFeatures()`**: o que o canal aplica além do `anyOf` (`IDENTITY_PROVIDER`, `AUDIENCE`, `OBO`). O reload recusa a rota que pede outra coisa.
+- **`upstreamTokens()`**: o token que a rota escolhe (`audience`, `obo`), atrás da porta `UpstreamTokens` de `access/`. O `UpstreamTokenFilter` põe no `Authorization`; falha vira `UpstreamTokenException` (recusa 502, fora do ar 503, login de novo).
+- **`configureAdditional(http)`**: o canal ao lado do principal (`additional-providers`), só com o login dele, sem trocar o contexto de segurança nem o entry point do principal. A sessão vai num cookie próprio (o ldap usa `GW_SESSION_LDAP`), e os dois compartilham o `BrowserSession`: um logout revoga as duas sessões em todas as réplicas. Hoje o par aceito é ldap ao lado do keycloak (profile `keycloak-ldap`).
 
 ## Regras que todo gateway precisa seguir
 

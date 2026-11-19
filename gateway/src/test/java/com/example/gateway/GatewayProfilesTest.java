@@ -215,7 +215,7 @@ class GatewayProfilesTest {
                 "gateway.routes.store", RouteStoreProperties.class);
 
         assertThat(security.isEnabled()).isTrue();
-        assertThat(routes.getProperties().getRoutes()).hasSize(15).allSatisfy(route ->
+        assertThat(routes.getProperties().getRoutes()).hasSize(18).allSatisfy(route ->
                 assertThat(RoutePolicyRules.validate(route, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX))
                         .as(route.id()).isEmpty());
     }

@@ -307,7 +307,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $BASE/internal/routes/reload
 ### 1.15 Tudo de uma vez
 
 ```bash
-make sso-test     # passed=44 failed=0
+make sso-test     # passed=69 failed=0
 ```
 
 ---
@@ -355,6 +355,19 @@ HOST_PORT=18080 make lab linux
 
 No log do gateway, a recusa aparece com o código do Entra (`Entra refused the On-Behalf-Of for [...]: invalid_grant`), nunca com o token.
 
+### 1.18 Dois canais no mesmo gateway
+
+```bash
+make two-channels-up      # ou PROVIDER=keycloak-ldap make lab linux
+make two-channels-test    # passed=30 failed=0; o make sso-test também passa nesse gateway
+```
+
+O gateway sobe com o profile `keycloak-ldap`: o Keycloak continua o canal principal, e as rotas de [`k8s/samples/routes-two-channels.yaml`](k8s/samples/routes-two-channels.yaml) (`access.channel: ldap`) usam o login direto no diretório, pelo formulário do gateway.
+
+🌐 Numa janela anônima, abra `http://localhost:18080/canal-ldap/headers`: cai no formulário do gateway (`/_gateway/login`), não no Keycloak. Entre como alice: o cookie é o `GW_SESSION_LDAP`. Agora abra `http://localhost:18080/sso/group/headers`: essa rota é do Keycloak, e a sessão do formulário não serve, então o login é o do Keycloak. Com as duas sessões, cada rota vê a pessoa do canal dela, e `/_gateway/whoami?channel=ldap` mostra a do formulário. O `/_gateway/logout` encerra as duas.
+
+Para voltar ao gateway de um canal só: `make sso-up`.
+
 ## 2. Provider `ldap` (v2)
 
 O gateway faz o login sozinho, direto no diretório. O OpenLDAP faz o papel do AD: OU `tools` com os grupos de acesso, usuários em `ou=people`, e um grupo `finance` fora da OU da aplicação.
@@ -388,7 +401,7 @@ make ldap-up      # OpenLDAP + gateway com provider=ldap (o Keycloak continua no
 8. A auditoria mostra os `auth.login` (inclusive as falhas, com o usuário digitado e nunca a senha) e os `throttled`.
 
 ```bash
-make ldap-test    # passed=23 failed=0
+make ldap-test    # passed=25 failed=0
 ```
 
 Para voltar ao Keycloak: `make sso-up`.
@@ -414,7 +427,7 @@ make standalone-sso-up          # troca o gateway do cluster pelo v1 (PROVIDER=l
 🌐 Repita o login em `http://localhost:18080/httpbin/headers`. A sessão do Keycloak continua valendo, então se você já estava logado entra sem senha.
 
 ```bash
-make standalone-sso-test        # passed=26 failed=0
+make standalone-sso-test        # passed=29 failed=0
 make sso-up                     # volta para o v2 com SSO
 ```
 

@@ -4,9 +4,9 @@
 # properties/cenario-4-keycloak-idp-e-ldap.yaml, onde estão a explicação do cenário e a
 # configuração do gateway.
 #
-# Novo: identity-provider, audience e obo.
-# Com o CRD de hoje, o kubectl recusa os campos novos (unknown field); o schema
-# proposto está em schema-access.yaml.
+# Campos da ETT-1452: identity-provider, audience e obo.
+# O schema do access, com as regras entre os campos em CEL, está em
+# schema-access.yaml (o mesmo de k8s/crd/).
 
 # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
 apiVersion: platform.saca.pags/v1alpha1
@@ -44,7 +44,7 @@ spec:
     anyOf:
       - role:abc-user
     forwardToken: true           # o backend recebe um token
-    audience: abc-api            # novo: o da troca V2, com aud=abc-api (client no realm)
+    audience: abc-api            # troca V2: aud=abc-api (client no realm)
   rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
     requests: 10
     period: 10s
@@ -64,11 +64,11 @@ spec:
   team: monitor-team
   description: Login com Microsoft e a role business-monitor-user.
   access:
-    identityProvider: microsoft  # novo: alias do IdP no realm
+    identityProvider: microsoft  # alias do IdP no realm
     anyOf:
       - role:business-monitor-user
     forwardToken: true           # o backend recebe um token
-    audience: business-monitor   # novo: o da troca V2, com aud=business-monitor
+    audience: business-monitor   # troca V2: aud=business-monitor
   rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
     requests: 10
     period: 10s
@@ -91,7 +91,7 @@ spec:
     anyOf:
       - role:pedidos-leitura
     forwardToken: true           # o backend recebe um token
-    obo:                         # novo: o do OBO no Entra
+    obo:                         # escopos do OBO no Entra
       scopes:
         - api://backend-b/pedidos.read
   rateLimit:                     # 5 a cada 10s por usuário, em cada réplica

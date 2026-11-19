@@ -53,6 +53,14 @@ login() {
 header() { jq -r --arg h "$1" '.headers[$h][0] // empty' "${WORK}/body"; }
 status() { curl -s -o "${WORK}/body" -w '%{http_code}' "$@"; }
 
+# Payload de um JWT (base64url sem padding).
+jwt_claims() {
+    local payload
+    payload="$(printf '%s' "$1" | cut -d. -f2 | tr '_-' '/+')"
+    while (( ${#payload} % 4 )); do payload+="="; done
+    printf '%s' "${payload}" | base64 -d 2>/dev/null
+}
+
 echo "== v1 standalone + SSO (provider=${PROVIDER})"
 check "gateway runs the standalone-sso and ${PROVIDER} profiles" "standalone-sso,${PROVIDER}" \
     "$(kubectl -n "${NAMESPACE}" get deployment dynamic-gateway \
@@ -71,6 +79,21 @@ check "backend sees alice" "alice" "$(header X-Auth-Request-User)"
 check "backend sees the group" "tools-httpbin" "$(header X-Auth-Request-Groups)"
 check "any authenticated route" "200" "$(status -b "${WORK}/alice" "${BASE}/me/headers")"
 check "admin route is not for alice" "403" "$(status -b "${WORK}/alice" "${BASE}/admin/headers")"
+if [[ "${PROVIDER}" == "keycloak" ]]; then
+    check "a password session is sent to log in with Microsoft (identity-provider)" \
+        "302 ${BASE}/_gateway/oauth2/authorization/keycloak?idp=microsoft" \
+        "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b "${WORK}/alice" -H 'Accept: text/html' \
+            "${BASE}/idp/headers")"
+    status -b "${WORK}/alice" "${BASE}/aud/headers" >/dev/null
+    check "the backend gets a token for its client (audience)" "httpbin-api tools-gateway" \
+        "$(jwt_claims "$(header Authorization | sed 's/^Bearer //')" | jq -r '"\(.aud) \(.azp)"')"
+    check "without the gateway's app in Entra, the obo route is not served" "404" \
+        "$(status -b "${WORK}/alice" "${BASE}/obo/headers")"
+else
+    check "the ldap channel does not serve the routes that need Keycloak" "404 404 404" \
+        "$(status -b "${WORK}/alice" "${BASE}/idp/headers") $(status -b "${WORK}/alice" "${BASE}/aud/headers") $(status \
+            -b "${WORK}/alice" "${BASE}/obo/headers")"
+fi
 
 echo "== bob (no groups)"
 check "bob reaches the authenticated route" "200" "$(login bob "${WORK}/bob" /me/headers)"
@@ -87,7 +110,8 @@ check "carol does not operate the gateway" "403" "$(status -b "${WORK}/carol" "$
 echo "== dave (gateway-admins)"
 check "dave reaches the authenticated route" "200" "$(login dave "${WORK}/dave" /me/headers)"
 check "dave is not a tool admin" "403" "$(status -b "${WORK}/dave" "${BASE}/admin/headers")"
-check "dave reads the v1 route table" "15" \
+# 18 rotas na imagem: o keycloak não serve a do obo (sem o app no Entra), o ldap não serve as três do Keycloak.
+check "dave reads the v1 route table" "$([[ "${PROVIDER}" == "keycloak" ]] && echo 17 || echo 15)" \
     "$(curl -s -b "${WORK}/dave" "${BASE}/internal/routes" | jq '.routes | length')"
 
 if [[ "${PROVIDER}" == "keycloak" ]]; then

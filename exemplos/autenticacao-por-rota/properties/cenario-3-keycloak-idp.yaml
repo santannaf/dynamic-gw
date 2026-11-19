@@ -4,15 +4,15 @@
 # broker com o Entra (IdP microsoft) e não tem federação LDAP. No realm, o IdP
 # precisa de storeToken, offline_access e do escopo da API do gateway no login
 # (para o OBO), e de um first broker login que crie o usuário: o
-# vincular-usuario-do-ad de hoje recusa quem não está no AD federado.
+# vincular-usuario-do-ad do lab recusa quem não está no AD federado.
 #
-# Novo: identity-provider, audience, obo e o bloco obo do gateway.
+# Campos da ETT-1452: identity-provider, audience, obo e o bloco obo do gateway.
 
 gateway:
   security:
     enabled: true
     default-access: authenticated
-    # novo: o app do gateway no Entra, usado pelo access.obo. O segredo vem por
+    # O app do gateway no Entra, usado pelo access.obo. O segredo vem por
     # variável, como os outros: GATEWAY_SECURITY_OBO_CLIENT_SECRET.
     obo:
       tenant-id: <tenant do Entra>
@@ -46,11 +46,11 @@ gateway:
             team: monitor-team
             description: Login com Microsoft e a role business-monitor-user.
             access:
-              identity-provider: microsoft  # novo: alias do IdP no realm
+              identity-provider: microsoft  # alias do IdP no realm
               any-of:
                 - role:business-monitor-user
               forward-token: true           # o backend recebe um token
-              audience: business-monitor    # novo: o da troca V2, com aud=business-monitor
+              audience: business-monitor    # troca V2: aud=business-monitor
             rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
               requests: 10
               period: 10s
@@ -68,7 +68,7 @@ gateway:
               any-of:
                 - role:pedidos-leitura
               forward-token: true           # o backend recebe um token
-              obo:                          # novo: o do OBO no Entra
+              obo:                          # escopos do OBO no Entra
                 scopes:
                   - api://backend-b/pedidos.read
             rate-limit:                     # 5 a cada 10s por usuário, em cada réplica

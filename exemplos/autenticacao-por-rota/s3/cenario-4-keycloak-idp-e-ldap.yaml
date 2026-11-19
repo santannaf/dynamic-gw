@@ -4,10 +4,10 @@
 # crd/cenario-4-keycloak-idp-e-ldap.yaml; este é o objeto que o operator grava em
 # s3://<bucket>/snapshots/routes.yaml e que o gateway lê por polling de ETag.
 # Formato do SnapshotCodec: rotas em ordem de id, strings entre aspas e campo
-# vazio como null. Os campos novos do access entram depois do forwardToken.
+# vazio como null. Os campos da ETT-1452 entram depois do forwardToken.
 #
-# O gateway de hoje lê este objeto e descarta os campos novos: o gateway novo
-# sobe antes do operator novo.
+# Um gateway anterior à ETT-1452 lê este objeto, descarta esses campos e serve
+# as rotas sem as checagens: atualize o gateway antes do operator.
 version: "2026-11-18T21:00:00Z"
 generatedAt: "2026-11-18T21:00:00Z"
 routes:

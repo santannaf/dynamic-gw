@@ -4,6 +4,10 @@
 #   SPRING_PROFILES_ACTIVE=standalone-sso,keycloak   (Keycloak, ver keycloak/application-keycloak.yaml)
 #   SPRING_PROFILES_ACTIVE=standalone-sso,ldap       (direto no diretório, ver ldap/application-ldap.yaml)
 #
+# As rotas idp-route, audience-route e obo-route pedem o canal keycloak: no ldap, o
+# gateway não as serve. A obo-route também precisa do app do gateway no Entra
+# (gateway.security.obo).
+#
 # Este arquivo vai embarcado na imagem nativa: mudar rota ou `access` = rebuild
 # da imagem + rollout, como no v1 puro. Quem está em cada grupo continua
 # dinâmico, porque isso é do AD/Keycloak.
@@ -69,6 +73,50 @@ gateway:
               any-of:
                 - group:tools-admins
               forward-token: true
+          # Só sessão que veio do login com Microsoft (provedor microsoft do Keycloak). Com a
+          # senha do diretório, o gateway manda entrar de novo pela Microsoft.
+          - id: idp-route
+            path: /idp/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Microsoft login only (identity provider microsoft), tools-httpbin members.
+            access:
+              identity-provider: microsoft
+              any-of:
+                - group:tools-httpbin
+          # O backend recebe um token trocado no Keycloak, só com a aud dele (httpbin-api),
+          # em vez do token da sessão.
+          - id: audience-route
+            path: /aud/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: tools-httpbin members; the backend gets a token whose aud is httpbin-api.
+            access:
+              any-of:
+                - group:tools-httpbin
+              forward-token: true
+              audience: httpbin-api
+          # O backend recebe o token do Entra para o escopo dele, pelo OBO do gateway.
+          - id: obo-route
+            path: /obo/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Microsoft login; the backend gets the Entra token of the gateway's On-Behalf-Of.
+            access:
+              identity-provider: microsoft
+              any-of:
+                - group:tools-httpbin
+              forward-token: true
+              obo:
+                scopes:
+                  - api://backend-b/pedidos.read
+            rate-limit:
+              requests: 5
+              period: 10s
+              key: user
           # --- API de verdade: JSONPlaceholder (as mesmas rotas de
           # k8s/samples/routes-jsonplaceholder.yaml; make jsonplaceholder-test). Precisam
           # de saída para a internet; os limites contam por réplica.

@@ -5,6 +5,7 @@ import com.example.gateway.routes.store.RouteConfigProvider;
 import com.example.gateway.routing.InMemoryDynamicRouteLocator;
 import com.example.shared.routes.RouteAccess;
 import com.example.shared.routes.RouteConfigEntry;
+import com.example.shared.routes.RouteObo;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -65,6 +66,14 @@ class StandaloneSsoProfileTest {
                 .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), null, null, null, null, null));
         assertThat(routes.get("jp-gestao-escrita").access())
                 .isEqualTo(new RouteAccess(null, List.of("group:tools-admins"), null, null, null, null, null));
-        assertThat(routeLocator.size()).isEqualTo(15);
+        assertThat(routes.get("idp-route").access())
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), null, null, "microsoft", null, null));
+        assertThat(routes.get("audience-route").access())
+                .isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"), true, null, null, "httpbin-api", null));
+        assertThat(routes.get("obo-route").access()).isEqualTo(new RouteAccess(null, List.of("group:tools-httpbin"),
+                true, null, "microsoft", null, new RouteObo(List.of("api://backend-b/pedidos.read"))));
+        assertThat(routes).hasSize(18);
+        // Without the gateway's app in Entra (gateway.security.obo), the obo route is not served.
+        assertThat(routeLocator.size()).isEqualTo(17);
     }
 }

@@ -751,6 +751,8 @@ Com `keycloak` e `ldap`, a sessão é um cookie `GW_SESSION` cifrado (JWE `dir`/
 
 A escolha do provedor acontece no startup, não no build: o Spring AOT congela `@ConditionalOnProperty` ao gerar o native image, então um único `ActiveSecurity` monta o canal ativo (`IdentityChannel`) e a mesma imagem serve desligado, `keycloak`, `ldap` e `oauth`.
 
+Dois canais no mesmo gateway: `gateway.security.additional-providers: [ldap]` ao lado do `keycloak` (profile `keycloak-ldap`). As rotas com `access.channel: ldap` usam o login direto no diretório, com a sessão em `GW_SESSION_LDAP`; as outras, o Keycloak. A sessão de um canal não abre rota do outro, e o logout encerra as duas ([`SSO_E_AUTORIZACAO.md`](SSO_E_AUTORIZACAO.md#10-dois-canais-no-mesmo-gateway)).
+
 ### Política por rota
 
 ```yaml
@@ -761,7 +763,13 @@ spec:
     mode: authenticated          # public | authenticated; omitido = gateway.security.default-access
     anyOf: [group:GG_KAFKAUI_READ, group:GG_KAFKAUI_WRITE]   # <tipo>:<nome>, com tipo aberto
     forwardToken: false          # true repassa Authorization: Bearer <access token> (canal com token)
+    # identityProvider: microsoft     só sessão que veio do login com a Microsoft (provedor do Keycloak)
+    # audience: kafka-ui-api          com forwardToken: token trocado no Keycloak, só com aud=kafka-ui-api
+    # obo: {scopes: [api://x/y]}      com forwardToken: token do Entra, pelo On-Behalf-Of do gateway
+    # channel: ldap                   num gateway com dois canais, o da rota
 ```
+
+O desenho de `identityProvider`, `audience`, `obo` e `channel`, com os cinco cenários, está em [`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf) e em [`exemplos/autenticacao-por-rota/`](exemplos/autenticacao-por-rota/); o contrato e a tabela de decisão, em [`GATEWAY_DE_BORDA.md`](GATEWAY_DE_BORDA.md).
 
 - Rota sem `access` segue `gateway.security.default-access` (default `authenticated`).
 - Browser sem sessão vai para o login; API recebe 401; sem o grupo, 403.
@@ -820,6 +828,9 @@ HOST_PORT=18080 make oauth-test
 
 HOST_PORT=18080 make frontend-test  # modelos de integração de front-end (sobre make sso-up)
 
+HOST_PORT=18080 make two-channels-up    # dois canais: keycloak e, nas rotas com access.channel: ldap, o formulário do gateway
+HOST_PORT=18080 make two-channels-test
+
 make sso-down                       # volta o gateway sem SSO
 
 # segundo gateway de borda no mesmo cluster, com namespace, operator e snapshot próprios
@@ -838,7 +849,7 @@ HOST_PORT=18080 make standalone-sso-test
 make standalone-sso-down            # volta o v1 sem SSO
 ```
 
-A configuração já vem pronta em profiles embarcados na imagem e combináveis, cada um numa pasta de `gateway/src/main/resources/`: um de provedor (`keycloak/`, `ldap/`, `oauth/`) e, quando o store não é o default, um de cenário (`s3/`, `properties/`). O `application.yaml` importa o arquivo de cada profile ativo, sem `optional:`: se o arquivo faltar, o gateway não sobe. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
+A configuração já vem pronta em profiles embarcados na imagem e combináveis, cada um numa pasta de `gateway/src/main/resources/`: um de provedor (`keycloak/`, `ldap/`, `oauth/`, ou `keycloak-ldap/` para os dois canais) e, quando o store não é o default, um de cenário (`s3/`, `properties/`). A conexão com o diretório fica em `ldap-directory/`, que os grupos `ldap` e `keycloak-ldap` ativam junto. O `application.yaml` importa o arquivo de cada profile ativo, sem `optional:`: se o arquivo faltar, o gateway não sobe. Os manifests de `k8s/sso/` só ativam os profiles e passam a URL pública e os segredos; outro ambiente sobrescreve por variável, sem rebuild.
 
 | Cenário de rotas | Rotas vêm de                                            | Keycloak                  | LDAP                  | Guia                                                     |
 |------------------|---------------------------------------------------------|---------------------------|-----------------------|----------------------------------------------------------|

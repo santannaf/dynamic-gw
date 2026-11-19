@@ -4,7 +4,7 @@
 # properties/cenario-1-ldap-direto.yaml, onde estão a explicação do cenário e a
 # configuração do gateway.
 #
-# Já funciona hoje: nada aqui é novo.
+# Nenhum campo da ETT-1452.
 
 # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
 apiVersion: platform.saca.pags/v1alpha1

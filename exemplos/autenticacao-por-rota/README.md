@@ -1,26 +1,26 @@
 # Autenticação por rota: exemplos por cenário
 
-Exemplos da proposta de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf). Cada arquivo é um cenário de gateway em um store, com uma rota por estratégia que o cenário comporta. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts.
+Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implementado na ETT-1452. Cada arquivo é um cenário de gateway em um store, com uma rota por estratégia que o cenário comporta. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts: as rotas que o lab usa estão na seção [No lab](#no-lab).
 
-| Cenário | O gateway | Estratégias | Profiles do gateway (properties · crd · s3) | Novo |
+| Cenário | O gateway | Estratégias | Profiles do gateway (properties · crd · s3) | Campos da ETT-1452 |
 |---|---|---|---|---|
-| 1 | Faz o LDAP direto | PUBLIC, LDAP | `standalone-sso,ldap` · `ldap` · `s3,ldap` | Nada |
+| 1 | Faz o LDAP direto | PUBLIC, LDAP | `standalone-sso,ldap` · `ldap` · `s3,ldap` | Nenhum |
 | 2 | Usa o Keycloak com LDAP | PUBLIC, LDAP | `standalone-sso,keycloak` · `keycloak` · `s3,keycloak` | `audience` |
 | 3 | Usa o Keycloak com Identity Provider | PUBLIC, IDENTITY_PROVIDER, OBO | `standalone-sso,keycloak` · `keycloak` · `s3,keycloak` | `identity-provider`, `audience`, `obo` |
 | 4 | Usa o Keycloak com Identity Provider e LDAP | PUBLIC, LDAP, IDENTITY_PROVIDER, OBO | `standalone-sso,keycloak` · `keycloak` · `s3,keycloak` | `identity-provider`, `audience`, `obo` |
-| 5 | Faz o LDAP direto e usa o Keycloak com Identity Provider | PUBLIC, LDAP direto, IDENTITY_PROVIDER, OBO | os do cenário 3, com o canal `ldap` a mais | `additional-providers`, `channel` e o do cenário 3 |
+| 5 | Faz o LDAP direto e usa o Keycloak com Identity Provider | PUBLIC, LDAP direto, IDENTITY_PROVIDER, OBO | `standalone-sso,keycloak-ldap` · `keycloak-ldap` · `s3,keycloak-ldap` | `additional-providers`, `channel` e os do cenário 3 |
 
-O cenário 4 é o realm do lab de hoje. O 5 é o único com dois canais no mesmo gateway, e é a maior mudança: duas sessões, dois logins e a configuração dos dois provedores juntas.
+O cenário 4 é o realm do lab. O 5 é o único com dois canais no mesmo gateway: duas sessões (`GW_SESSION` e `GW_SESSION_LDAP`), dois logins e a configuração dos dois provedores juntas.
 
 ## Pastas
 
-- `properties/`: v1, rotas no YAML do gateway. Cada arquivo explica o cenário (realm, login, o que é novo) e traz a configuração do gateway que ele pede.
-- `crd/`: v2 com o snapshot no ConfigMap, o default. Os `GatewayRoute` que o time escreve. `schema-access.yaml` tem o schema proposto do `access`.
+- `properties/`: v1, rotas no YAML do gateway. Cada arquivo explica o cenário (realm, login, campos da ETT-1452) e traz a configuração do gateway que ele pede.
+- `crd/`: v2 com o snapshot no ConfigMap, o default. Os `GatewayRoute` que o time escreve. `schema-access.yaml` é o schema do `access`, o mesmo do CRD em `k8s/crd/`.
 - `s3/`: v2 com o snapshot no S3. O time escreve os mesmos `GatewayRoute` de `crd/`; aqui está o objeto que o operator grava em `s3://<bucket>/snapshots/routes.yaml`, no formato do `SnapshotCodec`.
 
-Os três arquivos de um cenário têm as mesmas rotas, com os mesmos ids, o mesmo `access` e as mesmas políticas. As rotas também trazem rate limit (`ip` na pública, `user` nas autenticadas) e throttling, que já existem no gateway ([POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md)).
+Os três arquivos de um cenário têm as mesmas rotas, com os mesmos ids, o mesmo `access` e as mesmas políticas. As rotas também trazem rate limit (`ip` na pública, `user` nas autenticadas) e throttling ([POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md)).
 
-## Regras novas
+## Regras entre os campos
 
 Checadas no operator e no reload do gateway, para o v1 e o v2 aceitarem as mesmas rotas:
 
@@ -30,9 +30,16 @@ Checadas no operator e no reload do gateway, para o v1 e o v2 aceitarem as mesma
 - `obo` exige `identity-provider` e de 1 a 16 scopes.
 - `audience` e `obo` não valem em rota com `aggregate`: o mesmo token iria para todos os backends.
 
-## Antes de implementar
+E o gateway não serve rota que pede o que ele não tem: canal que não está ativo, `identity-provider`, `audience` ou `obo` fora do canal keycloak, `obo` sem o app do gateway no Entra (`gateway.security.obo`).
 
-- O gateway de hoje não recusa os campos novos: ignora o que não conhece (no binding das properties e no `SnapshotCodec`) e serviria as rotas sem as checagens novas. Na implantação, o gateway novo sobe antes do operator novo.
-- O `hashAccess` do `GatewayRouteReloadService` só lê `mode`, `anyOf` e `forwardToken`. Sem os campos novos, mudar só o `audience` de uma rota não a recarrega.
-- O `audience` usa a troca V2 do Keycloak 26.2 ou mais novo; o lab usa o 26.8.2.
-- Mudar o `access` mexe em `RouteAccess` (shared), `GatewayRouteAccess` e `RouteEntries.toAccess` (operator), `RoutePolicyRules`, `hashAccess` e o schema do CRD.
+## Implantação
+
+- Um gateway anterior à ETT-1452 ignora os campos novos (no binding das properties e no `SnapshotCodec`) e serviria as rotas sem as checagens: atualize o gateway antes do operator.
+- O `audience` usa a troca V2 do Keycloak 26.2 ou mais novo (o lab usa o 26.8.2), com um client scope opcional de mesmo nome do client do backend. O `obo` usa a troca V1 (features `token-exchange` e `admin-fine-grained-authz:v1`), o `storeToken` do provedor `microsoft` e o app do gateway no Entra.
+- Os eventos de auditoria ganham três motivos: `wrong_identity_provider`, `identity_provider_login_required` e `token_exchange_failed` ([GATEWAY_DE_BORDA.md](../../GATEWAY_DE_BORDA.md)).
+
+## No lab
+
+- v2: `k8s/samples/routes-sso.yaml` (`sso-idp`, `sso-aud`, `sso-obo`) e, com `PROVIDER=keycloak-ldap`, `k8s/samples/routes-two-channels.yaml`.
+- v1: as rotas `idp-route`, `audience-route` e `obo-route` de `gateway/src/main/resources/properties/application-standalone-sso.yaml`.
+- Roteiro: seção 1.17 do [TESTE_SSO.md](../../TESTE_SSO.md), com o OBO no Entra de verdade; e2e em `make sso-test`, `make standalone-sso-test` e `make two-channels-test`.

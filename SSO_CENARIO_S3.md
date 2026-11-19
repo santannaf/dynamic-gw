@@ -98,8 +98,8 @@ O caminho com AWS não foi exercitado no lab, porque não havia conta. O código
 ## Testar
 
 ```bash
-make s3-sso-test                 # passed=45 failed=0
-PROVIDER=ldap make s3-sso-test   # passed=24 failed=0
+make s3-sso-test                 # passed=70 failed=0
+PROVIDER=ldap make s3-sso-test   # passed=26 failed=0
 ```
 
 São os mesmos e2e do cenário CRD, com uma checagem a mais: o log do gateway prova que as rotas vieram de `s3://`. À mão:

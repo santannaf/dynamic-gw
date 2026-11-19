@@ -84,8 +84,8 @@ Se o operator do v2 estiver no mesmo namespace, o script avisa. O operator conti
 ## Testar
 
 ```bash
-make standalone-sso-test                  # passed=26 failed=0
-PROVIDER=ldap make standalone-sso-test    # passed=20 failed=0
+make standalone-sso-test                  # passed=29 failed=0
+PROVIDER=ldap make standalone-sso-test    # passed=21 failed=0
 ```
 
 | Rota               | `access`                                 | alice (`tools-httpbin`) | bob (sem grupos) | carol (`tools-admins`) | dave (`gateway-admins`) |
@@ -95,6 +95,8 @@ PROVIDER=ldap make standalone-sso-test    # passed=20 failed=0
 | `/httpbin/**`      | `any-of: [group:tools-httpbin]`          | 200                     | 403              | 200                    | 403                     |
 | `/admin/**`        | `any-of: [group:tools-admins]`           | 403                     | 403              | 200                    | 403                     |
 | `/internal/routes` | `security.internal.any-of`               | 403                     | 403              | 403                    | 200                     |
+
+Com o Keycloak, mais três rotas: `/idp/**` (só quem entrou pela Microsoft), `/aud/**` (o backend recebe um token com `aud=httpbin-api`) e `/obo/**` (o token do Entra, pelo OBO do gateway; sem o app do gateway no Entra, não é servida). São as mesmas `sso-idp`, `sso-aud` e `sso-obo` do cenário CRD. No LDAP, o gateway não serve nenhuma das três.
 
 À mão:
 

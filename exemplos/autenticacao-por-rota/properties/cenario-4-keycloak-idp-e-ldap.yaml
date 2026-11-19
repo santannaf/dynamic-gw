@@ -1,19 +1,19 @@
 # Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: properties (v1).
 #
-# Profiles: standalone-sso,keycloak. É o realm do lab de hoje: login com usuário
+# Profiles: standalone-sso,keycloak. É o realm do lab: login com usuário
 # e senha (federação LDAP) ou pela Microsoft (IdP microsoft, com o fluxo
 # vincular-usuario-do-ad, que associa pelo e-mail ao usuário do AD). Rota sem
 # identity-provider aceita os dois logins, porque é o mesmo usuário do AD. Rota
 # com identity-provider: microsoft só aceita quem entrou pela Microsoft; quem
 # entrou com senha faz login de novo (kc_idp_hint=microsoft e prompt=login).
 #
-# Novo: identity-provider, audience, obo e o bloco obo do gateway.
+# Campos da ETT-1452: identity-provider, audience, obo e o bloco obo do gateway.
 
 gateway:
   security:
     enabled: true
     default-access: authenticated
-    # novo: o app do gateway no Entra, usado pelo access.obo. O segredo vem por
+    # O app do gateway no Entra, usado pelo access.obo. O segredo vem por
     # variável, como os outros: GATEWAY_SECURITY_OBO_CLIENT_SECRET.
     obo:
       tenant-id: <tenant do Entra>
@@ -50,7 +50,7 @@ gateway:
               any-of:
                 - role:abc-user
               forward-token: true           # o backend recebe um token
-              audience: abc-api             # novo: o da troca V2, com aud=abc-api (client no realm)
+              audience: abc-api             # troca V2: aud=abc-api (client no realm)
             rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
               requests: 10
               period: 10s
@@ -65,11 +65,11 @@ gateway:
             team: monitor-team
             description: Login com Microsoft e a role business-monitor-user.
             access:
-              identity-provider: microsoft  # novo: alias do IdP no realm
+              identity-provider: microsoft  # alias do IdP no realm
               any-of:
                 - role:business-monitor-user
               forward-token: true           # o backend recebe um token
-              audience: business-monitor    # novo: o da troca V2, com aud=business-monitor
+              audience: business-monitor    # troca V2: aud=business-monitor
             rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
               requests: 10
               period: 10s
@@ -87,7 +87,7 @@ gateway:
               any-of:
                 - role:pedidos-leitura
               forward-token: true           # o backend recebe um token
-              obo:                          # novo: o do OBO no Entra
+              obo:                          # escopos do OBO no Entra
                 scopes:
                   - api://backend-b/pedidos.read
             rate-limit:                     # 5 a cada 10s por usuário, em cada réplica
