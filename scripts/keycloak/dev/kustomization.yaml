@@ -1,7 +1,12 @@
-# Keycloak e PostgreSQL num cluster de DEV, no namespace keycloak. O lab no k3d
-# continua com scripts/keycloak/keycloak.sh. Os Secrets ficam fora do git e
-# precisam existir antes do apply. Passe sempre o --context: sem ele, o kubectl
-# usa o contexto atual.
+# Keycloak e PostgreSQL num cluster de DEV, só com o realm master. O lab no k3d
+# continua com scripts/keycloak/keycloak.sh.
+#
+# Num namespace que já existe, use scripts/keycloak/keycloak-dev.sh: postgres.yaml e
+# keycloak.yaml não fixam namespace, e o script gera os Secrets.
+#
+# Este kustomization cria o namespace keycloak e sobe tudo nele. Os Secrets ficam
+# fora do git e precisam existir antes do apply. Passe sempre o --context: sem ele,
+# o kubectl usa o contexto atual.
 #
 #   CTX=<contexto do DEV>
 #   kubectl --context "$CTX" apply -f scripts/keycloak/dev/namespace.yaml
@@ -21,6 +26,7 @@
 # ele o volume do banco e os Secrets.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: keycloak
 resources:
   - namespace.yaml
   - postgres.yaml

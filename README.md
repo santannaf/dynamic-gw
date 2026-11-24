@@ -839,8 +839,12 @@ HOST_PORT=18080 make two-channels-test
 make sso-down                       # volta o gateway sem SSO
 
 # o Keycloak do lab (OpenLDAP + PostgreSQL + realm tools) em outro cluster, num namespace que já existe:
-# sem k3d, as imagens vêm do registry e o navegador chega por port-forward na HOST_PORT
+# sem k3d, as imagens vêm do registry e o navegador chega por port-forward na HOST_PORT.
+# O OpenLDAP do lab só roda como root: num namespace com Pod Security restricted, ele não sobe
 KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/keycloak/keycloak.sh up
+
+# só Keycloak e PostgreSQL (realm master, sem diretório), que passam no Pod Security restricted
+KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/keycloak/keycloak-dev.sh up
 
 # segundo gateway de borda no mesmo cluster, com namespace, operator e snapshot próprios
 make second-gateway-up

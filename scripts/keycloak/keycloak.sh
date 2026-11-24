@@ -55,6 +55,8 @@
 # imagem só existe local), o Ingress do /auth fica de fora, e o issuer continua
 # http://localhost:<HOST_PORT>/auth: o navegador chega ao Keycloak por
 #   kubectl --context <contexto> -n <namespace> port-forward svc/keycloak <HOST_PORT>:8080
+# O OpenLDAP do lab só roda como root, e um namespace com Pod Security restricted recusa o
+# pod: ali, use scripts/keycloak/keycloak-dev.sh (só Keycloak e PostgreSQL, sem diretório).
 set -euo pipefail
 LOG_PREFIX=keycloak
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
