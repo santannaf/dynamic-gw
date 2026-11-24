@@ -12,6 +12,11 @@
 #
 # O up gera os Secrets keycloak-postgres e keycloak-admin quando não existem, e o down
 # não os apaga. Num banco que já tem admin, a senha do Secret keycloak-admin não vale.
+#
+# STORAGE_CLASS escolhe a StorageClass do volume do banco; sem ela, vale a default do
+# cluster. Num cluster sem default, o PVC não sai de Pending, e nem o pod do PostgreSQL
+# ("pod has unbound immediate PersistentVolumeClaims"). Para trocar a classe, rode o down
+# antes: o StatefulSet não aceita mudar o volumeClaimTemplates depois de criado.
 set -euo pipefail
 
 usage() {
@@ -30,8 +35,8 @@ log() {
     echo "[keycloak-dev] $*"
 }
 
-# Banco num volume da StorageClass default do cluster. Em produção, um PostgreSQL
-# gerenciado ou um operador (CloudNativePG), com backup.
+# Banco num volume da STORAGE_CLASS ou da StorageClass default do cluster. Em produção,
+# um PostgreSQL gerenciado ou um operador (CloudNativePG), com backup.
 postgres_manifest() {
     cat <<'YAML'
 apiVersion: apps/v1
@@ -110,6 +115,11 @@ spec:
           app.kubernetes.io/name: keycloak-postgres
       spec:
         accessModes: ["ReadWriteOnce"]
+YAML
+    if [[ -n "${STORAGE_CLASS:-}" ]]; then
+        echo "        storageClassName: ${STORAGE_CLASS}"
+    fi
+    cat <<'YAML'
         resources:
           requests:
             storage: 5Gi
