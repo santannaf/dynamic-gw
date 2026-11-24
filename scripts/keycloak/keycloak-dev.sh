@@ -17,6 +17,12 @@
 # cluster. Num cluster sem default, o PVC não sai de Pending, e nem o pod do PostgreSQL
 # ("pod has unbound immediate PersistentVolumeClaims"). Para trocar a classe, rode o down
 # antes: o StatefulSet não aceita mudar o volumeClaimTemplates depois de criado.
+#
+# EPHEMERAL_DB=1 põe o banco num emptyDir, sem volume, para o cluster sem StorageClass que
+# se possa usar. O banco some quando o pod do PostgreSQL é recriado, e o Keycloak só refaz
+# as tabelas e o admin ao reiniciar:
+#   kubectl --context <contexto> -n <namespace> rollout restart deployment/keycloak
+# Entre o volume e o emptyDir também vale o down antes.
 set -euo pipefail
 
 usage() {
@@ -35,8 +41,9 @@ log() {
     echo "[keycloak-dev] $*"
 }
 
-# Banco num volume da STORAGE_CLASS ou da StorageClass default do cluster. Em produção,
-# um PostgreSQL gerenciado ou um operador (CloudNativePG), com backup.
+# Banco num volume da STORAGE_CLASS ou da StorageClass default do cluster, ou num emptyDir
+# (EPHEMERAL_DB=1). Em produção, um PostgreSQL gerenciado ou um operador (CloudNativePG),
+# com backup.
 postgres_manifest() {
     cat <<'YAML'
 apiVersion: apps/v1
@@ -108,21 +115,9 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-        labels:
-          app.kubernetes.io/name: keycloak-postgres
-      spec:
-        accessModes: ["ReadWriteOnce"]
 YAML
-    if [[ -n "${STORAGE_CLASS:-}" ]]; then
-        echo "        storageClassName: ${STORAGE_CLASS}"
-    fi
+    postgres_data
     cat <<'YAML'
-        resources:
-          requests:
-            storage: 5Gi
 ---
 apiVersion: v1
 kind: Service
@@ -138,6 +133,35 @@ spec:
     - name: postgres
       port: 5432
       targetPort: postgres
+YAML
+}
+
+postgres_data() {
+    if [[ "${EPHEMERAL_DB:-}" == "1" ]]; then
+        cat <<'YAML'
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 2Gi
+YAML
+        return
+    fi
+    cat <<'YAML'
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: keycloak-postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+YAML
+    if [[ -n "${STORAGE_CLASS:-}" ]]; then
+        echo "        storageClassName: ${STORAGE_CLASS}"
+    fi
+    cat <<'YAML'
+        resources:
+          requests:
+            storage: 5Gi
 YAML
 }
 
