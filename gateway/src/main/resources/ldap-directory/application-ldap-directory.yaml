@@ -1,0 +1,49 @@
+# Profile "ldap-directory": a conexão do gateway com o diretório (AD ou LDAP), sem
+# ligar canal nenhum. Não se ativa sozinho: entra pelos grupos de application.yaml:
+#
+#   ldap .......... o login direto no diretório é o canal do gateway
+#   keycloak-ldap . o login direto no diretório é o canal ldap, ao lado do keycloak
+#
+# Os valores abaixo apontam para o OpenLDAP local (k8s/sso/openldap.yaml), que
+# imita o AD: uma OU por aplicação com os grupos de acesso. Em outro ambiente,
+# sobrescreva por variável de ambiente (GATEWAY_SECURITY_LDAP_URL, ...).
+#
+# Segredo NUNCA fica neste arquivo (ele vai embarcado na imagem nativa):
+#   GATEWAY_SECURITY_LDAP_BIND_PASSWORD      senha da conta de serviço (somente leitura)
+#
+# AD de produção, para referência:
+#   url: ldaps://ad.corp.local:636            trusted-certificates: /etc/ssl/corp-ca.pem
+#   bind-dn: CN=svc-tools-gateway,OU=Services,DC=corp,DC=local
+#   user-search:  base OU=Users,DC=corp,DC=local        filter (sAMAccountName={0})
+#   username-attribute: sAMAccountName                  subject-attribute: objectGUID
+#   group-search: base OU=Tools,OU=Groups,DC=corp,DC=local
+#                 filter (member:1.2.840.113556.1.4.1941:={0})   (grupos aninhados)
+
+gateway:
+  security:
+    ldap:
+      url: ldap://openldap.platform.svc.cluster.local:389
+      start-tls: false
+      connect-timeout: 5s
+      response-timeout: 5s
+      pool-size: 4
+      # Conta de serviço SOMENTE LEITURA usada para achar usuários e grupos.
+      bind-dn: cn=readonly,dc=tools,dc=local
+      user-search:
+        base: ou=people,dc=tools,dc=local
+        filter: "(uid={0})"
+      username-attribute: uid
+      email-attribute: mail
+      subject-attribute: entryUUID
+      group-search:
+        # A OU da aplicação: só grupos daqui viram autoridades group:<cn>.
+        base: ou=tools,dc=tools,dc=local
+        filter: "(member={0})"
+        name-attribute: cn
+      # De quanto em quanto tempo cada réplica relê o usuário no diretório
+      # (conta desabilitada ou removida do grupo perde o acesso nesse prazo).
+      revalidate-after: 5m
+      login-attempts:
+        max-failures: 5
+        max-failures-per-client: 20
+        window: 5m

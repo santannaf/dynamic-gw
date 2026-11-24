@@ -1,0 +1,43 @@
+# Profile "ldap": o gateway faz o login direto no diretório (AD ou LDAP), sem
+# Keycloak, + auditoria. A conexão com o diretório vem do profile ldap-directory,
+# que o grupo ldap ativa junto (application.yaml). Combine com o profile do cenário
+# de rotas:
+#
+#   CRDs (ConfigMap, v2) ...... SPRING_PROFILES_ACTIVE=ldap
+#   S3 (v2) ................... SPRING_PROFILES_ACTIVE=s3,ldap
+#   Properties (v1) ........... SPRING_PROFILES_ACTIVE=standalone-sso,ldap
+#
+# Segredos NUNCA ficam neste arquivo (ele vai embarcado na imagem nativa):
+#   GATEWAY_SECURITY_SESSION_KEYS_0_ID       id da chave do cookie de sessão (ex.: k1)
+#   GATEWAY_SECURITY_SESSION_KEYS_0_SECRET   base64 de 32 bytes (openssl rand -base64 32)
+
+gateway:
+  security:
+    enabled: true
+    provider: ldap
+    # Rota sem bloco `access` exige login. Com "public", só as rotas com access protegem.
+    default-access: authenticated
+    # URL que o browser usa para chegar no gateway (redirect do login).
+    public-base-url: http://localhost:8080
+    internal:
+      # No LDAP só existem grupos: quem opera o gateway (GET /internal/routes) é um
+      # grupo próprio, separado dos grupos que dão acesso às ferramentas.
+      any-of:
+        - group:gateway-admins
+    identity-headers:
+      prefix: X-Auth-Request-
+      max-length: 4096
+    session:
+      cookie-name: GW_SESSION
+      # true fora do ambiente local; em http local: GATEWAY_SECURITY_SESSION_COOKIE_SECURE=false
+      cookie-secure: true
+      # Tempo máximo de uma sessão LDAP (não existe sessão central para encerrar).
+      max-age: 10h
+      cache-max-entries: 10000
+      # O logout avisa as outras réplicas por aqui (Service headless, um endereço por pod),
+      # para a cópia do cookie parar de valer em todas na hora. Fora do Kubernetes, não resolve
+      # e o logout vale só nesta réplica: GATEWAY_SECURITY_SESSION_PEERS= desliga.
+      peers: dynamic-gateway-headless:8080
+  audit:
+    enabled: true
+    include-query: false

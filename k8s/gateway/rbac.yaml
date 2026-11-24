@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dynamic-gateway
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: dynamic-gateway
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dynamic-gateway
+  namespace: platform
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - gateway-routes
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dynamic-gateway
+  namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dynamic-gateway
+subjects:
+  - kind: ServiceAccount
+    name: dynamic-gateway
+    namespace: platform

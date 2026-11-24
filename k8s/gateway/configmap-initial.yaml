@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-routes
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: gateway-routes
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+data:
+  # Optional starter snapshot. The operator overwrites this ConfigMap on the first reconcile pass.
+  routes.yaml: |
+    version: "initial"
+    generatedAt: "2026-06-13T00:00:00Z"
+    routes: []

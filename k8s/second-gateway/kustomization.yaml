@@ -1,0 +1,55 @@
+# Segundo gateway de borda no mesmo cluster: cada gateway tem seu namespace, seu
+# operator e seu snapshot, e o CRD é compartilhado. Reaproveita os manifests da
+# base e só troca o namespace, então vale como ponto de partida para outro gateway.
+#
+#   make second-gateway-up / second-gateway-test / second-gateway-down
+#
+# Usa arquivos fora deste diretório: aplique com
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone k8s/second-gateway | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: borda-exemplo
+resources:
+  - namespace.yaml
+  - ingress.yaml
+  - ../gateway/configmap-initial.yaml
+  - ../gateway/rbac.yaml
+  - ../gateway/deployment.yaml
+  - ../gateway/service.yaml
+  - ../operator/service-account.yaml
+  - ../operator/rbac.yaml
+  - ../operator/deployment.yaml
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: dynamic-gateway
+        namespace: platform
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: gateway
+                env:
+                  - name: GATEWAY_ROUTES_STORE_CONFIGMAP_NAMESPACE
+                    value: borda-exemplo
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: gateway-route-operator
+        namespace: platform
+      spec:
+        template:
+          spec:
+            containers:
+              - name: operator
+                env:
+                  - name: OPERATOR_NAMESPACE
+                    value: borda-exemplo
+                  - name: OPERATOR_ROUTES_STORE_CONFIGMAP_NAMESPACE
+                    value: borda-exemplo
+                  - name: OPERATOR_GATEWAY_RELOAD_URL
+                    value: http://dynamic-gateway.borda-exemplo.svc.cluster.local:8080/internal/routes/reload

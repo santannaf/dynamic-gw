@@ -1,0 +1,282 @@
+# Profile "standalone-sso": o v1 (rotas em properties, sem operator/CRD) com
+# uma política de acesso por rota. O provedor de SSO vem do outro profile:
+#
+#   SPRING_PROFILES_ACTIVE=standalone-sso,keycloak   (Keycloak, ver keycloak/application-keycloak.yaml)
+#   SPRING_PROFILES_ACTIVE=standalone-sso,ldap       (direto no diretório, ver ldap/application-ldap.yaml)
+#
+# As rotas idp-route, audience-route e obo-route pedem o canal keycloak: no ldap, o
+# gateway não as serve. A obo-route também precisa do app do gateway no Entra
+# (gateway.security.obo).
+#
+# Este arquivo vai embarcado na imagem nativa: mudar rota ou `access` = rebuild
+# da imagem + rollout, como no v1 puro. Quem está em cada grupo continua
+# dinâmico, porque isso é do AD/Keycloak.
+
+gateway:
+  # Com a segurança desligada o gateway ignora o `access` e serviria as rotas
+  # abaixo sem login. Ligada aqui, sem o profile do provedor o gateway não sobe.
+  security:
+    enabled: true
+    default-access: authenticated
+  audit:
+    enabled: true
+  routes:
+    store:
+      type: properties
+      properties:
+        version: "v1-sso-sample"
+        routes:
+          # Só membros do grupo tools-httpbin.
+          - id: httpbin-route
+            path: /httpbin/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            methods:
+              - GET
+              - POST
+            enabled: true
+            team: platform-team
+            description: Echoes the request via httpbin; tools-httpbin members only.
+            access:
+              any-of:
+                - group:tools-httpbin
+          # Continua aberta (baseline do k6 standalone).
+          - id: anything-route
+            path: /anything/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 0
+            methods:
+              - GET
+            enabled: true
+            team: platform-team
+            description: Public route; identity headers are still stripped.
+            access:
+              mode: public
+          # Sem bloco access: vale o default-access (qualquer autenticado).
+          - id: me-route
+            path: /me/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            enabled: true
+            team: platform-team
+            description: Any authenticated user (gateway default access).
+          # Admin da ferramenta: grupo do diretório, e o backend recebe o access token.
+          # A role gateway-admin não entra aqui: ela só opera o gateway.
+          - id: admin-route
+            path: /admin/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            enabled: true
+            team: platform-team
+            description: Admins only; the backend also receives the access token (keycloak).
+            access:
+              any-of:
+                - group:tools-admins
+              forward-token: true
+          # Só sessão que veio do login com Microsoft (provedor microsoft do Keycloak). Com a
+          # senha do diretório, o gateway manda entrar de novo pela Microsoft.
+          - id: idp-route
+            path: /idp/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Microsoft login only (identity provider microsoft), tools-httpbin members.
+            access:
+              identity-provider: microsoft
+              any-of:
+                - group:tools-httpbin
+          # O backend recebe um token trocado no Keycloak, só com a aud dele (httpbin-api),
+          # em vez do token da sessão.
+          - id: audience-route
+            path: /aud/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: tools-httpbin members; the backend gets a token whose aud is httpbin-api.
+            access:
+              any-of:
+                - group:tools-httpbin
+              forward-token: true
+              audience: httpbin-api
+          # O backend recebe o token do Entra para o escopo dele, pelo OBO do gateway.
+          - id: obo-route
+            path: /obo/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Microsoft login; the backend gets the Entra token of the gateway's On-Behalf-Of.
+            access:
+              identity-provider: microsoft
+              any-of:
+                - group:tools-httpbin
+              forward-token: true
+              obo:
+                scopes:
+                  - api://backend-b/pedidos.read
+            rate-limit:
+              requests: 5
+              period: 10s
+              key: user
+          # --- API de verdade: JSONPlaceholder (as mesmas rotas de
+          # k8s/samples/routes-jsonplaceholder.yaml; make jsonplaceholder-test). Precisam
+          # de saída para a internet; os limites contam por réplica.
+          - id: jp-posts
+            path: /jp/posts/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 1
+            team: platform-team
+            description: JSONPlaceholder as it is - /jp/posts/1 is /posts/1.
+            access:
+              mode: public
+          - id: jp-limitado
+            path: /jp/limitado/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 2
+            team: platform-team
+            description: Three requests every 10 seconds for each X-Api-Key - /jp/limitado/posts/1 is /posts/1.
+            access:
+              mode: public
+            rate-limit:
+              requests: 3
+              period: 10s
+              key: header:X-Api-Key
+          - id: jp-lento
+            path: /jp/lento/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 2
+            team: platform-team
+            description: One request at a time, one more waiting for up to 5 seconds - /jp/lento/comments is /comments.
+            access:
+              mode: public
+            throttle:
+              max-concurrent: 1
+              max-queue: 1
+              max-wait: 5s
+          - id: jp-artigos
+            path: /jp/artigos/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 1
+            team: platform-team
+            description: Facade in Portuguese - /jp/artigos/1 is /posts/1, with the fields renamed.
+            access:
+              mode: public
+            filters:
+              - name: RewritePath
+                args:
+                  regexp: /artigos(?<resto>.*)
+                  replacement: /posts$\{resto}
+              - name: RemoveResponseHeader
+                args:
+                  name: X-Powered-By
+              - name: AddResponseHeader
+                args:
+                  name: X-Fachada
+                  value: artigos
+              - name: RequestSize
+                args:
+                  maxSize: 1KB
+            transform:
+              mapping:
+                userId: autorId
+                title: titulo
+                body: conteudo
+          - id: jp-meus-posts
+            path: /jp/meus-posts
+            target-uri: https://jsonplaceholder.typicode.com
+            team: platform-team
+            description: The posts of user 1, only id and title - /posts?userId=1.
+            access:
+              mode: public
+            filters:
+              - name: SetPath
+                args:
+                  template: /posts
+              - name: AddRequestParameter
+                args:
+                  name: userId
+                  value: "1"
+            transform:
+              allow: [id, title]
+          - id: jp-post-completo
+            path: /jp/post-completo/{id}
+            team: platform-team
+            description: One answer with the post and its comments.
+            access:
+              mode: public
+            aggregate:
+              timeout: 5s
+              backends:
+                - url: https://jsonplaceholder.typicode.com/posts/{id}
+                  group: post
+                  transform:
+                    allow: [id, title, body]
+                - url: https://jsonplaceholder.typicode.com/posts/{id}/comments
+                  group: comentarios
+                  transform:
+                    allow: [name, email]
+          - id: jp-post-parcial
+            path: /jp/post-parcial/{id}
+            team: platform-team
+            description: One of the two backends does not exist - the answer is partial and says so.
+            access:
+              mode: public
+            aggregate:
+              timeout: 5s
+              backends:
+                - url: https://jsonplaceholder.typicode.com/posts/{id}
+                  group: post
+                - url: https://jsonplaceholder.typicode.com/nao-existe/{id}
+                  group: extra
+          # --- Privadas, contra o JSONPlaceholder (as mesmas de routes-jsonplaceholder.yaml).
+          # Nenhuma usa forward-token: o token do usuário não sai para uma API de terceiros.
+          - id: jp-privado
+            path: /jp/privado/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 2
+            team: platform-team
+            description: Any authenticated user (no access block), 5 requests every 10 seconds for each user - /jp/privado/posts/1 is /posts/1.
+            rate-limit:
+              requests: 5
+              period: 10s
+              key: user
+          - id: jp-usuarios
+            path: /jp/usuarios/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 1
+            team: platform-team
+            description: Group tools-httpbin; users come without address, phone and company - /jp/usuarios/1 is /users/1.
+            access:
+              any-of:
+                - group:tools-httpbin
+            filters:
+              - name: RewritePath
+                args:
+                  regexp: /usuarios(?<resto>.*)
+                  replacement: /users$\{resto}
+            transform:
+              deny: [address, phone, company]
+          - id: jp-gestao-leitura
+            path: /jp/gestao/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 2
+            methods: [GET, HEAD]
+            team: platform-team
+            description: Reading - groups tools-httpbin or tools-admins - /jp/gestao/posts/1 is /posts/1.
+            access:
+              any-of:
+                - group:tools-httpbin
+                - group:tools-admins
+          - id: jp-gestao-escrita
+            path: /jp/gestao/**
+            target-uri: https://jsonplaceholder.typicode.com
+            strip-prefix: 2
+            methods: [POST, PUT, PATCH, DELETE]
+            team: platform-team
+            description: Writing - group tools-admins only; the API pretends to save.
+            access:
+              any-of:
+                - group:tools-admins
+            filters:
+              - name: RequestSize
+                args:
+                  maxSize: 1KB

@@ -1,0 +1,21 @@
+# Modelo 6 (navegador fora da borda): nada alcança o backend sem passar pelo
+# gateway. Sem isso, outro pod chamaria o BFF direto, sem validação de sessão,
+# e poderia forjar os headers X-Auth-Request-* em que o backend confia.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: go-httpbin-only-from-gateway
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: go-httpbin
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dynamic-gateway
+      ports:
+        - port: 8080

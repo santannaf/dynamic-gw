@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamic-gateway
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: dynamic-gateway
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+    app.kubernetes.io/component: standalone
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: dynamic-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

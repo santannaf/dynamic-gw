@@ -1,0 +1,89 @@
+# Banco do Keycloak no lab com Oracle (KEYCLOAK_DB=oracle): Oracle AI Database
+# 26ai Free, a imagem oficial de container-registry.oracle.com, na variante lite.
+# Aplicado por scripts/db/oracle.sh, que troca __ORACLE_IMAGE__, gera o Secret
+# keycloak-oracle uma vez e cria o usuário KEYCLOAK no PDB FREEPDB1.
+#
+# StatefulSet com volume: o primeiro boot cria o banco (alguns minutos); os
+# seguintes reaproveitam os datafiles. Em produção, o Oracle é o da empresa:
+# o Keycloak só precisa do usuário com as permissões que o oracle.sh concede.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak-oracle
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: keycloak-oracle
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  serviceName: keycloak-oracle
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak-oracle
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-oracle
+        app.kubernetes.io/part-of: dynamic-gateway-control-plane
+    spec:
+      securityContext:
+        # Grupo oinstall do usuário oracle da imagem: o volume fica gravável para ele.
+        fsGroup: 54321
+      containers:
+        - name: oracle
+          image: __ORACLE_IMAGE__
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: oracle
+              containerPort: 1521
+          env:
+            - name: TZ
+              value: America/Sao_Paulo
+            # Senha de SYS, SYSTEM e PDBADMIN.
+            - name: ORACLE_PWD
+              valueFrom:
+                secretKeyRef: {name: keycloak-oracle, key: admin-password}
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "$ORACLE_BASE/$CHECK_DB_FILE"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 30
+            # O primeiro boot cria o banco: até 15 min antes de desistir.
+            failureThreshold: 90
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: 4000m
+              memory: 4Gi
+          volumeMounts:
+            - name: data
+              mountPath: /opt/oracle/oradata
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: keycloak-oracle
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-oracle
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: keycloak-oracle
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  selector:
+    app.kubernetes.io/name: keycloak-oracle
+  ports:
+    - name: oracle
+      port: 1521
+      targetPort: oracle

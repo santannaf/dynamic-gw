@@ -1,0 +1,105 @@
+# Cenário 5: o gateway faz o LDAP direto e usa o Keycloak com Identity Provider. Store: CRD (v2, snapshot no ConfigMap).
+#
+# Os GatewayRoute que o time aplica. O operator consolida as rotas num snapshot
+# no ConfigMap gateway-routes, que o gateway do application.yaml, ao lado,
+# acompanha. São as mesmas rotas de properties/cenario-5-ldap-direto-e-keycloak-idp/rotas.yaml.
+#
+# Campos da ETT-1452: channel, identityProvider, audience e obo.
+# A rota sem access.channel é do canal principal (keycloak).
+# Cada audience é um client do realm, com um client scope opcional de mesmo nome:
+# o gateway pede audience=<client> e scope=<client> na troca V2.
+# O schema do access, com as regras entre os campos em CEL, está em
+# ../schema-access.yaml (o mesmo de k8s/crd/).
+
+# PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+apiVersion: platform.yyy.xxx/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: public-api
+  namespace: platform
+spec:
+  path: /public/**
+  targetUri: http://public-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: platform-team
+  description: Rota pública.
+  access:
+    mode: public
+  rateLimit:                     # 20 a cada 10s por endereço, em cada réplica
+    requests: 20
+    period: 10s
+    key: ip
+---
+# LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
+apiVersion: platform.yyy.xxx/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: abc
+  namespace: platform
+spec:
+  path: /abc/**
+  targetUri: http://abc-api.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: abc-team
+  description: Membros do grupo abc-users no AD.
+  access:
+    channel: ldap                # o canal de additional-providers
+    anyOf:
+      - group:abc-users
+  rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
+    requests: 10
+    period: 10s
+    key: user
+---
+# IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
+# Neste realm todo login vem de lá; o identity-provider garante isso se outro login for ligado.
+apiVersion: platform.yyy.xxx/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: business-monitor
+  namespace: platform
+spec:
+  path: /business-monitor/**
+  targetUri: http://business-monitor.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: monitor-team
+  description: Login com Microsoft e a role business-monitor-user.
+  access:
+    identityProvider: microsoft  # alias do IdP no realm
+    anyOf:
+      - role:business-monitor-user
+    forwardToken: true           # o backend recebe um token
+    audience: business-monitor   # troca V2: aud=business-monitor
+  rateLimit:                     # 10 a cada 10s por usuário, em cada réplica
+    requests: 10
+    period: 10s
+    key: user
+---
+# OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
+apiVersion: platform.yyy.xxx/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: pedidos
+  namespace: platform
+spec:
+  path: /pedidos/**
+  targetUri: http://backend-b.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  team: pedidos-team
+  description: Pedidos do usuário, com o token do Entra.
+  access:
+    identityProvider: microsoft  # obrigatório no obo: a troca usa o token do login
+    anyOf:
+      - role:pedidos-leitura
+    forwardToken: true           # o backend recebe um token
+    obo:                         # escopos do OBO no Entra
+      scopes:
+        - api://backend-b/pedidos.read
+  rateLimit:                     # 5 a cada 10s por usuário, em cada réplica
+    requests: 5
+    period: 10s
+    key: user
+  throttle:                      # até 5 ao mesmo tempo; mais 10 esperam até 2s
+    maxConcurrent: 5
+    maxQueue: 10
+    maxWait: 2s

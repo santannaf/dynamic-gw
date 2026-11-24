@@ -1,0 +1,49 @@
+# Cenário 2: o gateway usa o Keycloak com LDAP. Store: properties (v1).
+#
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
+#
+# Campo da ETT-1452: audience.
+# Cada audience é um client do realm, com um client scope opcional de mesmo nome:
+# o gateway pede audience=<client> e scope=<client> na troca V2.
+
+gateway:
+  routes:
+    store:
+      properties:
+        version: "cenario-2-keycloak-ldap"
+        routes:
+          # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+          - id: public-api
+            path: /public/**
+            target-uri: http://public-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Rota pública.
+            access:
+              mode: public
+            rate-limit:                     # 20 a cada 10s por endereço, em cada réplica
+              requests: 20
+              period: 10s
+              key: ip
+
+          # LDAP pelo Keycloak: login no Keycloak, que valida a senha no AD.
+          - id: abc
+            path: /abc/**
+            target-uri: http://abc-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: abc-team
+            description: Usuários com a role abc-user.
+            access:
+              any-of:
+                - role:abc-user
+              forward-token: true           # o backend recebe um token
+              audience: abc-api             # troca V2: aud=abc-api (client no realm)
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
+            throttle:                       # até 5 ao mesmo tempo; mais 10 esperam até 2s
+              max-concurrent: 5
+              max-queue: 10
+              max-wait: 2s

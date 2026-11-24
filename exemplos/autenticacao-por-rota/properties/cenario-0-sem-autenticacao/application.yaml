@@ -1,0 +1,78 @@
+# Cenário 0: o gateway sem autenticação nem autorização. Store: properties (v1).
+#
+# A configuração do gateway neste cenário, num arquivo só; as rotas estão em
+# rotas.yaml, ao lado. No gateway deste repositório é o que o profile monta:
+# SPRING_PROFILES_ACTIVE=standalone (gateway/src/main/resources), com
+# GATEWAY_AUDIT_ENABLED=true, porque o profile deixa a auditoria desligada.
+#
+# O gateway não pede login, não confere permissão e não manda token ao backend:
+# toda rota fica aberta a quem chega na borda. O que limita o uso são as
+# políticas de cada rota (rate limit e throttling).
+#
+# Com a segurança desligada:
+#   - O gateway tira os X-Auth-Request-* e os cookies dele que vieram do cliente,
+#     como numa rota pública com SSO. O Authorization e os outros cookies seguem.
+#   - /_gateway/* (login, logout, whoami) responde 404.
+#   - GET /internal/routes só responde a quem chama o pod direto, de dentro do
+#     cluster (make routes). Pela borda, que acrescenta X-Forwarded-For, é 403.
+#
+# Valores do lab (k3d). Sem login não há segredo: nem client secret, nem chave
+# do cookie de sessão, nem senha de diretório.
+
+spring:
+  application:
+    name: dynamic-gateway
+  config:
+    # As rotas do v1, ao lado. No binário nativo, registre rotas.yaml como recurso
+    # (RuntimeHints): o Spring Boot só embarca sozinho os application*.yaml.
+    import: rotas.yaml
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            pool:
+              # NAT e firewall no caminho até um backend externo derrubam conexão parada
+              # sem avisar; reaproveitada, ela pendurava a requisição até o nginx-lb dar 504.
+              # Ociosa por mais de 20s, a conexão é fechada em vez de voltar ao uso.
+              max-idle-time: 20s
+              eviction-interval: 10s
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+gateway:
+  routes:
+    store:
+      # v1: as rotas vêm de rotas.yaml (gateway.routes.store.properties), sem
+      # operator nem CRD. Mudar rota é rebuild da imagem e rollout.
+      type: properties
+  security:
+    # Sem SSO: nenhum provedor, nenhuma sessão, nenhum access aplicado. É o default
+    # do gateway, escrito aqui para ficar explícito.
+    enabled: false
+  audit:
+    # Sem login a auditoria continua: um evento JSON por requisição no logger AUDIT,
+    # para o SIEM, sem a query string. Sem usuário (gateway.auth.method none), com a
+    # rota, o endereço do cliente e o resultado (allowed, rate_limited, throttled).
+    enabled: true
+    include-query: false
+  traffic:
+    # Proxies na frente do gateway que acrescentam o cliente ao X-Forwarded-For (o
+    # nginx-lb). O rate limit com key: ip lê a entrada do proxy mais externo, nunca
+    # uma que o cliente mandou.
+    trusted-proxies: 1

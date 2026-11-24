@@ -1,0 +1,339 @@
+{
+  "realm": "tools",
+  "enabled": true,
+  "displayName": "tools (local)",
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": false,
+  "loginWithEmailAllowed": false,
+  "eventsEnabled": true,
+  "eventsExpiration": 86400,
+  "eventsListeners": ["jboss-logging"],
+  "enabledEventTypes": [
+    "LOGIN", "LOGIN_ERROR", "LOGOUT", "LOGOUT_ERROR",
+    "CODE_TO_TOKEN", "CODE_TO_TOKEN_ERROR",
+    "REFRESH_TOKEN", "REFRESH_TOKEN_ERROR",
+    "CLIENT_LOGIN", "CLIENT_LOGIN_ERROR",
+    "TOKEN_EXCHANGE", "TOKEN_EXCHANGE_ERROR"
+  ],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "roles": {
+    "client": {
+      "tools-gateway": [
+        {
+          "name": "gateway-admin",
+          "description": "Operates the gateway (GET /internal/routes). Grants no access to any tool."
+        }
+      ]
+    }
+  },
+  "groups": [
+    {
+      "name": "${GATEWAY_ADMINS_GROUP}",
+      "path": "/${GATEWAY_ADMINS_GROUP}",
+      "clientRoles": { "tools-gateway": ["gateway-admin"] }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "tools-gateway",
+      "name": "dynamic-gateway (SSO for tools)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${TOOLS_GATEWAY_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "redirectUris": ["${GATEWAY_PUBLIC_BASE_URL}/_gateway/login/oauth2/code/keycloak"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${GATEWAY_PUBLIC_BASE_URL}/*",
+        "standard.token.exchange.enabled": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience: tools-gateway",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "tools-gateway",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "identity_provider",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "config": {
+            "user.session.note": "identity_provider",
+            "claim.name": "identity_provider",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "tools-cli",
+      "name": "automation calling tools through the gateway",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${TOOLS_CLI_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "audience: tools-gateway",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "tools-gateway",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "httpbin-api",
+      "name": "go-httpbin of the lab, as the audience of the token the gateway sends it (access.audience)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ],
+  "clientScopeMappings": {
+    "tools-gateway": [
+      { "client": "tools-cli", "roles": ["gateway-admin"] }
+    ]
+  },
+  "users": [
+    {
+      "username": "service-account-tools-cli",
+      "enabled": true,
+      "serviceAccountClientId": "tools-cli",
+      "clientRoles": { "tools-gateway": ["gateway-admin"] }
+    }
+  ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "name": "directory",
+        "providerId": "ldap",
+        "subComponents": {
+          "org.keycloak.storage.ldap.mappers.LDAPStorageMapper": [
+            {
+              "name": "username",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["${LDAP_USERNAME_ATTRIBUTE}"],
+                "user.model.attribute": ["username"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["false"],
+                "is.mandatory.in.ldap": ["true"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "email",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["mail"],
+                "user.model.attribute": ["email"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["false"],
+                "is.mandatory.in.ldap": ["false"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "first name",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["givenName"],
+                "user.model.attribute": ["firstName"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["true"],
+                "is.mandatory.in.ldap": ["false"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "last name",
+              "providerId": "user-attribute-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "ldap.attribute": ["sn"],
+                "user.model.attribute": ["lastName"],
+                "read.only": ["true"],
+                "always.read.value.from.ldap": ["true"],
+                "is.mandatory.in.ldap": ["false"],
+                "is.binary.attribute": ["false"],
+                "attribute.force.default": ["false"]
+              }
+            },
+            {
+              "name": "groups",
+              "providerId": "group-ldap-mapper",
+              "subComponents": {},
+              "config": {
+                "groups.dn": ["${LDAP_GROUPS_DN}"],
+                "group.name.ldap.attribute": ["cn"],
+                "group.object.classes": ["${LDAP_GROUP_OBJECT_CLASSES}"],
+                "preserve.group.inheritance": ["false"],
+                "ignore.missing.groups": ["false"],
+                "membership.ldap.attribute": ["member"],
+                "membership.attribute.type": ["DN"],
+                "membership.user.ldap.attribute": ["${LDAP_USERNAME_ATTRIBUTE}"],
+                "mode": ["READ_ONLY"],
+                "user.roles.retrieve.strategy": ["${LDAP_GROUPS_STRATEGY}"],
+                "memberof.ldap.attribute": ["memberOf"],
+                "drop.non.existing.groups.during.sync": ["false"]
+              }
+            },
+            {
+              "name": "MSAD account controls",
+              "providerId": "msad-user-account-control-mapper",
+              "subComponents": {},
+              "config": {}
+            }
+          ]
+        },
+        "config": {
+          "enabled": ["true"],
+          "priority": ["0"],
+          "vendor": ["${LDAP_VENDOR}"],
+          "connectionUrl": ["${LDAP_URL}"],
+          "startTls": ["false"],
+          "useTruststoreSpi": ["always"],
+          "connectionPooling": ["true"],
+          "connectionTimeout": ["5000"],
+          "readTimeout": ["10000"],
+          "authType": ["simple"],
+          "bindDn": ["${LDAP_BIND_DN}"],
+          "bindCredential": ["${LDAP_BIND_PASSWORD}"],
+          "usersDn": ["${LDAP_USERS_DN}"],
+          "usernameLDAPAttribute": ["${LDAP_USERNAME_ATTRIBUTE}"],
+          "rdnLDAPAttribute": ["${LDAP_RDN_ATTRIBUTE}"],
+          "uuidLDAPAttribute": ["${LDAP_UUID_ATTRIBUTE}"],
+          "userObjectClasses": ["${LDAP_USER_OBJECT_CLASSES}"],
+          "searchScope": ["2"],
+          "pagination": ["true"],
+          "editMode": ["READ_ONLY"],
+          "importEnabled": ["true"],
+          "syncRegistrations": ["false"],
+          "batchSizeForSync": ["1000"],
+          "fullSyncPeriod": ["-1"],
+          "changedSyncPeriod": ["-1"],
+          "cachePolicy": ["MAX_LIFESPAN"],
+          "maxLifespan": ["60000"],
+          "trustEmail": ["true"],
+          "validatePasswordPolicy": ["false"],
+          "usePasswordModifyExtendedOp": ["false"],
+          "allowKerberosAuthentication": ["false"],
+          "useKerberosForPasswordAuthentication": ["false"]
+        }
+      }
+    ]
+  },
+  "displayNameHtml": "tools",
+  "loginTheme": "tools",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt-BR"],
+  "defaultLocale": "pt-BR",
+  "authenticationFlows": [
+    {
+      "alias": "vincular-usuario-do-ad",
+      "description": "Primeiro login por um provedor externo: associa a conta ao usuário do AD com o mesmo e-mail, sem perguntar. Sem esse usuário, o login é recusado.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {"authenticator": "idp-detect-existing-broker-user", "requirement": "REQUIRED", "priority": 10, "authenticatorFlow": false, "userSetupAllowed": false},
+        {"authenticator": "idp-auto-link", "requirement": "REQUIRED", "priority": 20, "authenticatorFlow": false, "userSetupAllowed": false}
+      ]
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "microsoft",
+      "displayName": "Microsoft",
+      "providerId": "oidc",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": true,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "vincular-usuario-do-ad",
+      "config": {
+        "clientId": "${MICROSOFT_CLIENT_ID}",
+        "clientSecret": "${MICROSOFT_CLIENT_SECRET}",
+        "clientAuthMethod": "client_secret_post",
+        "authorizationUrl": "${MICROSOFT_AUTHORIZATION_URL}",
+        "tokenUrl": "${MICROSOFT_TOKEN_URL}",
+        "jwksUrl": "${MICROSOFT_JWKS_URL}",
+        "issuer": "${MICROSOFT_ISSUER}",
+        "useJwksUrl": "true",
+        "validateSignature": "true",
+        "pkceEnabled": "true",
+        "pkceMethod": "S256",
+        "defaultScope": "${MICROSOFT_DEFAULT_SCOPE}",
+        "syncMode": "IMPORT",
+        "guiOrder": "1"
+      }
+    }
+  ]
+}

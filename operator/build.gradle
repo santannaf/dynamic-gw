@@ -1,0 +1,107 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+    id 'io.spring.dependency-management'
+    id 'org.graalvm.buildtools.native'
+}
+
+ext {
+    set('springBootVersion', '4.1.2')
+    set('fabric8Version', '8.0.0')
+    // A Fabric8 8.0.0 traz o Vert.x 5.2.0 (CVE-2026-102476, CVE-2026-102479 e CVE-2026-102467
+    // no vertx-core, CVE-2026-118489 no vertx-web-client). Tire o override quando uma
+    // versão da Fabric8 trouxer o Vert.x 5.2.3 ou mais novo.
+    set('vertxVersion', '5.2.3')
+    // O mockwebserver da Fabric8 8.0.0, nos testes, traz o Bouncy Castle 1.86 (CVE-2026-103605,
+    // CVE-2026-103611, CVE-2026-103617, entre outras), que só fecham na 1.87. Tire o override
+    // quando uma versão da Fabric8 trouxer o Bouncy Castle 1.87 ou mais novo.
+    set('bouncycastleVersion', '1.87')
+    // O Boot 4.1.2 gerencia o Netty 4.2.19, afetado pelas correções de segurança das release
+    // notes da 4.2.20 (a IDE aponta WS-2026-0281 a WS-2026-0298). Tire quando o Boot gerenciar
+    // o Netty 4.2.20 ou mais novo.
+    set('netty.version', '4.2.21.Final')
+    // Fabric8 8 é feito sobre Jackson 3.2 (anotações 2.22) e o Boot 4.1.2 ainda
+    // gerencia 3.1.x/2.21: sobrescreve os dois BOMs até um Boot que traga 3.2.
+    // O BOM do Jackson 2 entra porque é ele que fixa a versão de jackson-annotations.
+    set('jackson-bom.version', '3.2.4')
+    set('jackson-2-bom.version', '2.22.4')
+    set('awsSdkVersion', '2.57.4')
+    set('mockitoVersion', '5.24.0')
+}
+
+dependencies {
+    implementation project(':shared')
+
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation "io.fabric8:kubernetes-client:${fabric8Version}"
+
+    // S3 backend (default credential chain reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
+    implementation 'software.amazon.awssdk:s3'
+    implementation 'software.amazon.awssdk:url-connection-client'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "io.fabric8:kubernetes-server-mock:${fabric8Version}"
+    testImplementation 'org.awaitility:awaitility:4.3.0'
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
+    testImplementation "org.mockito:mockito-junit-jupiter:${mockitoVersion}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    aotTestCompileOnly 'org.apiguardian:apiguardian-api:1.1.2'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
+        mavenBom "io.fabric8:kubernetes-client-bom:${fabric8Version}"
+        mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
+        mavenBom "org.bouncycastle:bc-jdk18on-bom:${bouncycastleVersion}"
+    }
+    // Módulo a módulo, e não pelo BOM do Vert.x: ele também gerencia Netty e Jackson,
+    // que ficam com o Boot.
+    dependencies {
+        dependencySet(group: 'io.vertx', version: vertxVersion) {
+            entry 'vertx-core'
+            entry 'vertx-core-logging'
+            entry 'vertx-web-client'
+            entry 'vertx-web-common'
+            entry 'vertx-auth-common'
+            entry 'vertx-uri-template'
+            entry 'vertx-web'
+            entry 'vertx-bridge-common'
+            entry 'vertx-eventbus-bridge-common'
+        }
+    }
+}
+
+List<String> quietTestJvmArgs = [
+        '-Dnet.bytebuddy.safe=true',
+        '-XX:+EnableDynamicAgentLoading',
+        // Netty carrega as bibliotecas nativas (epoll) com System.loadLibrary, restrito desde o Java 24.
+        '--enable-native-access=ALL-UNNAMED'
+]
+
+tasks.named('test', Test).configure { Test t ->
+    t.jvmArgs(quietTestJvmArgs)
+}
+
+tasks.named('processTestAot', JavaExec).configure { JavaExec t ->
+    t.jvmArgs(quietTestJvmArgs)
+}
+
+graalvmNative {
+    binaries {
+        main {
+            imageName = 'dynamic-gateway-operator'
+            mainClass = 'com.example.operator.OperatorApplication'
+            buildArgs.addAll(
+                    '--no-fallback',
+                    '--enable-url-protocols=http,https',
+                    '--enable-native-access=ALL-UNNAMED',
+                    // Netty 4.2.19+ (via Vert.x, no cliente da Fabric8) no Java 25 libera buffers diretos
+                    // fechando um Arena.ofShared(); sem isto o binário derruba a conexão com UnsupportedFeatureError.
+                    '-H:+SharedArenaSupport',
+                    '-H:+AddAllCharsets',                    // snakeyaml-engine (via Fabric8) precisa de UTF-32BE etc.
+                    '-H:+ReportExceptionStackTraces'
+            )
+        }
+    }
+}

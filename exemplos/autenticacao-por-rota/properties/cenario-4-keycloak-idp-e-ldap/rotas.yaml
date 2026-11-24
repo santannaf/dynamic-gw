@@ -1,0 +1,89 @@
+# Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: properties (v1).
+#
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
+#
+# Campos da ETT-1452: identity-provider, audience e obo.
+# Cada audience é um client do realm, com um client scope opcional de mesmo nome:
+# o gateway pede audience=<client> e scope=<client> na troca V2.
+
+gateway:
+  routes:
+    store:
+      properties:
+        version: "cenario-4-keycloak-idp-e-ldap"
+        routes:
+          # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+          - id: public-api
+            path: /public/**
+            target-uri: http://public-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Rota pública.
+            access:
+              mode: public
+            rate-limit:                     # 20 a cada 10s por endereço, em cada réplica
+              requests: 20
+              period: 10s
+              key: ip
+
+          # LDAP pelo Keycloak: aceita quem entrou com senha ou pela Microsoft,
+          # porque é o mesmo usuário do AD.
+          - id: abc
+            path: /abc/**
+            target-uri: http://abc-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: abc-team
+            description: Usuários com a role abc-user.
+            access:
+              any-of:
+                - role:abc-user
+              forward-token: true           # o backend recebe um token
+              audience: abc-api             # troca V2: aud=abc-api (client no realm)
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
+
+          # IDENTITY_PROVIDER: só sessão que veio do login com Microsoft (broker do Keycloak).
+          # Quem entrou com senha faz login de novo pela Microsoft.
+          - id: business-monitor
+            path: /business-monitor/**
+            target-uri: http://business-monitor.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: monitor-team
+            description: Login com Microsoft e a role business-monitor-user.
+            access:
+              identity-provider: microsoft  # alias do IdP no realm
+              any-of:
+                - role:business-monitor-user
+              forward-token: true           # o backend recebe um token
+              audience: business-monitor    # troca V2: aud=business-monitor
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
+
+          # OBO: troca no Keycloak e OBO no Entra. O Backend B recebe o token E, sem o token A.
+          - id: pedidos
+            path: /pedidos/**
+            target-uri: http://backend-b.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: pedidos-team
+            description: Pedidos do usuário, com o token do Entra.
+            access:
+              identity-provider: microsoft  # obrigatório no obo: a troca usa o token do login
+              any-of:
+                - role:pedidos-leitura
+              forward-token: true           # o backend recebe um token
+              obo:                          # escopos do OBO no Entra
+                scopes:
+                  - api://backend-b/pedidos.read
+            rate-limit:                     # 5 a cada 10s por usuário, em cada réplica
+              requests: 5
+              period: 10s
+              key: user
+            throttle:                       # até 5 ao mesmo tempo; mais 10 esperam até 2s
+              max-concurrent: 5
+              max-queue: 10
+              max-wait: 2s

@@ -1,0 +1,268 @@
+package com.example.gateway.routes;
+
+import com.example.gateway.access.AccessCapabilities;
+import com.example.gateway.routing.InMemoryDynamicRouteLocator;
+import com.example.gateway.routing.RouteCompiler;
+import com.example.gateway.routing.RouteDefinitionMapper;
+import com.example.gateway.routes.store.RouteConfigProvider;
+import com.example.shared.routes.RouteAccess;
+import com.example.shared.routes.RouteConfigEntry;
+import com.example.shared.routes.RouteConfigSnapshot;
+import com.example.shared.routes.RoutePolicyRules;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.route.RouteDefinition;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Optional;
+import tools.jackson.databind.json.JsonMapper;
+
+@Service
+public class GatewayRouteReloadService {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayRouteReloadService.class);
+    // Policies go into the hash as JSON: records serialize their components in
+    // declaration order, so the same policy always yields the same bytes.
+    private static final JsonMapper POLICY_JSON = JsonMapper.builder().build();
+
+    private final RouteConfigProvider provider;
+    private final RouteDefinitionMapper mapper;
+    private final InMemoryDynamicRouteLocator routeLocator;
+    private final RouteCompiler routeCompiler;
+    private final ApplicationEventPublisher events;
+    private final String identityHeaderPrefix;
+    private final AccessCapabilities accessCapabilities;
+    // Mantemos só o hash SHA-256 do último snapshot, não a lista inteira de
+    // RouteConfigEntry. Para 60k rotas, segurar a List<RouteConfigEntry>
+    // ocupava ~50 MiB de heap continuamente só para suportar o early-return
+    // de "snapshot inalterado"; 64 chars hex (128 bytes) substituem isso
+    // sem perda de corretude — colisão SHA-256 é praticamente impossível.
+    private volatile String lastLoadedHash = "";
+    private volatile List<String> lastLoadedIds = List.of();
+
+    public GatewayRouteReloadService(RouteConfigProvider provider,
+                                     RouteDefinitionMapper mapper,
+                                     InMemoryDynamicRouteLocator routeLocator,
+                                     RouteCompiler routeCompiler,
+                                     ApplicationEventPublisher events) {
+        this(provider, mapper, routeLocator, routeCompiler, events, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX,
+                AccessCapabilities.disabled());
+    }
+
+    @Autowired
+    public GatewayRouteReloadService(RouteConfigProvider provider,
+                                     RouteDefinitionMapper mapper,
+                                     InMemoryDynamicRouteLocator routeLocator,
+                                     RouteCompiler routeCompiler,
+                                     ApplicationEventPublisher events,
+                                     @Value("${gateway.security.identity-headers.prefix:X-Auth-Request-}")
+                                     String identityHeaderPrefix,
+                                     AccessCapabilities accessCapabilities) {
+        this.provider = provider;
+        this.mapper = mapper;
+        this.routeLocator = routeLocator;
+        this.routeCompiler = routeCompiler;
+        this.events = events;
+        this.identityHeaderPrefix = identityHeaderPrefix;
+        this.accessCapabilities = accessCapabilities;
+    }
+
+    // Serialized: the store watcher and the operator's reload signal can arrive together, and
+    // an interleaved older reload would replace newer routes and desync lastLoadedHash.
+    public synchronized List<String> reloadFromStore() {
+        long startNs = System.nanoTime();
+        log.info("Loading routes from route config store");
+
+        RouteConfigSnapshot snapshot = provider.load();
+        long loadMs = elapsedMs(startNs);
+        int snapshotRoutes = snapshot.routes().size();
+
+        String snapshotHash = hashEntries(snapshot.routes());
+        if (snapshotHash.equals(lastLoadedHash)) {
+            log.info("Snapshot routes unchanged (version={} snapshotRoutes={} hash={}); skipping reload elapsedMs={}",
+                    snapshot.version(), snapshotRoutes, snapshotHash, loadMs);
+            return lastLoadedIds;
+        }
+
+        log.info("Route config snapshot loaded version={} snapshotRoutes={} elapsedMs={}",
+                snapshot.version(), snapshotRoutes, loadMs);
+
+        // The operator already drops invalid GatewayRoutes; routes declared in
+        // properties (v1) get the same rules here. An invalid route is not
+        // served at all, rather than served without the policy it asked for.
+        List<RouteDefinition> definitions = snapshot.routes().stream()
+                .filter(this::isValid)
+                .map(this::mapAndLog)
+                .toList();
+        long mapEndMs = elapsedMs(startNs);
+
+        List<Route> routes = routeCompiler.compile(definitions);
+        int activeRoutes = routes.size();
+        long convertEndMs = elapsedMs(startNs);
+
+        // Mapper e compiler são 1:1, então snapshotRoutes deveria sempre bater
+        // com activeRoutes. Logamos um WARN se divergir – isso só pode acontecer
+        // se algum estágio futuramente filtrar (ex: validação que dropa rotas
+        // inválidas em vez de explodir), e nesse caso queremos que apareça no
+        // log de produção, não que vire bug silencioso.
+        if (activeRoutes != snapshotRoutes) {
+            log.warn("Route count mismatch detected snapshotRoutes={} activeRoutes={} dropped={}",
+                    snapshotRoutes, activeRoutes, snapshotRoutes - activeRoutes);
+        }
+
+        routeLocator.replaceAll(routes, definitions);
+        long replaceEndMs = elapsedMs(startNs);
+        log.info("Routes replaced in memory activeRoutes={} elapsedMs={}",
+                activeRoutes, replaceEndMs);
+
+        events.publishEvent(new RefreshRoutesEvent(this));
+        long totalMs = elapsedMs(startNs);
+
+        List<String> ids = routes.stream()
+                .map(Route::getId)
+                .sorted()
+                .toList();
+
+        lastLoadedHash = snapshotHash;
+        lastLoadedIds = ids;
+
+        log.info("Reload completed snapshotRoutes={} activeRoutes={} totalMs={} (loadMs={} mapMs={} convertMs={} replaceMs={} publishMs={})",
+                snapshotRoutes, activeRoutes, totalMs,
+                loadMs,
+                mapEndMs - loadMs,
+                convertEndMs - mapEndMs,
+                replaceEndMs - convertEndMs,
+                totalMs - replaceEndMs);
+
+        return ids;
+    }
+
+    private boolean isValid(RouteConfigEntry entry) {
+        Optional<String> problem = RoutePolicyRules.validate(entry, identityHeaderPrefix)
+                .or(() -> accessCapabilities.unsupported(entry.access()));
+        problem.ifPresent(p -> log.warn("Route {} is invalid and will not be served: {}", entry.id(), p));
+        return problem.isEmpty();
+    }
+
+    private RouteDefinition mapAndLog(RouteConfigEntry entry) {
+        if (log.isDebugEnabled()) {
+            log.debug("Route loaded id={} path={} targetUri={}",
+                    entry.id(), entry.path(), entry.targetUri());
+        }
+        return mapper.toDefinition(entry);
+    }
+
+    /**
+     * SHA-256 do conteúdo do snapshot, em streaming (sem materializar Strings
+     * intermediárias). Hashamos cada campo do RouteConfigEntry separado por
+     * um byte 0x00 pra evitar ambiguidade entre, por exemplo, id="ab" path="c"
+     * e id="a" path="bc". Suficiente pra detectar "esse snapshot é o mesmo da
+     * última vez" — colisão é da ordem de 2^-256.
+     * Custo: ~12 MiB de alocação temporária pra 60k entries (uns ~200 bytes
+     * de String->bytes por entry, GC-eligible logo em seguida). Em troca,
+     * dispensamos segurar a List<RouteConfigEntry> em campo (~50 MiB residentes
+     * pra 60k entries).
+     */
+    private static String hashEntries(List<RouteConfigEntry> entries) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            for (RouteConfigEntry e : entries) {
+                updateUtf8(md, e.id());
+                updateUtf8(md, e.path());
+                updateUtf8(md, e.targetUri());
+                md.update((byte) (e.stripPrefix() == null ? -1 : e.stripPrefix()));
+                md.update((byte) 0);
+                if (e.methods() != null) {
+                    for (String m : e.methods()) {
+                        updateUtf8(md, m);
+                    }
+                }
+                md.update((byte) 0);
+                md.update((byte) (Boolean.TRUE.equals(e.enabled()) ? 1 : 0));
+                // team e description são metadados (não afetam matching), mas
+                // mudá-los precisa disparar reload pra atualizar a resposta de
+                // /internal/routes. Por isso entram no hash.
+                updateUtf8(md, e.team());
+                updateUtf8(md, e.description());
+                // access muda a postura de segurança da rota: alterar só ela
+                // precisa disparar reload. Ver hashAccess pro layout.
+                hashAccess(md, e.access());
+                // Políticas (rateLimit, throttle, filters, transform,
+                // aggregate) também mudam o comportamento da rota. Entram
+                // depois do access, como JSON; snapshots sem elas geram
+                // "[null,null,null,null,null]".
+                updatePolicies(md, e);
+                md.update((byte) '\n');
+            }
+            return HexFormat.of().formatHex(md.digest());
+        } catch (NoSuchAlgorithmException ex) {
+            // SHA-256 é obrigatório em qualquer JVM/SubstrateVM compatível com a spec.
+            throw new IllegalStateException("SHA-256 not available", ex);
+        }
+    }
+
+    /**
+     * Layout: marcador de presença (-1 ausente, 1 presente); mode; marcador
+     * de presença de anyOf seguido de cada autoridade em ordem e um 0x00
+     * terminador; byte de forwardToken (-1 nulo, 0, 1); channel,
+     * identityProvider e audience; marcador de presença dos scopes do obo
+     * seguido de cada scope e um 0x00 terminador. Os marcadores mantêm access
+     * nulo, anyOf nulo e obo nulo distinguíveis de vazio.
+     */
+    private static void hashAccess(MessageDigest md, RouteAccess access) {
+        if (access == null) {
+            md.update((byte) -1);
+            return;
+        }
+        md.update((byte) 1);
+        updateUtf8(md, access.mode());
+        if (access.anyOf() == null) {
+            md.update((byte) -1);
+        } else {
+            md.update((byte) 1);
+            for (String authority : access.anyOf()) {
+                updateUtf8(md, authority);
+            }
+        }
+        md.update((byte) 0);
+        md.update((byte) (access.forwardToken() == null ? -1 : access.forwardToken() ? 1 : 0));
+        updateUtf8(md, access.channel());
+        updateUtf8(md, access.identityProvider());
+        updateUtf8(md, access.audience());
+        if (access.obo() == null || access.obo().scopes() == null) {
+            md.update((byte) -1);
+        } else {
+            md.update((byte) 1);
+            for (String scope : access.obo().scopes()) {
+                updateUtf8(md, scope);
+            }
+        }
+        md.update((byte) 0);
+    }
+
+    private static void updatePolicies(MessageDigest md, RouteConfigEntry e) {
+        md.update(POLICY_JSON.writeValueAsBytes(
+                Arrays.asList(e.rateLimit(), e.throttle(), e.filters(), e.transform(), e.aggregate())));
+        md.update((byte) 0);
+    }
+
+    private static void updateUtf8(MessageDigest md, String s) {
+        if (s != null) {
+            md.update(s.getBytes(StandardCharsets.UTF_8));
+        }
+        md.update((byte) 0);
+    }
+
+    private static long elapsedMs(long startNs) { return (System.nanoTime() - startNs) / 1_000_000; }
+}

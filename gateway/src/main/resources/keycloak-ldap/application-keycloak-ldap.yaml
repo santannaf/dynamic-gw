@@ -1,0 +1,22 @@
+# Profile "keycloak-ldap": dois canais no mesmo gateway (cenário 5 do
+# AUTENTICACAO_POR_ROTA.pdf). O keycloak é o principal: login no Keycloak, pela
+# senha do diretório ou pela Microsoft, e tokens. O ldap faz o login direto no
+# diretório, só nas rotas com access.channel: ldap, com a sessão no cookie
+# GW_SESSION_LDAP. É um grupo (application.yaml): keycloak + ldap-directory + este
+# arquivo. Combine com o profile do cenário de rotas:
+#
+#   CRDs (ConfigMap, v2) ...... SPRING_PROFILES_ACTIVE=keycloak-ldap
+#   S3 (v2) ................... SPRING_PROFILES_ACTIVE=s3,keycloak-ldap
+#   Properties (v1) ........... SPRING_PROFILES_ACTIVE=standalone-sso,keycloak-ldap
+#
+# Segredos: os do keycloak e o do ldap-directory, por variável de ambiente.
+
+gateway:
+  security:
+    additional-providers:
+      - ldap
+    internal:
+      # Quem opera o gateway entra por qualquer um dos dois canais.
+      any-of:
+        - role:gateway-admin                 # pelo Keycloak
+        - group:gateway-admins               # pelo login direto no diretório

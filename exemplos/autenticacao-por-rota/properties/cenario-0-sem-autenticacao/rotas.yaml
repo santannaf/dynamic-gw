@@ -1,0 +1,46 @@
+# Cenário 0: o gateway sem autenticação nem autorização. Store: properties (v1).
+#
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
+#
+# Nenhuma rota tem bloco access, porque com a segurança desligada o gateway não o
+# aplica: mode e any-of são ignorados (o log avisa "route access policies are NOT
+# enforced"), e channel, identity-provider, audience e obo fazem o gateway recusar
+# a rota. Rota que precisa de login vai para um cenário com SSO (1 a 5).
+#
+# O rate limit conta por endereço (key: ip). Sem login não há usuário, e key: user
+# também cairia no endereço.
+
+gateway:
+  routes:
+    store:
+      properties:
+        version: "cenario-0-sem-autenticacao"
+        routes:
+          # Aberta: sem login e sem permissão.
+          - id: public-api
+            path: /public/**
+            target-uri: http://public-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Rota aberta, sem login.
+            rate-limit:                     # 20 a cada 10s por endereço, em cada réplica
+              requests: 20
+              period: 10s
+              key: ip
+
+          # Aberta também. Além do rate limit, o throttling segura o backend.
+          - id: abc
+            path: /abc/**
+            target-uri: http://abc-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: abc-team
+            description: API do time abc, aberta.
+            rate-limit:                     # 10 a cada 10s por endereço, em cada réplica
+              requests: 10
+              period: 10s
+              key: ip
+            throttle:                       # até 5 ao mesmo tempo; mais 10 esperam até 2s
+              max-concurrent: 5
+              max-queue: 10
+              max-wait: 2s

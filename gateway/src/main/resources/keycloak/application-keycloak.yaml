@@ -1,0 +1,83 @@
+# Profile "keycloak": SSO pelo Keycloak (OIDC code + PKCE, bearer JWT para
+# APIs) + auditoria. Combine com o profile do cenário de rotas:
+#
+#   CRDs (ConfigMap, v2) ...... SPRING_PROFILES_ACTIVE=keycloak
+#   S3 (v2) ................... SPRING_PROFILES_ACTIVE=s3,keycloak
+#   Properties (v1) ........... SPRING_PROFILES_ACTIVE=standalone-sso,keycloak
+#
+# Os valores abaixo apontam para o ambiente local (k3d + k8s/sso/keycloak.yaml).
+# Em outro ambiente, sobrescreva por variável de ambiente (relaxed binding:
+# gateway.security.public-base-url -> GATEWAY_SECURITY_PUBLIC_BASE_URL).
+#
+# Segredos NUNCA ficam neste arquivo (ele vai embarcado na imagem nativa):
+#   GATEWAY_SECURITY_OIDC_CLIENT_SECRET      client secret do client tools-gateway
+#   GATEWAY_SECURITY_SESSION_KEYS_0_ID       id da chave do cookie de sessão (ex.: k1)
+#   GATEWAY_SECURITY_SESSION_KEYS_0_SECRET   base64 de 32 bytes (openssl rand -base64 32)
+#
+# OBO no Entra (rotas com access.obo), só quando o gateway tem um app no Entra; sem o
+# client-id, a rota com obo não é servida:
+#   GATEWAY_SECURITY_OBO_TENANT_ID           tenant do Entra
+#   GATEWAY_SECURITY_OBO_CLIENT_ID           Application (client) ID do app do gateway
+#   GATEWAY_SECURITY_OBO_CLIENT_SECRET       client secret desse app (segredo)
+
+gateway:
+  security:
+    enabled: true
+    provider: keycloak
+    # Rota sem bloco `access` exige login. Com "public", só as rotas com access protegem.
+    default-access: authenticated
+    # URL que o browser usa para chegar no gateway (redirect do login e do logout).
+    public-base-url: http://localhost:8080
+    oidc:
+      registration-id: keycloak
+      # Issuer público: tem que ser igual ao `iss` dos tokens (KC_HOSTNAME do Keycloak).
+      issuer: ${gateway.security.public-base-url}/auth/realms/tools
+      # Mesmo realm visto de dentro do cluster (token, JWKS, logout back-channel).
+      internal-issuer: http://keycloak.platform.svc.cluster.local:8080/auth/realms/tools
+      client-id: tools-gateway
+      # O access token precisa trazer este aud (audience mapper no client).
+      audience: tools-gateway
+      # Claim `typ` do Keycloak: impede usar ID token como bearer.
+      required-token-type: Bearer
+      # De qual provedor de identidade do realm veio a sessão (mapper de nota de sessão
+      # identity_provider no client). Vazio após login com a senha do diretório; as rotas com
+      # access.identityProvider comparam com ela.
+      identity-provider-claim: identity_provider
+      scopes:
+        - openid
+        - profile
+        - email
+    authorities:
+      # Grupos do AD federado pelo Keycloak (só os da OU da aplicação) -> group:<nome>
+      group-claims:
+        - groups
+      # Só as roles do client do gateway -> role:<nome>. Role de realm fica de fora:
+      # vale para o realm inteiro, e uma role de mesmo nome criada para outra
+      # aplicação liberaria rotas aqui.
+      role-claims:
+        - "resource_access.{client-id}.roles"
+      # Outros tipos: <tipo> -> claims. Claim em texto é separado por espaço, como o scope do OAuth.
+      claims:
+        scope:
+          - scope
+    internal:
+      # Quem opera o gateway (GET /internal/routes): role do client tools-gateway, dada
+      # ao grupo gateway-admins do AD e à conta de serviço. Não abre nenhuma ferramenta.
+      any-of:
+        - role:gateway-admin
+    identity-headers:
+      prefix: X-Auth-Request-
+      max-length: 4096
+    session:
+      cookie-name: GW_SESSION
+      authz-cookie-name: GW_AUTHZ
+      # true fora do ambiente local; em http local: GATEWAY_SECURITY_SESSION_COOKIE_SECURE=false
+      cookie-secure: true
+      cache-max-entries: 10000
+      # O logout avisa as outras réplicas por aqui (Service headless, um endereço por pod),
+      # para a cópia do cookie parar de valer em todas na hora. Fora do Kubernetes, não resolve
+      # e o logout vale só nesta réplica: GATEWAY_SECURITY_SESSION_PEERS= desliga.
+      peers: dynamic-gateway-headless:8080
+  audit:
+    enabled: true
+    include-query: false

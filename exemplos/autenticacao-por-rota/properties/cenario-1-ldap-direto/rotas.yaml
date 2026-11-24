@@ -1,0 +1,46 @@
+# Cenário 1: o gateway faz o LDAP direto. Store: properties (v1).
+#
+# As rotas do cenário, em gateway.routes.store.properties. O application.yaml,
+# ao lado, importa este arquivo e tem a configuração do gateway.
+#
+# Nenhum campo da ETT-1452.
+# Sem token, forward-token, audience, identity-provider e obo não se aplicam.
+
+gateway:
+  routes:
+    store:
+      properties:
+        version: "cenario-1-ldap-direto"
+        routes:
+          # PUBLIC: sem login. O gateway tira os headers X-Auth-Request-* e os cookies dele.
+          - id: public-api
+            path: /public/**
+            target-uri: http://public-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: platform-team
+            description: Rota pública.
+            access:
+              mode: public
+            rate-limit:                     # 20 a cada 10s por endereço, em cada réplica
+              requests: 20
+              period: 10s
+              key: ip
+
+          # LDAP direto: login no formulário do gateway e bind no AD. Sem token, só headers.
+          - id: abc
+            path: /abc/**
+            target-uri: http://abc-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: abc-team
+            description: Membros do grupo abc-users no AD.
+            access:
+              any-of:
+                - group:abc-users
+            rate-limit:                     # 10 a cada 10s por usuário, em cada réplica
+              requests: 10
+              period: 10s
+              key: user
+            throttle:                       # até 5 ao mesmo tempo; mais 10 esperam até 2s
+              max-concurrent: 5
+              max-queue: 10
+              max-wait: 2s

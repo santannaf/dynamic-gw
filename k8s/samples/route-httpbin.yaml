@@ -1,0 +1,15 @@
+apiVersion: platform.yyy.xxx/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: httpbin-route
+  namespace: platform
+spec:
+  path: /httpbin/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 1
+  methods:
+    - GET
+    - POST
+  enabled: true
+  team: platform-team
+  description: Echoes the request via httpbin for smoke testing.

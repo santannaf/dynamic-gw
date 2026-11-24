@@ -1,0 +1,192 @@
+package com.example.gateway.routes.api;
+
+import com.example.gateway.routes.GatewayRouteReloadService;
+import com.example.gateway.routing.InMemoryDynamicRouteLocator;
+import com.example.gateway.routing.RouteDefinitionMapper;
+import com.example.shared.routes.RouteAccess;
+import com.example.shared.routes.RouteConfigEntry;
+import com.example.shared.routes.RouteObo;
+import com.example.shared.routes.RouteRateLimit;
+import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTransform;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.route.RouteDefinition;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class InternalRoutesControllerTest {
+
+    private InMemoryDynamicRouteLocator routeLocator;
+    private RouteDefinitionMapper mapper;
+
+    @BeforeEach
+    void setUp() {
+        routeLocator = new InMemoryDynamicRouteLocator();
+        mapper = new RouteDefinitionMapper();
+    }
+
+    @Test
+    void postReloadReturnsActiveRouteIds() {
+        GatewayRouteReloadService service = mock(GatewayRouteReloadService.class);
+        when(service.reloadFromStore()).thenReturn(List.of("a", "b"));
+        InternalRoutesController controller = new InternalRoutesController(service, routeLocator);
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.post().uri("/internal/routes/reload")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("reloaded")
+                .jsonPath("$.routes[0]").isEqualTo("a")
+                .jsonPath("$.routes[1]").isEqualTo("b");
+    }
+
+    @Test
+    void postReloadReturns500OnFailure() {
+        GatewayRouteReloadService service = mock(GatewayRouteReloadService.class);
+        when(service.reloadFromStore()).thenThrow(new RuntimeException("provider down"));
+        InternalRoutesController controller = new InternalRoutesController(service, routeLocator);
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.post().uri("/internal/routes/reload")
+                .exchange()
+                .expectStatus().is5xxServerError()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo("error")
+                .jsonPath("$.error").isEqualTo("provider down");
+    }
+
+    @Test
+    void getListsCurrentRoutesAndDoesNotReload() {
+        RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry(
+                "httpbin-route", "/httpbin/**", "http://httpbin.org", 1, List.of("GET", "POST"), true,
+                "platform-team", "Smoke-test route via httpbin.", null, null, null, null, null, null));
+        routeLocator.replaceAll(
+                List.of(Route.async(rd).asyncPredicate(e -> Mono.just(true)).build()),
+                List.of(rd));
+        GatewayRouteReloadService service = mock(GatewayRouteReloadService.class);
+        InternalRoutesController controller = new InternalRoutesController(service, routeLocator);
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        client.get().uri("/internal/routes")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes[0].id").isEqualTo("httpbin-route")
+                .jsonPath("$.routes[0].uri").isEqualTo("http://httpbin.org")
+                .jsonPath("$.routes[0].predicates[0]").isEqualTo("Path=/httpbin/**")
+                .jsonPath("$.routes[0].predicates[1]").isEqualTo("Method=GET,POST")
+                .jsonPath("$.routes[0].filters[0]").isEqualTo("StripPrefix=1")
+                .jsonPath("$.routes[0].team").isEqualTo("platform-team")
+                .jsonPath("$.routes[0].description").isEqualTo("Smoke-test route via httpbin.");
+
+        verify(service, never()).reloadFromStore();
+    }
+
+    @Test
+    void getOnEmptyLocatorReturnsEmptyList() {
+        GatewayRouteReloadService service = mock(GatewayRouteReloadService.class);
+        InternalRoutesController controller = new InternalRoutesController(service, routeLocator);
+
+        WebTestClient client = WebTestClient.bindToController(controller).build();
+
+        AtomicInteger calls = new AtomicInteger();
+        client.get().uri("/internal/routes")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes").isArray()
+                .jsonPath("$.routes.length()").isEqualTo(0);
+
+        assertThat(calls).hasValue(0);
+        verify(service, never()).reloadFromStore();
+    }
+
+    @Test
+    void getExposesRoutePoliciesWhenDeclared() {
+        RouteDefinition limited = mapper.toDefinition(new RouteConfigEntry(
+                "limited", "/l/**", "http://l", 1, null, true, null, null, null,
+                new RouteRateLimit(5, "10s", null, "ip"), new RouteThrottle(2, 1, "1s"), null,
+                new RouteTransform(null, List.of("senha"), null, null, null), null));
+        routeLocator.replaceAll(List.of(Route.async(limited).asyncPredicate(e -> Mono.just(true)).build()),
+                List.of(limited));
+        InternalRoutesController controller = new InternalRoutesController(
+                mock(GatewayRouteReloadService.class), routeLocator);
+
+        WebTestClient.bindToController(controller).build()
+                .get().uri("/internal/routes")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes[0].rateLimit.requests").isEqualTo(5)
+                .jsonPath("$.routes[0].rateLimit.key").isEqualTo("ip")
+                .jsonPath("$.routes[0].throttle.maxConcurrent").isEqualTo(2)
+                .jsonPath("$.routes[0].transform.deny[0]").isEqualTo("senha")
+                .jsonPath("$.routes[0].aggregate").doesNotExist();
+    }
+
+    @Test
+    void getExposesAccessPolicyWhenDeclared() {
+        RouteDefinition restricted = mapper.toDefinition(new RouteConfigEntry(
+                "restricted", "/r/**", "http://r", 1, null, true, null, null,
+                new RouteAccess(null, List.of("group:tools-httpbin"), true, null, null, null, null), null, null, null, null, null));
+        RouteDefinition open = mapper.toDefinition(new RouteConfigEntry(
+                "open", "/o/**", "http://o", 1, null, true, null, null, null, null, null, null, null, null));
+        routeLocator.replaceAll(
+                List.of(Route.async(restricted).asyncPredicate(e -> Mono.just(true)).build(),
+                        Route.async(open).asyncPredicate(e -> Mono.just(true)).build()),
+                List.of(restricted, open));
+        InternalRoutesController controller = new InternalRoutesController(
+                mock(GatewayRouteReloadService.class), routeLocator);
+
+        WebTestClient.bindToController(controller).build()
+                .get().uri("/internal/routes")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes[0].access.anyOf[0]").isEqualTo("group:tools-httpbin")
+                .jsonPath("$.routes[0].access.forwardToken").isEqualTo(true)
+                .jsonPath("$.routes[0].access.mode").doesNotExist()
+                .jsonPath("$.routes[1].access").doesNotExist();
+    }
+
+    @Test
+    void getExposesTheChannelIdentityProviderAndToken() {
+        RouteDefinition pedidos = mapper.toDefinition(new RouteConfigEntry(
+                "pedidos", "/pedidos/**", "http://p", 1, null, true, null, null,
+                new RouteAccess(null, List.of("role:pedidos-leitura"), true, "keycloak", "microsoft", null,
+                        new RouteObo(List.of("api://backend-b/pedidos.read"))),
+                null, null, null, null, null));
+        routeLocator.replaceAll(List.of(Route.async(pedidos).asyncPredicate(e -> Mono.just(true)).build()),
+                List.of(pedidos));
+        InternalRoutesController controller = new InternalRoutesController(
+                mock(GatewayRouteReloadService.class), routeLocator);
+
+        WebTestClient.bindToController(controller).build()
+                .get().uri("/internal/routes")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.routes[0].access.channel").isEqualTo("keycloak")
+                .jsonPath("$.routes[0].access.identityProvider").isEqualTo("microsoft")
+                .jsonPath("$.routes[0].access.obo.scopes[0]").isEqualTo("api://backend-b/pedidos.read")
+                .jsonPath("$.routes[0].access.audience").doesNotExist();
+    }
+}

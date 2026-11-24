@@ -1,0 +1,121 @@
+# Cenário 4: o gateway usa o Keycloak com Identity Provider e LDAP. Store: S3 (v2).
+#
+# O time escreve os GatewayRoute de crd/cenario-4-keycloak-idp-e-ldap/rotas.yaml; este é o
+# objeto que o operator grava em s3://<bucket>/snapshots/routes.yaml e que o
+# gateway do application.yaml, ao lado, lê por polling de ETag. Formato do
+# SnapshotCodec: rotas em ordem de id, strings entre aspas e campo vazio como
+# null. Os campos da ETT-1452 entram depois do forwardToken.
+#
+# Um gateway anterior à ETT-1452 lê este objeto, descarta esses campos e serve
+# as rotas sem as checagens: atualize o gateway antes do operator.
+version: "2026-11-18T21:00:00Z"
+generatedAt: "2026-11-18T21:00:00Z"
+routes:
+- id: "abc"
+  path: "/abc/**"
+  targetUri: "http://abc-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "abc-team"
+  description: "Usuários com a role abc-user."
+  access:
+    mode: null
+    anyOf:
+    - "role:abc-user"
+    forwardToken: true
+    channel: null
+    identityProvider: null
+    audience: "abc-api"
+    obo: null
+  rateLimit:
+    requests: 10
+    period: "10s"
+    burst: null
+    key: "user"
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
+- id: "business-monitor"
+  path: "/business-monitor/**"
+  targetUri: "http://business-monitor.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "monitor-team"
+  description: "Login com Microsoft e a role business-monitor-user."
+  access:
+    mode: null
+    anyOf:
+    - "role:business-monitor-user"
+    forwardToken: true
+    channel: null
+    identityProvider: "microsoft"
+    audience: "business-monitor"
+    obo: null
+  rateLimit:
+    requests: 10
+    period: "10s"
+    burst: null
+    key: "user"
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
+- id: "pedidos"
+  path: "/pedidos/**"
+  targetUri: "http://backend-b.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "pedidos-team"
+  description: "Pedidos do usuário, com o token do Entra."
+  access:
+    mode: null
+    anyOf:
+    - "role:pedidos-leitura"
+    forwardToken: true
+    channel: null
+    identityProvider: "microsoft"
+    audience: null
+    obo:
+      scopes:
+      - "api://backend-b/pedidos.read"
+  rateLimit:
+    requests: 5
+    period: "10s"
+    burst: null
+    key: "user"
+  throttle:
+    maxConcurrent: 5
+    maxQueue: 10
+    maxWait: "2s"
+  filters: null
+  transform: null
+  aggregate: null
+- id: "public-api"
+  path: "/public/**"
+  targetUri: "http://public-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "platform-team"
+  description: "Rota pública."
+  access:
+    mode: "public"
+    anyOf: null
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit:
+    requests: 20
+    period: "10s"
+    burst: null
+    key: "ip"
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
