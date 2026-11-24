@@ -19,8 +19,11 @@ log() {
 }
 
 if [[ -n "${KUBE_CONTEXT}" ]]; then
+    KUBECTL_BIN="$(type -P kubectl)" || { echo "kubectl not found in PATH" >&2; exit 1; }
+    # Não troque por `command kubectl`: no bash 3.2 do macOS, com set -e, um `command` que
+    # falha encerra o script mesmo dentro de um if, e o `get` que só confere se algo existe falha.
     kubectl() {
-        command kubectl --context "${KUBE_CONTEXT}" "$@"
+        "${KUBECTL_BIN}" --context "${KUBE_CONTEXT}" "$@"
     }
 fi
 
