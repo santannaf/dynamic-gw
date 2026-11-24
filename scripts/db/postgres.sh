@@ -27,7 +27,7 @@ up() {
         kubectl -n "${NAMESPACE}" create secret generic keycloak-postgres \
             --from-literal=username=keycloak --from-literal=password="$(openssl rand -hex 24)" >/dev/null
     fi
-    kubectl apply -f k8s/sso/keycloak-postgres.yaml >/dev/null
+    render k8s/sso/keycloak-postgres.yaml | kubectl apply -f - >/dev/null
     wait_rollout statefulset/keycloak-postgres 180s
     publish_keycloak_db postgres "jdbc:postgresql://keycloak-postgres.${NAMESPACE}.svc.cluster.local:5432/keycloak" \
         keycloak-postgres
@@ -43,7 +43,7 @@ empty() {
 }
 
 down() {
-    kubectl delete -f k8s/sso/keycloak-postgres.yaml --ignore-not-found
+    render k8s/sso/keycloak-postgres.yaml | kubectl delete --ignore-not-found -f -
     # O volume do StatefulSet não sai junto com ele.
     kubectl -n "${NAMESPACE}" delete pvc -l app.kubernetes.io/name=keycloak-postgres --ignore-not-found
 }

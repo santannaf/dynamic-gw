@@ -47,6 +47,14 @@
 # expressa sem apagar os client scopes padrão: um client scope opcional de mesmo nome para cada
 # audience de TOKEN_AUDIENCES (httpbin-api), que o gateway pede na troca de token (access.audience),
 # e a permissão da troca V1 do tools-gateway no provedor microsoft (passo 1 do access.obo).
+#
+# KUBE_CONTEXT e NAMESPACE sobem o mesmo Keycloak, com o diretório e o banco, em outro
+# cluster, num namespace que já existe:
+#   KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/keycloak/keycloak.sh up
+# Fora do k3d do lab, as imagens vêm do registry (por isso não há KEYCLOAK_DB=oracle, cuja
+# imagem só existe local), o Ingress do /auth fica de fora, e o issuer continua
+# http://localhost:<HOST_PORT>/auth: o navegador chega ao Keycloak por
+#   kubectl --context <contexto> -n <namespace> port-forward svc/keycloak <HOST_PORT>:8080
 set -euo pipefail
 LOG_PREFIX=keycloak
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
@@ -64,6 +72,10 @@ DB="${ROOT}/scripts/db/${KEYCLOAK_DB}.sh"
 check() {
     if [[ "${KEYCLOAK_DB}" != "postgres" && "${KEYCLOAK_DB}" != "oracle" ]]; then
         echo "KEYCLOAK_DB must be postgres or oracle (got '${KEYCLOAK_DB}')" >&2
+        exit 2
+    fi
+    if [[ "${KEYCLOAK_DB}" == "oracle" ]] && ! lab_cluster; then
+        echo "KEYCLOAK_DB=oracle runs keycloak-oracle:local, an image that only exists in the lab's k3d" >&2
         exit 2
     fi
     case "${MICROSOFT}" in
@@ -255,6 +267,10 @@ publish_theme() {
 configure_realm() {
     local base="http://localhost:${HOST_PORT}/auth" token api gateway audience scope permissions permission resource \
         management authz policy_name policy exchange_scope attempt
+    if ! lab_cluster; then
+        forward_keycloak
+        base="http://localhost:${KEYCLOAK_PORT}/auth"
+    fi
     for attempt in $(seq 1 60); do
         curl -sf -o /dev/null "${base}/realms/tools/.well-known/openid-configuration" && break
         sleep 2
@@ -301,6 +317,23 @@ configure_realm() {
     log "Token exchange: audiences ${TOKEN_AUDIENCES} for tools-gateway, and tools-gateway may exchange for microsoft"
 }
 
+# Fora do k3d, a API de administração vai por um port-forward numa porta livre, que
+# fecha quando o script termina. Sem a função kubectl: o kill do $! tem que pegar o
+# próprio port-forward.
+forward_keycloak() {
+    local output attempt
+    output="$(mktemp)"
+    command kubectl --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" port-forward svc/keycloak :8080 >"${output}" 2>&1 &
+    trap "kill $! 2>/dev/null; rm -f '${output}'" EXIT
+    for attempt in $(seq 1 30); do
+        KEYCLOAK_PORT="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "${output}")"
+        [[ -n "${KEYCLOAK_PORT}" ]] && return
+        sleep 1
+    done
+    echo "port-forward to svc/keycloak failed: $(cat "${output}")" >&2
+    exit 1
+}
+
 stop() {
     kubectl -n "${NAMESPACE}" scale deployment/keycloak --replicas=0 >/dev/null
     kubectl -n "${NAMESPACE}" wait --for=delete pod -l app.kubernetes.io/name=keycloak --timeout=180s >/dev/null 2>&1 || true
@@ -339,6 +372,9 @@ up() {
         fi
     fi
     render k8s/sso/keycloak.yaml | kubectl apply -f - >/dev/null
+    if lab_cluster; then
+        render k8s/sso/keycloak-ingress.yaml | kubectl apply -f - >/dev/null
+    fi
     wait_rollout deployment/keycloak 600s
     configure_realm
 }
@@ -355,6 +391,7 @@ reset() {
 
 down() {
     render k8s/sso/keycloak.yaml | kubectl delete --ignore-not-found -f -
+    render k8s/sso/keycloak-ingress.yaml | kubectl delete --ignore-not-found -f -
     kubectl -n "${NAMESPACE}" delete configmap keycloak-realm-tools keycloak-ldap keycloak-db keycloak-theme-tools \
         keycloak-microsoft --ignore-not-found
     kubectl -n "${NAMESPACE}" delete secret keycloak-ldap keycloak-db keycloak-microsoft --ignore-not-found

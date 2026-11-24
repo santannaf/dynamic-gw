@@ -1,0 +1,23 @@
+# /auth vai direto pro Keycloak; o resto continua no nginx-lb (k8s/gateway/ingress.yaml).
+# Consequência: nenhuma GatewayRoute pode usar o prefixo /auth neste ambiente.
+# Só no k3d do lab (scripts/keycloak/keycloak.sh): sem host, num cluster compartilhado
+# ele tomaria o /auth de hosts que não são dele.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: keycloak
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080

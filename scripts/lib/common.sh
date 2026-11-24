@@ -8,6 +8,7 @@ cd "${ROOT}"
 
 NAMESPACE="${NAMESPACE:-platform}"
 CLUSTER_NAME="${CLUSTER_NAME:-dynamic-gateway-lab}"
+KUBE_CONTEXT="${KUBE_CONTEXT:-}"
 # Porta do k3d (scripts/cluster/create-cluster.sh): o issuer do Keycloak e o redirect do login dependem dela.
 HOST_PORT="${HOST_PORT:-8080}"
 S3_REGION="${S3_REGION:-us-east-1}"
@@ -17,8 +18,21 @@ log() {
     echo "[${LOG_PREFIX}] $*"
 }
 
+if [[ -n "${KUBE_CONTEXT}" ]]; then
+    kubectl() {
+        command kubectl --context "${KUBE_CONTEXT}" "$@"
+    }
+fi
+
+# Fora do k3d do lab, o cluster puxa as imagens do registry, e a HOST_PORT não chega a ele.
+lab_cluster() {
+    [[ -z "${KUBE_CONTEXT}" || "${KUBE_CONTEXT}" == "k3d-${CLUSTER_NAME}" ]]
+}
+
+# Os manifests fixam o namespace platform: o render os leva para o NAMESPACE.
 render() {
-    sed -e "s|__HOST_PORT__|${HOST_PORT}|g" \
+    sed -e "s|^\( *namespace:\) platform$|\1 ${NAMESPACE}|" \
+        -e "s|__HOST_PORT__|${HOST_PORT}|g" \
         -e "s|__REALM_CHECKSUM__|${REALM_CHECKSUM:-none}|g" \
         -e "s|__SEED_CHECKSUM__|${SEED_CHECKSUM:-none}|g" \
         -e "s|__THEME_CHECKSUM__|${THEME_CHECKSUM:-none}|g" \
@@ -38,6 +52,7 @@ wait_rollout() {
 
 ensure_image() {
     local image="$1"
+    lab_cluster || return 0
     if ! docker image inspect "${image}" >/dev/null 2>&1; then
         log "Pulling ${image}"
         docker pull "${image}"
