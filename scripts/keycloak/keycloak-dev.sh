@@ -23,7 +23,14 @@
 # as tabelas e o admin ao reiniciar:
 #   kubectl --context <contexto> -n <namespace> rollout restart deployment/keycloak
 # Entre o volume e o emptyDir também vale o down antes.
+#
+# POSTGRES_IMAGE e KEYCLOAK_IMAGE trocam as imagens, para o cluster que só puxa de um registry
+# interno, e IMAGE_PULL_SECRET dá aos pods o Secret de pull desse registry. O PostgreSQL roda
+# como o usuário 70, o postgres da imagem alpine.
 set -euo pipefail
+
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:17.5-alpine}"
+KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.2}"
 
 usage() {
     echo "usage: KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> $0 up|down" >&2
@@ -74,9 +81,9 @@ spec:
         fsGroup: 70
         seccompProfile:
           type: RuntimeDefault
-      containers:
-        - name: postgres
-          image: postgres:17.5-alpine
+YAML
+    containers_start postgres "${POSTGRES_IMAGE}"
+    cat <<'YAML'
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -136,6 +143,16 @@ spec:
 YAML
 }
 
+containers_start() {
+    if [[ -n "${IMAGE_PULL_SECRET:-}" ]]; then
+        echo "      imagePullSecrets:"
+        echo "        - name: ${IMAGE_PULL_SECRET}"
+    fi
+    echo "      containers:"
+    echo "        - name: $1"
+    echo "          image: $2"
+}
+
 postgres_data() {
     if [[ "${EPHEMERAL_DB:-}" == "1" ]]; then
         cat <<'YAML'
@@ -191,9 +208,9 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      containers:
-        - name: keycloak
-          image: quay.io/keycloak/keycloak:26.8.2
+YAML
+    containers_start keycloak "${KEYCLOAK_IMAGE}"
+    cat <<'YAML'
           imagePullPolicy: IfNotPresent
           # A troca V1 (token do IdP, para o OBO) pede token-exchange e o FGAP v1; a V2 (audience) já vem ligada.
           args: ["start", "--features=token-exchange,admin-fine-grained-authz:v1"]
