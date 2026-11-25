@@ -5,6 +5,7 @@
 #
 #   KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/keycloak/keycloak-dev.sh up
 #   KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/keycloak/keycloak-dev.sh down   # apaga também o banco
+#   KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/keycloak/keycloak-dev.sh probe  # que imagens o cluster baixa
 #
 # Os manifests vêm aqui dentro, e o script não usa o common.sh: copiado sozinho para
 # outra máquina, ele roda igual. O namespace tem que existir; para um novo, o keycloak,
@@ -26,14 +27,16 @@
 #
 # POSTGRES_IMAGE e KEYCLOAK_IMAGE trocam as imagens, para o cluster que só puxa de um registry
 # interno, e IMAGE_PULL_SECRET dá aos pods o Secret de pull desse registry. O PostgreSQL roda
-# como o usuário 70, o postgres da imagem alpine.
+# como o usuário 70, o postgres da imagem alpine. O probe tenta baixar, num pod descartável,
+# essas duas e as mesmas imagens oficiais noutros registries públicos (public.ecr.aws,
+# mirror.gcr.io, Docker Hub), e diz quais o cluster alcança.
 set -euo pipefail
 
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:17.5-alpine}"
 KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.2}"
 
 usage() {
-    echo "usage: KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> $0 up|down" >&2
+    echo "usage: KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> $0 up|down|probe" >&2
     exit 2
 }
 
@@ -340,10 +343,106 @@ down() {
     postgres_manifest | kube delete --ignore-not-found -f -
     # O volume do StatefulSet não sai junto com ele.
     kube delete pvc -l app.kubernetes.io/name=keycloak-postgres --ignore-not-found
+    kube delete pod keycloak-dev-probe --ignore-not-found
+}
+
+probe_images() {
+    {
+        echo "${POSTGRES_IMAGE}"
+        echo public.ecr.aws/docker/library/postgres:17.5-alpine
+        echo mirror.gcr.io/library/postgres:17.5-alpine
+        echo "${KEYCLOAK_IMAGE}"
+        echo mirror.gcr.io/keycloak/keycloak:26.8.2
+        echo docker.io/keycloak/keycloak:26.8.2
+    } | awk '!seen[$0]++'
+}
+
+# Cada container só roda o true: o que interessa é se a imagem desceu no nó.
+probe_manifest() {
+    cat <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: keycloak-dev-probe
+  labels:
+    app.kubernetes.io/name: keycloak-dev-probe
+    app.kubernetes.io/part-of: dynamic-gateway-control-plane
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+YAML
+    if [[ -n "${IMAGE_PULL_SECRET:-}" ]]; then
+        echo "  imagePullSecrets:"
+        echo "    - name: ${IMAGE_PULL_SECRET}"
+    fi
+    echo "  containers:"
+    probe_images | awk '{
+        printf "    - name: image-%d\n      image: %s\n", NR - 1, $0
+        print "      command: [\"true\"]"
+        print "      securityContext:"
+        print "        allowPrivilegeEscalation: false"
+        print "        capabilities:"
+        print "          drop: [\"ALL\"]"
+        print "      resources:"
+        print "        requests: {cpu: 10m, memory: 16Mi}"
+        print "        limits: {cpu: 100m, memory: 64Mi}"
+    }'
+}
+
+probe() {
+    local uid states attempt pending
+    kube delete pod keycloak-dev-probe --ignore-not-found >/dev/null
+    trap 'kube delete pod keycloak-dev-probe --ignore-not-found --wait=false >/dev/null 2>&1' EXIT
+    probe_manifest | kube apply -f - >/dev/null
+    uid="$(kube get pod keycloak-dev-probe -o jsonpath='{.metadata.uid}')"
+    log "Pulling each image on one node of the cluster (up to 5 min)"
+    for attempt in $(seq 1 100); do
+        states="$(kube get pod keycloak-dev-probe -o jsonpath='{range .status.containerStatuses[*]}{.name}{"|"}{.state.waiting.reason}{"|"}{.state.terminated.reason}{.state.running.startedAt}{"\n"}{end}' || true)"
+        pending="$(printf '%s\n' "${states}" | awk -F'|' 'NF && $3 == "" && $2 !~ /^(ErrImagePull|ImagePullBackOff|InvalidImageName)$/' | wc -l)"
+        if [[ -n "${states}" && "${pending}" -eq 0 ]]; then
+            break
+        fi
+        sleep 3
+    done
+    if [[ -z "${states}" ]]; then
+        kube get events --field-selector "involvedObject.uid=${uid}" >&2 || true
+        exit 1
+    fi
+    PROBE_IMAGES="$(probe_images)" \
+    PROBE_ERRORS="$(kube get events --field-selector "involvedObject.uid=${uid},reason=Failed" \
+        -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' 2>/dev/null || true)" \
+    PROBE_STATES="${states}" awk 'BEGIN {
+        split(ENVIRON["PROBE_IMAGES"], image, "\n")
+        errors = split(ENVIRON["PROBE_ERRORS"], error, "\n")
+        lines = split(ENVIRON["PROBE_STATES"], state, "\n")
+        for (l = 1; l <= lines; l++) {
+            if (split(state[l], field, "|") < 3) continue
+            name = image[substr(field[1], 7) + 1]
+            if (field[3] != "") {
+                print "  ok     " name
+                if (name ~ /postgres/ && postgres == "") postgres = name
+                if (name ~ /keycloak/ && keycloak == "") keycloak = name
+                continue
+            }
+            reason = field[2] == "" ? "still pulling" : field[2]
+            for (e = 1; e <= errors; e++)
+                if (index(error[e], "\"" name "\"")) { reason = substr(error[e], 1, 220); break }
+            print "  FAIL   " name "\n         " reason
+        }
+        if (postgres != "" && keycloak != "")
+            print "\nUse: POSTGRES_IMAGE=" postgres " KEYCLOAK_IMAGE=" keycloak
+        else
+            print "\nNo copy of " (postgres == "" ? "PostgreSQL" : "Keycloak") " reached this cluster: it needs an internal registry."
+    }'
 }
 
 case "${1:-}" in
     up) up ;;
     down) down ;;
+    probe) probe ;;
     *) usage ;;
 esac
