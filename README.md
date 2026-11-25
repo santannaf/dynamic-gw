@@ -849,6 +849,10 @@ KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/keycloak/keycloak-dev.sh u
 # o realm tools nesse Keycloak (clients, role, grupos e usuários locais), com o port-forward aberto
 KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> ALICE_PASSWORD=<senha> DAVE_PASSWORD=<senha> scripts/keycloak/keycloak-dev-realm.sh
 
+# go-httpbin como backend de teste atrás do gateway, também no Pod Security restricted
+# (HTTPBIN_IMAGE para o cluster que só puxa de registry interno)
+KUBE_CONTEXT=<contexto> NAMESPACE=<namespace> scripts/httpbin/httpbin-dev.sh up
+
 # segundo gateway de borda no mesmo cluster, com namespace, operator e snapshot próprios
 make second-gateway-up
 HOST_PORT=18080 make second-gateway-test
