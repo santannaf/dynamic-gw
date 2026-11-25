@@ -32,6 +32,11 @@
 # mirror.gcr.io, Docker Hub), e diz quais o cluster alcança. Com REGISTRY=<host[:porta]>, ele
 # testa, nesse registry interno, os caminhos comuns de um espelho do Docker Hub e do quay.io;
 # no JFrog Artifactory, REGISTRY=<host>/<repositório> testa só esse repositório.
+#
+# THEME_DIR=<pasta do tema>, a que tem o login/ (o do lab é k8s/sso/theme/tools), monta o tema
+# no Keycloak por um ConfigMap e o põe como tema de login do THEME_REALM (master, se não vier),
+# em pt-BR, porque as mensagens do tema do lab só existem em pt-BR. Mudar um arquivo do tema e
+# rodar o up de novo reinicia o Keycloak, que guarda o tema em cache.
 set -euo pipefail
 
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:17.5-alpine}"
@@ -208,6 +213,9 @@ spec:
       labels:
         app.kubernetes.io/name: keycloak
         app.kubernetes.io/part-of: dynamic-gateway-control-plane
+YAML
+    theme_annotation
+    cat <<'YAML'
     spec:
       securityContext:
         runAsNonRoot: true
@@ -294,6 +302,9 @@ YAML
             limits:
               cpu: 2000m
               memory: 2Gi
+YAML
+    theme_volume
+    cat <<'YAML'
 ---
 apiVersion: v1
 kind: Service
@@ -310,6 +321,70 @@ spec:
       port: 8080
       targetPort: http
 YAML
+}
+
+# Arquivos do tema, relativos ao THEME_DIR. No ConfigMap, a chave troca / por __, e o items do
+# volume devolve cada arquivo ao caminho dele.
+theme_files() {
+    (cd "${THEME_DIR}" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)
+}
+
+theme_key() {
+    echo "$1" | sed 's|/|__|g'
+}
+
+theme_annotation() {
+    if [[ -n "${THEME_DIR:-}" ]]; then
+        echo "      annotations:"
+        echo "        platform.yyy.xxx/theme-checksum: \"${THEME_CHECKSUM:-}\""
+    fi
+}
+
+theme_volume() {
+    [[ -n "${THEME_DIR:-}" ]] || return 0
+    echo "          volumeMounts:"
+    echo "            - name: theme"
+    echo "              mountPath: /opt/keycloak/themes/$(basename "${THEME_DIR}")"
+    echo "              readOnly: true"
+    echo "      volumes:"
+    echo "        - name: theme"
+    echo "          configMap:"
+    echo "            name: keycloak-theme"
+    echo "            items:"
+    theme_files | while read -r file; do
+        echo "              - {key: $(theme_key "${file}"), path: \"${file}\"}"
+    done
+}
+
+publish_theme() {
+    local file args=()
+    while read -r file; do
+        args+=("--from-file=$(theme_key "${file}")=${THEME_DIR}/${file}")
+    done < <(theme_files)
+    if [[ ${#args[@]} -eq 0 ]]; then
+        echo "THEME_DIR ${THEME_DIR} has no files" >&2
+        exit 1
+    fi
+    kube create configmap keycloak-theme "${args[@]}" --dry-run=client -o yaml | kube apply -f - >/dev/null
+    THEME_CHECKSUM="$(cd "${THEME_DIR}" && find . -type f -exec cksum {} + | LC_ALL=C sort | cksum | cut -d' ' -f1)"
+}
+
+# Pelo kcadm de dentro do pod, com o admin do bootstrap que já está no ambiente dele: a senha
+# não passa pela linha de comando nem sai do cluster.
+configure_theme() {
+    local realm="${THEME_REALM:-master}" name
+    name="$(basename "${THEME_DIR}")"
+    log "Login theme ${name} in realm ${realm}, in pt-BR"
+    if ! kube exec deploy/keycloak -- bash -c '
+        kcadm=/opt/keycloak/bin/kcadm.sh
+        "${kcadm}" config credentials --config /tmp/kcadm.config --server http://localhost:8080/auth \
+            --realm master --user "${KC_BOOTSTRAP_ADMIN_USERNAME}" --password "${KC_BOOTSTRAP_ADMIN_PASSWORD}" &&
+        "${kcadm}" update "realms/$1" --config /tmp/kcadm.config -s "loginTheme=$2" \
+            -s internationalizationEnabled=true -s "supportedLocales=[\"pt-BR\"]" -s defaultLocale=pt-BR
+    ' kcadm "${realm}" "${name}"; then
+        echo "kcadm failed: set it in the admin console, Realm settings > Themes > Login theme: ${name}" >&2
+        exit 1
+    fi
 }
 
 ensure_secret() {
@@ -345,8 +420,14 @@ up() {
     postgres_manifest | kube apply -f - >/dev/null
     replace_stale_postgres_pod
     wait_ready statefulset/keycloak-postgres 300s
+    if [[ -n "${THEME_DIR:-}" ]]; then
+        publish_theme
+    fi
     keycloak_manifest | kube apply -f - >/dev/null
     wait_ready deployment/keycloak 600s
+    if [[ -n "${THEME_DIR:-}" ]]; then
+        configure_theme
+    fi
     log "Console at http://localhost:18080/auth/admin (user admin) through"
     log "  kubectl --context ${KUBE_CONTEXT} -n ${NAMESPACE} port-forward svc/keycloak 18080:8080"
     log "Admin password:"
@@ -359,6 +440,7 @@ down() {
     # O volume do StatefulSet não sai junto com ele.
     kube delete pvc -l app.kubernetes.io/name=keycloak-postgres --ignore-not-found
     kube delete pod keycloak-dev-probe --ignore-not-found
+    kube delete configmap keycloak-theme --ignore-not-found
 }
 
 # Nomes usuais do projeto ou repositório que espelha o Docker Hub ou o quay.io num Harbor,
