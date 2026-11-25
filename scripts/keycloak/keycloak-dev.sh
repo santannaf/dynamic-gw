@@ -29,7 +29,9 @@
 # interno, e IMAGE_PULL_SECRET dá aos pods o Secret de pull desse registry. O PostgreSQL roda
 # como o usuário 70, o postgres da imagem alpine. O probe tenta baixar, num pod descartável,
 # essas duas e as mesmas imagens oficiais noutros registries públicos (public.ecr.aws,
-# mirror.gcr.io, Docker Hub), e diz quais o cluster alcança.
+# mirror.gcr.io, Docker Hub), e diz quais o cluster alcança. Com REGISTRY=<host[:porta]>, ele
+# testa, nesse registry interno, os caminhos comuns de um espelho do Docker Hub e do quay.io;
+# no JFrog Artifactory, REGISTRY=<host>/<repositório> testa só esse repositório.
 set -euo pipefail
 
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:17.5-alpine}"
@@ -346,7 +348,26 @@ down() {
     kube delete pod keycloak-dev-probe --ignore-not-found
 }
 
+# Nomes usuais do projeto ou repositório que espelha o Docker Hub ou o quay.io num Harbor,
+# Nexus ou Artifactory; o vazio é o espelho na raiz do registry.
+registry_images() {
+    local prefix
+    for prefix in "" library/ dockerhub/library/ docker-hub/library/ docker/library/ hub/library/ \
+        proxy/library/ docker-proxy/library/ docker-remote/library/ dockerhub-remote/library/ \
+        docker-hub-remote/library/ docker-virtual/library/ docker.io/library/; do
+        echo "${REGISTRY}/${prefix}postgres:17.5-alpine"
+    done
+    for prefix in "" dockerhub/ docker-hub/ docker/ hub/ proxy/ docker-proxy/ docker-remote/ dockerhub-remote/ \
+        docker-hub-remote/ docker-virtual/ docker.io/ quay/ quay-proxy/ quay-remote/ quay.io/; do
+        echo "${REGISTRY}/${prefix}keycloak/keycloak:26.8.2"
+    done
+}
+
 probe_images() {
+    if [[ -n "${REGISTRY:-}" ]]; then
+        registry_images
+        return
+    fi
     {
         echo "${POSTGRES_IMAGE}"
         echo public.ecr.aws/docker/library/postgres:17.5-alpine
@@ -389,19 +410,23 @@ YAML
         print "          drop: [\"ALL\"]"
         print "      resources:"
         print "        requests: {cpu: 10m, memory: 16Mi}"
-        print "        limits: {cpu: 100m, memory: 64Mi}"
+        print "        limits: {cpu: 50m, memory: 32Mi}"
     }'
 }
 
 probe() {
-    local uid states attempt pending
+    local uid states attempt pending pull_errors=""
     kube delete pod keycloak-dev-probe --ignore-not-found >/dev/null
     trap 'kube delete pod keycloak-dev-probe --ignore-not-found --wait=false >/dev/null 2>&1' EXIT
     probe_manifest | kube apply -f - >/dev/null
     uid="$(kube get pod keycloak-dev-probe -o jsonpath='{.metadata.uid}')"
     log "Pulling each image on one node of the cluster (up to 5 min)"
     for attempt in $(seq 1 100); do
-        states="$(kube get pod keycloak-dev-probe -o jsonpath='{range .status.containerStatuses[*]}{.name}{"|"}{.state.waiting.reason}{"|"}{.state.terminated.reason}{.state.running.startedAt}{"\n"}{end}' || true)"
+        states="$(kube get pod keycloak-dev-probe -o jsonpath='{range .status.containerStatuses[*]}{.name}{"|"}{.state.waiting.reason}{"|"}{.state.terminated.reason}{.state.running.startedAt}{"|"}{.state.waiting.message}{"\n"}{end}' || true)"
+        # Só o ErrImagePull traz o erro do registry: o ImagePullBackOff que vem depois diz apenas
+        # "Back-off", e o Kubernetes junta os eventos parecidos num só.
+        pull_errors="${pull_errors}
+$(printf '%s\n' "${states}" | awk -F'|' '$2 == "ErrImagePull" && $4 != ""')"
         pending="$(printf '%s\n' "${states}" | awk -F'|' 'NF && $3 == "" && $2 !~ /^(ErrImagePull|ImagePullBackOff|InvalidImageName)$/' | wc -l)"
         if [[ -n "${states}" && "${pending}" -eq 0 ]]; then
             break
@@ -415,10 +440,18 @@ probe() {
     PROBE_IMAGES="$(probe_images)" \
     PROBE_ERRORS="$(kube get events --field-selector "involvedObject.uid=${uid},reason=Failed" \
         -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' 2>/dev/null || true)" \
-    PROBE_STATES="${states}" awk 'BEGIN {
+    PROBE_PULL_ERRORS="${pull_errors}" PROBE_STATES="${states}" awk 'BEGIN {
         split(ENVIRON["PROBE_IMAGES"], image, "\n")
         errors = split(ENVIRON["PROBE_ERRORS"], error, "\n")
         lines = split(ENVIRON["PROBE_STATES"], state, "\n")
+        seen = split(ENVIRON["PROBE_PULL_ERRORS"], pulled, "\n")
+        for (s = 1; s <= seen; s++) {
+            n = split(pulled[s], field, "|")
+            if (n < 4 || (field[1] in pull_error)) continue
+            message = field[4]
+            for (f = 5; f <= n; f++) message = message "|" field[f]
+            pull_error[field[1]] = message
+        }
         for (l = 1; l <= lines; l++) {
             if (split(state[l], field, "|") < 3) continue
             name = image[substr(field[1], 7) + 1]
@@ -429,14 +462,25 @@ probe() {
                 continue
             }
             reason = field[2] == "" ? "still pulling" : field[2]
-            for (e = 1; e <= errors; e++)
-                if (index(error[e], "\"" name "\"")) { reason = substr(error[e], 1, 220); break }
-            print "  FAIL   " name "\n         " reason
+            if ((field[1] in pull_error))
+                reason = pull_error[field[1]]
+            else
+                for (e = 1; e <= errors; e++)
+                    if (index(error[e], "\"" name "\"")) { reason = error[e]; break }
+            sub(/^\(combined from similar events\): /, "", reason)
+            if (reason ~ /401|[Uu]nauthorized|authorization failed|authentication required/) credentials = 1
+            print "  FAIL   " name "\n         " substr(reason, 1, 220)
         }
+        if (credentials)
+            print "\nSome pulls asked for credentials: if the registry needs a login, add IMAGE_PULL_SECRET=<docker-registry Secret of the namespace>."
         if (postgres != "" && keycloak != "")
             print "\nUse: POSTGRES_IMAGE=" postgres " KEYCLOAK_IMAGE=" keycloak
+        else if (ENVIRON["REGISTRY"] != "")
+            print "\nNo usual mirror path of " (postgres == "" ? "PostgreSQL" : "Keycloak") " exists in " ENVIRON["REGISTRY"] \
+                ": copy the image there (docker buildx imagetools create) or ask for a mirror of Docker Hub and quay.io."
         else
-            print "\nNo copy of " (postgres == "" ? "PostgreSQL" : "Keycloak") " reached this cluster: it needs an internal registry."
+            print "\nNo copy of " (postgres == "" ? "PostgreSQL" : "Keycloak") " reached this cluster: it needs an internal" \
+                " registry (REGISTRY=<host> probe tests the usual mirror paths in it)."
     }'
 }
 
