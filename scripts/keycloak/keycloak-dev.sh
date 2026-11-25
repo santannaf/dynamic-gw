@@ -327,10 +327,23 @@ wait_ready() {
     exit 1
 }
 
+# O StatefulSet só atualiza um pod depois que ele fica pronto: o que ficou em ImagePullBackOff
+# com a imagem antiga não sai sozinho quando o template ganha a imagem nova.
+replace_stale_postgres_pod() {
+    local image
+    image="$(kube get pod keycloak-postgres-0 -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || true)"
+    if [[ -n "${image}" && "${image}" != "${POSTGRES_IMAGE}" ]]; then
+        log "Replacing pod keycloak-postgres-0, still on ${image}"
+        kube delete pod keycloak-postgres-0 >/dev/null
+    fi
+}
+
 up() {
+    log "PostgreSQL ${POSTGRES_IMAGE}, Keycloak ${KEYCLOAK_IMAGE}"
     ensure_secret keycloak-postgres --from-literal=username=keycloak --from-literal=password="$(openssl rand -hex 24)"
     ensure_secret keycloak-admin --from-literal=password="$(openssl rand -hex 16)"
     postgres_manifest | kube apply -f - >/dev/null
+    replace_stale_postgres_pod
     wait_ready statefulset/keycloak-postgres 300s
     keycloak_manifest | kube apply -f - >/dev/null
     wait_ready deployment/keycloak 600s
