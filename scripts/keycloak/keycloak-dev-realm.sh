@@ -112,6 +112,22 @@ JSON
 
 gateway="$(curl -s -H "Authorization: Bearer ${TOKEN}" "${KEYCLOAK_URL}/admin/realms/tools/clients?clientId=tools-gateway" \
     | sed -E 's/^\[\{"id":"([^"]+)".*/\1/')"
+
+# Fora do partialImport, que pula o client já existente. Sem o claim, o gateway não sabe por qual
+# identity provider foi o login e recusa as rotas com access.identityProvider.
+echo -n "mapper identity_provider: "
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+    "${KEYCLOAK_URL}/admin/realms/tools/clients/${gateway}/protocol-mappers/models" \
+    -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' --data-binary @- <<'JSON'
+{
+  "name": "identity_provider",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usersessionmodel-note-mapper",
+  "config": {"user.session.note": "identity_provider", "claim.name": "identity_provider", "jsonType.label": "String",
+             "access.token.claim": "true", "id.token.claim": "false", "introspection.token.claim": "true"}
+}
+JSON
+
 echo -n "tools-gateway client secret: "
 curl -s -H "Authorization: Bearer ${TOKEN}" "${KEYCLOAK_URL}/admin/realms/tools/clients/${gateway}/client-secret" \
     | sed -E 's/.*"value":"([^"]+)".*/\1/'
