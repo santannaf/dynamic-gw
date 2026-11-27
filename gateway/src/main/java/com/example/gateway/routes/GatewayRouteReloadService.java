@@ -199,9 +199,9 @@ public class GatewayRouteReloadService {
                 // precisa disparar reload. Ver hashAccess pro layout.
                 hashAccess(md, e.access());
                 // Políticas (rateLimit, throttle, filters, transform,
-                // aggregate) também mudam o comportamento da rota. Entram
-                // depois do access, como JSON; snapshots sem elas geram
-                // "[null,null,null,null,null]".
+                // aggregate, timeouts) também mudam o comportamento da rota.
+                // Entram depois do access, como JSON; snapshots sem elas geram
+                // "[null,null,null,null,null,null]".
                 updatePolicies(md, e);
                 md.update((byte) '\n');
             }
@@ -253,7 +253,8 @@ public class GatewayRouteReloadService {
 
     private static void updatePolicies(MessageDigest md, RouteConfigEntry e) {
         md.update(POLICY_JSON.writeValueAsBytes(
-                Arrays.asList(e.rateLimit(), e.throttle(), e.filters(), e.transform(), e.aggregate())));
+                Arrays.asList(e.rateLimit(), e.throttle(), e.filters(), e.transform(), e.aggregate(),
+                        e.timeouts())));
         md.update((byte) 0);
     }
 

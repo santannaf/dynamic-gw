@@ -5,6 +5,7 @@ import com.example.shared.routes.RouteAggregate;
 import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import com.example.shared.routes.RouteTransform;
 
 import java.util.List;
@@ -31,6 +32,7 @@ public class GatewayRouteSpec {
     private List<RouteFilter> filters;
     private RouteTransform transform;
     private RouteAggregate aggregate;
+    private RouteTimeouts timeouts;
 
     public String getPath() { return path; }
 
@@ -83,4 +85,8 @@ public class GatewayRouteSpec {
     public RouteAggregate getAggregate() { return aggregate; }
 
     public void setAggregate(RouteAggregate aggregate) { this.aggregate = aggregate; }
+
+    public RouteTimeouts getTimeouts() { return timeouts; }
+
+    public void setTimeouts(RouteTimeouts timeouts) { this.timeouts = timeouts; }
 }

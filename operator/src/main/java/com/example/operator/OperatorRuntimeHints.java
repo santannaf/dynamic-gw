@@ -13,6 +13,7 @@ import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteObo;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import com.example.shared.routes.RouteTransform;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
@@ -33,6 +34,7 @@ public class OperatorRuntimeHints implements RuntimeHintsRegistrar {
                 RouteTransform.class,
                 RouteAggregate.class,
                 RouteBackend.class,
+                RouteTimeouts.class,
                 GatewayRoute.class,
                 GatewayRouteSpec.class,
                 GatewayRouteAccess.class,

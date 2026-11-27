@@ -49,6 +49,8 @@ spec:
                   message: aggregate only answers GET; methods must be [GET] or absent
                 - rule: "!(has(self.aggregate) && has(self.access) && (has(self.access.audience) || has(self.access.obo)))"
                   message: access.audience and access.obo cannot be combined with aggregate (the same token would reach every backend)
+                - rule: "!(has(self.aggregate) && has(self.timeouts))"
+                  message: timeouts cannot be combined with aggregate (each call's limit is aggregate.timeout)
               properties:   # SEU - modelo de domínio
                 # --- path: predicado de rota ---
                 path:
@@ -304,6 +306,24 @@ spec:
                               group:
                                 type: string
                                 minLength: 1
+                # --- timeouts: tempo para conectar ao backend e para a resposta começar (504 acima) ---
+                timeouts:
+                  type: object
+                  description: Time limits of the call to targetUri. A limit the route leaves out is the gateway's global one (spring.cloud.gateway.server.webflux.httpclient.connect-timeout and response-timeout). Either one answers 504 when it runs out.
+                  properties:
+                    connect:
+                      type: string
+                      pattern: '^[0-9]{1,9}(ms|s|m|h)$'
+                      description: Time to open the connection to the backend, such as 2s, up to 1m.
+                    response:
+                      type: string
+                      pattern: '^[0-9]{1,9}(ms|s|m|h)$'
+                      description: Time from the start of the call, connection included, until the response headers arrive, such as 10s. The body has no limit, so downloads and server-sent events are not cut.
+                  x-kubernetes-validations:
+                    - rule: "has(self.connect) || has(self.response)"
+                      message: timeouts must declare connect, response or both
+                    - rule: "!has(self.connect) || (duration(self.connect) > duration('0s') && duration(self.connect) <= duration('1m'))"
+                      message: timeouts.connect must be a positive duration of up to 1m
 
       # ==================================================================
       # COLUNAS do `kubectl get` - puramente cosmético, SEU

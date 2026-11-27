@@ -17,7 +17,7 @@ class SnapshotCodecAccessTest {
                 null, new RouteObo(List.of("api://backend-b/pedidos.read")));
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot("v1", Instant.parse("2026-11-18T21:00:00Z"),
                 List.of(new RouteConfigEntry("pedidos", "/pedidos/**", "http://backend-b", 1, null, true, null, null,
-                        access, null, null, null, null, null)));
+                        access, null, null, null, null, null, null)));
 
         assertThat(codec.readYaml(codec.writeYaml(snapshot)).routes().getFirst().access()).isEqualTo(access);
         assertThat(codec.readYamlGz(codec.writeYamlGz(snapshot)).routes().getFirst().access()).isEqualTo(access);

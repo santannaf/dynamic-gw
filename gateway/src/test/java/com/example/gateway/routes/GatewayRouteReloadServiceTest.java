@@ -48,8 +48,8 @@ class GatewayRouteReloadServiceTest {
                 "v1",
                 Instant.parse("2026-06-13T10:00:00Z"),
                 List.of(
-                        new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null),
-                        new RouteConfigEntry("b", "/b/**", "http://b", 1, List.of("GET"), true, null, null, null, null, null, null, null, null)
+                        new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null, null),
+                        new RouteConfigEntry("b", "/b/**", "http://b", 1, List.of("GET"), true, null, null, null, null, null, null, null, null, null)
                 )
         );
         AtomicInteger refreshEvents = new AtomicInteger();
@@ -76,7 +76,7 @@ class GatewayRouteReloadServiceTest {
     @Test
     void reloadOnEmptySnapshotClearsLocatorAfterPriorNonEmptyReload() {
         AtomicReference<List<RouteConfigEntry>> nextSnapshot = new AtomicReference<>(List.of(
-                new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null)
+                new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null, null)
         ));
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), nextSnapshot.get());
         ApplicationEventPublisher events = e -> {};
@@ -96,7 +96,7 @@ class GatewayRouteReloadServiceTest {
     @Test
     void reloadSkipsWhenSnapshotRoutesAreUnchanged() {
         List<RouteConfigEntry> entries = List.of(
-                new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null)
+                new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null, null)
         );
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), entries);
         AtomicInteger refreshEvents = new AtomicInteger();
@@ -186,9 +186,9 @@ class GatewayRouteReloadServiceTest {
     @Test
     void routeAskingForWhatTheGatewayDoesNotHaveIsNotServed() {
         RouteConfigEntry plain = new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null,
-                new RouteAccess(null, List.of("group:x"), null, null, null, null, null), null, null, null, null, null);
+                new RouteAccess(null, List.of("group:x"), null, null, null, null, null), null, null, null, null, null, null);
         RouteConfigEntry withIdp = new RouteConfigEntry("b", "/b/**", "http://b", 1, null, true, null, null,
-                new RouteAccess(null, List.of("group:x"), null, null, "microsoft", null, null), null, null, null, null, null);
+                new RouteAccess(null, List.of("group:x"), null, null, "microsoft", null, null), null, null, null, null, null, null);
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), List.of(plain, withIdp));
         AccessCapabilities noFeatures = new AccessCapabilities(true, "keycloak", Map.of("keycloak", Set.of()));
 
@@ -209,7 +209,7 @@ class GatewayRouteReloadServiceTest {
     private int refreshEventsAcross(RouteAccess before, RouteAccess after, AccessCapabilities capabilities) {
         AtomicReference<RouteAccess> current = new AtomicReference<>(before);
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), List.of(
-                new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, current.get(), null, null, null, null, null)));
+                new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, current.get(), null, null, null, null, null, null)));
         AtomicInteger refreshEvents = new AtomicInteger();
         ApplicationEventPublisher events = event -> {
             if (event instanceof RefreshRoutesEvent) {
@@ -231,7 +231,7 @@ class GatewayRouteReloadServiceTest {
         RouteConfigProvider provider = () -> new RouteConfigSnapshot(
                 "v1",
                 Instant.now(),
-                List.of(new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null))
+                List.of(new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null, null))
         );
         AtomicReference<List<RouteDefinition>> captured = new AtomicReference<>();
         RouteCompiler capturingCompiler = definitions -> {
@@ -270,7 +270,7 @@ class GatewayRouteReloadServiceTest {
         RouteConfigProvider provider = () -> new RouteConfigSnapshot(
                 "v1",
                 Instant.now(),
-                List.of(new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null))
+                List.of(new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null, null, null, null, null, null, null))
         );
         ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
         doThrow(new IllegalStateException("publisher failed")).when(events).publishEvent(any());
@@ -318,10 +318,10 @@ class GatewayRouteReloadServiceTest {
 
     private static RouteConfigSnapshot singleRouteSnapshot(String id) {
         return new RouteConfigSnapshot(id, Instant.now(), List.of(
-                new RouteConfigEntry(id, "/" + id + "/**", "http://" + id, 1, null, true, null, null, null, null, null, null, null, null)));
+                new RouteConfigEntry(id, "/" + id + "/**", "http://" + id, 1, null, true, null, null, null, null, null, null, null, null, null)));
     }
 
     private RouteDefinition definition(String id) {
-        return mapper.toDefinition(new RouteConfigEntry(id, "/x/**", "http://x", 1, null, true, null, null, null, null, null, null, null, null));
+        return mapper.toDefinition(new RouteConfigEntry(id, "/x/**", "http://x", 1, null, true, null, null, null, null, null, null, null, null, null));
     }
 }

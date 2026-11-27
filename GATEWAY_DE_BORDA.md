@@ -41,7 +41,7 @@ Regras entre os campos, iguais no operator e no reload do gateway (`RoutePolicyR
 
 Permissão por método usa duas rotas com o mesmo `path` e `methods` diferentes, como `/sso/rw/**` em `k8s/samples/routes-sso.yaml`.
 
-A rota também pode declarar políticas: `rateLimit`, `throttle`, `filters`, `transform` e `aggregate` (no lugar de `targetUri`). O formato, a semântica e os tetos globais estão em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md). Um gateway de outra stack que leia o snapshot precisa aplicá-las ou recusar a rota que as declara: servir sem a política que a rota pediu é pior que não servir.
+A rota também pode declarar políticas: `rateLimit`, `throttle`, `filters`, `transform`, `aggregate` (no lugar de `targetUri`) e `timeouts` (`connect` e `response`; o que a rota não declara é o timeout global do gateway). O formato, a semântica e os tetos globais estão em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md). Um gateway de outra stack que leia o snapshot precisa aplicá-las ou recusar a rota que as declara: servir sem a política que a rota pediu é pior que não servir.
 
 Cada gateway tem seu namespace, seu operator e seu snapshot. Uma rota exposta em dois gateways vira dois recursos `GatewayRoute`. O exemplo está em `k8s/second-gateway/`.
 

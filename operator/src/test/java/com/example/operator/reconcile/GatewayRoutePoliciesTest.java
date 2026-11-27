@@ -7,6 +7,7 @@ import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import com.example.shared.routes.RouteTransform;
 import org.junit.jupiter.api.Test;
 
@@ -32,10 +33,12 @@ class GatewayRoutePoliciesTest {
         RouteThrottle throttle = new RouteThrottle(20, 50, "200ms");
         List<RouteFilter> filters = List.of(new RouteFilter("AddRequestHeader", Map.of("name", "X-Source", "value", "gw")));
         RouteTransform transform = new RouteTransform(null, List.of("senha"), null, null, null);
+        RouteTimeouts timeouts = new RouteTimeouts("2s", "10s");
         route.getSpec().setRateLimit(rateLimit);
         route.getSpec().setThrottle(throttle);
         route.getSpec().setFilters(filters);
         route.getSpec().setTransform(transform);
+        route.getSpec().setTimeouts(timeouts);
 
         RouteConfigEntry entry = builder.build(List.of(route), clock).snapshot().routes().getFirst();
 
@@ -44,6 +47,7 @@ class GatewayRoutePoliciesTest {
         assertThat(entry.filters()).isEqualTo(filters);
         assertThat(entry.transform()).isEqualTo(transform);
         assertThat(entry.aggregate()).isNull();
+        assertThat(entry.timeouts()).isEqualTo(timeouts);
     }
 
     @Test
@@ -78,6 +82,16 @@ class GatewayRoutePoliciesTest {
         assertThat(validator.validate(route))
                 .hasValueSatisfying(problem -> assertThat(problem)
                         .startsWith("spec.filters[0] (SetRequestHeader) must not touch the identity header"));
+        assertThat(builder.build(List.of(route), clock).snapshot().routes()).isEmpty();
+    }
+
+    @Test
+    void timeoutsOverTheLimitKeepTheRouteOut() {
+        GatewayRoute route = route("lento", "/lento/**", "http://lento", 1, null, true);
+        route.getSpec().setTimeouts(new RouteTimeouts("5m", null));
+
+        assertThat(validator.validate(route))
+                .hasValueSatisfying(problem -> assertThat(problem).startsWith("spec.timeouts.connect"));
         assertThat(builder.build(List.of(route), clock).snapshot().routes()).isEmpty();
     }
 }

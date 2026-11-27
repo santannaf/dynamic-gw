@@ -6,11 +6,13 @@ import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import com.example.shared.routes.RouteTransform;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.filter.FilterDefinition;
 import org.springframework.cloud.gateway.handler.predicate.PredicateDefinition;
 import org.springframework.cloud.gateway.route.RouteDefinition;
+import org.springframework.cloud.gateway.support.RouteMetadataUtils;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,7 +31,7 @@ class RouteDefinitionMapperPoliciesTest {
         RouteTransform transform = new RouteTransform(List.of("id"), null, null, null, null);
 
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null,
-                null, rateLimit, throttle, null, transform, null));
+                null, rateLimit, throttle, null, transform, null, null));
 
         assertThat(rd.getMetadata())
                 .containsEntry(RouteDefinitionMapper.RATE_LIMIT_METADATA_KEY, rateLimit)
@@ -37,6 +39,29 @@ class RouteDefinitionMapperPoliciesTest {
                 .containsEntry(RouteDefinitionMapper.TRANSFORM_METADATA_KEY, transform)
                 .doesNotContainKey(RouteDefinitionMapper.AGGREGATE_METADATA_KEY);
         assertThat(rd.getFilters()).extracting(FilterDefinition::getName).containsExactly("StripPrefix");
+    }
+
+    @Test
+    void timeoutsBecomeTheMillisecondsNettyRoutingFilterReads() {
+        RouteTimeouts timeouts = new RouteTimeouts("1500ms", "1m");
+
+        RouteDefinition rd = timed(timeouts);
+
+        assertThat(rd.getMetadata())
+                .containsEntry(RouteDefinitionMapper.TIMEOUTS_METADATA_KEY, timeouts)
+                .containsEntry(RouteMetadataUtils.CONNECT_TIMEOUT_ATTR, 1500)
+                .containsEntry(RouteMetadataUtils.RESPONSE_TIMEOUT_ATTR, 60_000L);
+        assertThat(rd.getFilters()).extracting(FilterDefinition::getName).containsExactly("StripPrefix");
+    }
+
+    @Test
+    void timeoutLeftOutStaysOutSoTheGlobalOneApplies() {
+        assertThat(timed(new RouteTimeouts(null, "10s")).getMetadata())
+                .containsEntry(RouteMetadataUtils.RESPONSE_TIMEOUT_ATTR, 10_000L)
+                .doesNotContainKey(RouteMetadataUtils.CONNECT_TIMEOUT_ATTR);
+        assertThat(timed(null).getMetadata())
+                .doesNotContainKeys(RouteDefinitionMapper.TIMEOUTS_METADATA_KEY,
+                        RouteMetadataUtils.CONNECT_TIMEOUT_ATTR, RouteMetadataUtils.RESPONSE_TIMEOUT_ATTR);
     }
 
     @Test
@@ -48,7 +73,7 @@ class RouteDefinitionMapperPoliciesTest {
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry("a", "/a/**", "http://a", 2, null, true, null,
                 null, null, null, null, List.of(
                         new RouteFilter("AddRequestHeader", Map.of("name", "X-Source", "value", "gateway")),
-                        new RouteFilter("RewritePath", rewrite)), null, null));
+                        new RouteFilter("RewritePath", rewrite)), null, null, null));
 
         assertThat(rd.getFilters()).extracting(FilterDefinition::getName)
                 .containsExactly("StripPrefix", "AddRequestHeader", "RewritePath");
@@ -62,11 +87,16 @@ class RouteDefinitionMapperPoliciesTest {
                 new RouteBackend("http://p/{id}", "pedido", null), new RouteBackend("http://c/{id}", "cliente", null)), null);
 
         RouteDefinition rd = mapper.toDefinition(new RouteConfigEntry("painel", "/painel/{id}", null, 1, null, true, null,
-                null, null, null, null, null, null, aggregate));
+                null, null, null, null, null, null, aggregate, null));
 
         assertThat(rd.getUri()).hasToString("no://op");
         assertThat(rd.getMetadata()).containsEntry(RouteDefinitionMapper.AGGREGATE_METADATA_KEY, aggregate);
         assertThat(rd.getPredicates()).extracting(PredicateDefinition::getName).containsExactly("Path", "Method");
         assertThat(rd.getPredicates().get(1).getArgs()).containsValue("GET");
+    }
+
+    private RouteDefinition timed(RouteTimeouts timeouts) {
+        return mapper.toDefinition(new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null,
+                null, null, null, null, null, null, timeouts));
     }
 }

@@ -1,5 +1,5 @@
-# Rotas de exemplo das políticas (ETT-988): rate limit, throttling, filtros,
-# transformação e agregação. Todas apontam para o go-httpbin, que devolve o que
+# Rotas de exemplo das políticas (ETT-988 e ETT-1662): rate limit, throttling,
+# filtros, transformação, agregação e timeouts. Todas apontam para o go-httpbin, que devolve o que
 # recebeu, e são públicas para o e2e (scripts/e2e/test-policies.sh) não
 # depender do SSO. Os limites contam em cada réplica do gateway.
 #
@@ -12,6 +12,7 @@
 #   /pol/transform/**   resposta JSON reduzida, renomeada e agrupada
 #   /pol/painel/{id}    duas chamadas viram uma resposta
 #   /pol/parcial/{id}   um backend falha: resposta parcial sinalizada
+#   /pol/timeout/**     resposta em até 1s e conexão em até 500ms (504 acima)
 apiVersion: platform.yyy.xxx/v1alpha1
 kind: GatewayRoute
 metadata:
@@ -218,3 +219,20 @@ spec:
     - name: RequestSize
       args:
         maxSize: 1KB
+---
+apiVersion: platform.yyy.xxx/v1alpha1
+kind: GatewayRoute
+metadata:
+  name: policy-timeout
+  namespace: platform
+spec:
+  path: /pol/timeout/**
+  targetUri: http://go-httpbin.platform.svc.cluster.local:8080
+  stripPrefix: 2
+  team: platform-team
+  description: Answer within 1 second and connect within 500ms, or 504 - /pol/timeout/delay/3 times out.
+  access:
+    mode: public
+  timeouts:
+    connect: 500ms
+    response: 1s

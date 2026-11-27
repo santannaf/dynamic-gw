@@ -10,6 +10,7 @@ import com.example.shared.routes.RouteConfigSnapshot;
 import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
 import org.springframework.cloud.gateway.route.Route;
@@ -44,6 +45,14 @@ class GatewayRouteReloadPoliciesTest {
     }
 
     @Test
+    void changingOnlyATimeoutTriggersReload() {
+        assertThat(refreshEventsAcross(timed(new RouteTimeouts("2s", null)), timed(new RouteTimeouts("2s", "10s"))))
+                .isEqualTo(2);
+        assertThat(refreshEventsAcross(timed(new RouteTimeouts("2s", "10s")), timed(new RouteTimeouts("2s", "10s"))))
+                .isEqualTo(1);
+    }
+
+    @Test
     void identicalPoliciesShortCircuit() {
         assertThat(refreshEventsAcross(route(new RouteRateLimit(10, "1s", 5, "ip"), new RouteThrottle(5, 1, "1s")),
                 route(new RouteRateLimit(10, "1s", 5, "ip"), new RouteThrottle(5, 1, "1s")))).isEqualTo(1);
@@ -53,9 +62,9 @@ class GatewayRouteReloadPoliciesTest {
     void routeWithAnInvalidPolicyIsNotServed() {
         RouteConfigEntry forged = new RouteConfigEntry("forged", "/f/**", "http://f", 1, null, true, null, null, null,
                 null, null, List.of(new RouteFilter("SetRequestHeader", Map.of("name", "X-Auth-Request-User", "value", "admin"))),
-                null, null);
+                null, null, null);
         RouteConfigEntry broken = new RouteConfigEntry("broken", "/b/**", "http://b", 1, null, true, null, null, null,
-                new RouteRateLimit(0, "1s", null, null), null, null, null, null);
+                new RouteRateLimit(0, "1s", null, null), null, null, null, null, null);
         RouteConfigEntry fine = route(new RouteRateLimit(10, "1s", null, null), null);
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), List.of(broken, fine, forged));
         InMemoryDynamicRouteLocator locator = new InMemoryDynamicRouteLocator();
@@ -70,7 +79,7 @@ class GatewayRouteReloadPoliciesTest {
     void identityHeaderRuleFollowsTheConfiguredPrefix() {
         RouteConfigEntry route = new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null,
                 null, null, List.of(new RouteFilter("AddRequestHeader", Map.of("name", "X-Id-User", "value", "x"))),
-                null, null);
+                null, null, null);
         RouteConfigProvider provider = () -> new RouteConfigSnapshot("v1", Instant.now(), List.of(route));
 
         List<String> active = new GatewayRouteReloadService(provider, mapper, new InMemoryDynamicRouteLocator(),
@@ -81,7 +90,12 @@ class GatewayRouteReloadPoliciesTest {
 
     private static RouteConfigEntry route(RouteRateLimit rateLimit, RouteThrottle throttle) {
         return new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null,
-                rateLimit, throttle, null, null, null);
+                rateLimit, throttle, null, null, null, null);
+    }
+
+    private static RouteConfigEntry timed(RouteTimeouts timeouts) {
+        return new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null,
+                null, null, null, null, null, timeouts);
     }
 
     private int refreshEventsAcross(RouteConfigEntry before, RouteConfigEntry after) {

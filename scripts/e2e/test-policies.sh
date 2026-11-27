@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# E2E das políticas de rota (ETT-988) no k3d: filtros, transformação,
-# agregação, rate limit e throttling. Só curl + jq.
+# E2E das políticas de rota (ETT-988 e ETT-1662) no k3d: filtros, transformação,
+# agregação, rate limit, throttling e timeouts. Só curl + jq.
 #
 #   v2 (make deploy, com ou sem SSO): aplica k8s/samples/routes-policies.yaml e remove no fim
 #   v1 (make standalone-up): as mesmas rotas já vêm no properties/application-standalone.yaml da imagem
@@ -132,6 +132,14 @@ check "one runs, one waits, one is refused" "200 200 503" "$(cat "${WORK}"/throt
 check "the 503 says why, in the gateway's error JSON" "503 Service Unavailable" \
     "$(cat "${WORK}"/throttle-body-* | jq -r 'select(.status == 503) | "\(.status) \(.error)"' 2>/dev/null | head -1)"
 
+echo "== timeouts (response within 1s)"
+check "fast backend answers" "200" "$(code "${BASE}/pol/timeout/get")"
+read -r status took <<< "$(curl -s -o "${WORK}/body" -w '%{http_code} %{time_total}' "${BASE}/pol/timeout/delay/3")"
+check "slow backend answers 504" "504" "${status}"
+check "at the route's 1s, not the global 30s" "yes" "$(awk -v t="${took}" 'BEGIN { print (t < 2.5 ? "yes" : "no") }')"
+check "the 504 is the gateway's error JSON" "504 Gateway Timeout /pol/timeout/delay/3" \
+    "$(jq -r '"\(.status) \(.error) \(.path)"' "${WORK}/body" 2>/dev/null)"
+
 if [[ ",${PROFILES}," == *",keycloak,"* || ",${PROFILES}," == *",ldap,"* || ",${PROFILES}," == *",oauth,"* ]]; then
     echo "== audit trail"
     kubectl -n "${NAMESPACE}" logs -l app.kubernetes.io/name=dynamic-gateway --since-time="${START}" --tail=-1 --prefix=false \
@@ -140,6 +148,8 @@ if [[ ",${PROFILES}," == *",keycloak,"* || ",${PROFILES}," == *",ldap,"* || ",${
         "$(jq -e -s 'any(.[]; .event.reason == "rate_limited" and .gateway.route.id == "policy-limited")' "${WORK}/audit.jsonl" >/dev/null && echo yes || echo no)"
     check "503 audited as throttled" "yes" \
         "$(jq -e -s 'any(.[]; .event.reason == "throttled" and .gateway.route.id == "policy-throttled")' "${WORK}/audit.jsonl" >/dev/null && echo yes || echo no)"
+    check "504 of the timeout audited with its status" "yes" \
+        "$(jq -e -s 'any(.[]; .gateway.route.id == "policy-timeout" and .http.response.status_code == 504)' "${WORK}/audit.jsonl" >/dev/null && echo yes || echo no)"
 fi
 
 echo

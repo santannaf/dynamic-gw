@@ -114,6 +114,29 @@ class RoutePolicyRulesTest {
     }
 
     @Test
+    void timeoutsArePositiveDurationsWithConnectUpToAMinute() {
+        passes(timed(new RouteTimeouts("2s", "10s")));
+        passes(timed(new RouteTimeouts("1m", null)));
+        passes(timed(new RouteTimeouts(null, "2h")));
+        fails(timed(new RouteTimeouts(null, null)), "connect, response or both");
+        fails(timed(new RouteTimeouts("0s", null)), "timeouts.connect");
+        fails(timed(new RouteTimeouts("61s", null)), "up to 1m");
+        fails(timed(new RouteTimeouts("2 s", null)), "timeouts.connect");
+        fails(timed(new RouteTimeouts(null, "0ms")), "timeouts.response");
+        fails(timed(new RouteTimeouts(null, "PT10S")), "timeouts.response");
+        fails(timed(new RouteTimeouts("5s", "2s")), "cannot exceed timeouts.response");
+        passes(timed(new RouteTimeouts("2s", "2s")));
+    }
+
+    @Test
+    void aggregatedRouteTakesNoTimeouts() {
+        RouteConfigEntry aggregated = new RouteConfigEntry("r", "/r/{id}", null, 1, null, true, null, null, null,
+                null, null, null, null, aggregate("http://b", "http://c"), new RouteTimeouts("1s", null));
+
+        fails(aggregated, "aggregate.timeout");
+    }
+
+    @Test
     void durationsUseMillisecondsSecondsMinutesOrHours() {
         assertThat(RoutePolicyRules.parseDuration("250ms")).isEqualTo(Duration.ofMillis(250));
         assertThat(RoutePolicyRules.parseDuration("2s")).isEqualTo(Duration.ofSeconds(2));
@@ -139,7 +162,12 @@ class RoutePolicyRulesTest {
 
     private static RouteConfigEntry entry(String targetUri, RouteAggregate aggregate, List<String> methods) {
         return new RouteConfigEntry("r", "/r/**", targetUri, 1, methods, true, null, null, null,
-                null, null, null, null, aggregate);
+                null, null, null, null, aggregate, null);
+    }
+
+    private static RouteConfigEntry timed(RouteTimeouts timeouts) {
+        return new RouteConfigEntry("r", "/r/**", "http://r", 1, null, true, null, null, null,
+                null, null, null, null, null, timeouts);
     }
 
     private static RouteConfigEntry filters(RouteFilter... filters) {
@@ -149,6 +177,6 @@ class RoutePolicyRulesTest {
     private static RouteConfigEntry proxied(RouteRateLimit rateLimit, RouteThrottle throttle,
                                             List<RouteFilter> filters, RouteTransform transform) {
         return new RouteConfigEntry("r", "/r/**", "http://r", 1, null, true, null, null, null,
-                rateLimit, throttle, filters, transform, null);
+                rateLimit, throttle, filters, transform, null, null);
     }
 }

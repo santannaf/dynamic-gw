@@ -22,12 +22,12 @@ class SnapshotCodecPoliciesTest {
                 List.of(new RouteFilter("AddRequestHeader", Map.of("name", "X-Source", "value", "gateway")),
                         new RouteFilter("RewritePath", Map.of("regexp", "/pedidos/(?<rest>.*)", "replacement", "/v2/${rest}"))),
                 new RouteTransform(null, List.of("senha"), Map.of("nome", "name"), "data", "pedido"),
-                null);
+                null, new RouteTimeouts("2s", "10s"));
         RouteConfigEntry aggregated = new RouteConfigEntry("painel", "/painel/{id}", null, 1, null, true, null, null,
                 null, null, null, null, null,
                 new RouteAggregate(List.of(
                         new RouteBackend("http://pedidos/pedidos/{id}", "pedido", new RouteTransform(List.of("id"), null, null, null, null)),
-                        new RouteBackend("http://clientes/clientes/{id}", "cliente", null)), "2s"));
+                        new RouteBackend("http://clientes/clientes/{id}", "cliente", null)), "2s"), null);
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot("v1", Instant.parse("2026-11-03T12:00:00Z"),
                 List.of(aggregated, proxied));
 
@@ -56,6 +56,7 @@ class SnapshotCodecPoliciesTest {
         assertThat(route.filters()).isNull();
         assertThat(route.transform()).isNull();
         assertThat(route.aggregate()).isNull();
+        assertThat(route.timeouts()).isNull();
     }
 
     @Test
@@ -65,7 +66,7 @@ class SnapshotCodecPoliciesTest {
         args.put("replacement", "/b");
         RouteFilter filter = new RouteFilter("RewritePath", args);
         RouteConfigEntry route = new RouteConfigEntry("a", "/a/**", "http://a", 1, null, true, null, null, null,
-                null, null, List.of(filter), null, null);
+                null, null, List.of(filter), null, null, null);
         RouteConfigSnapshot snapshot = new RouteConfigSnapshot("v1", Instant.parse("2026-11-03T12:00:00Z"), List.of(route));
 
         RouteFilter read = codec.readYaml(codec.writeYaml(snapshot)).routes().getFirst().filters().getFirst();

@@ -1,6 +1,6 @@
 # Políticas de rota: guia de uso
 
-Cada rota pode declarar, além do `access`, cinco políticas: `rateLimit`, `throttle`, `filters`, `transform` e `aggregate`. Elas ficam na própria rota, no `GatewayRoute` (v2) e nas rotas do properties (v1), com os mesmos nomes. Os tetos que valem para todas as rotas juntas ficam em `gateway.traffic.*`, no `application.yaml` do gateway. O trabalho está na história ETT-988.
+Cada rota pode declarar, além do `access`, seis políticas: `rateLimit`, `throttle`, `filters`, `transform`, `aggregate` e `timeouts`. Elas ficam na própria rota, no `GatewayRoute` (v2) e nas rotas do properties (v1), com os mesmos nomes. Os tetos que valem para todas as rotas juntas ficam em `gateway.traffic.*`, no `application.yaml` do gateway, e os timeouts globais, nas chaves do Spring Cloud Gateway. O trabalho está nas histórias ETT-988 e ETT-1662 (timeouts).
 
 | Quero...                                                          | Use                                    | Quando barra               |
 |-------------------------------------------------------------------|----------------------------------------|----------------------------|
@@ -9,8 +9,9 @@ Cada rota pode declarar, além do `access`, cinco políticas: `rateLimit`, `thro
 | mexer em header, path, query ou tamanho do corpo                  | [`filters`](#3-filtros)                | 413 (`RequestSize`)        |
 | enxugar, renomear ou embrulhar os campos da resposta JSON         | [`transform`](#4-transformação)        | —                          |
 | montar uma resposta só a partir de vários backends                | [`aggregate`](#5-agregação)            | 502 ou 504, se todos falham |
+| dar à rota um tempo próprio para conectar e para responder         | [`timeouts`](#6-timeouts)              | 504                        |
 
-**Sumário:** [Como declarar](#como-declarar) · [1. Rate limit](#1-rate-limit) · [2. Throttling](#2-throttling) · [3. Filtros](#3-filtros) · [4. Transformação](#4-transformação) · [5. Agregação](#5-agregação) · [Contra uma API de verdade](#contra-uma-api-de-verdade-jsonplaceholder) · [Combinando políticas](#combinando-políticas) · [Tetos globais](#tetos-globais) · [Auditoria](#auditoria) · [Problemas comuns](#problemas-comuns) · [Onde cada coisa roda](#onde-cada-coisa-roda)
+**Sumário:** [Como declarar](#como-declarar) · [1. Rate limit](#1-rate-limit) · [2. Throttling](#2-throttling) · [3. Filtros](#3-filtros) · [4. Transformação](#4-transformação) · [5. Agregação](#5-agregação) · [6. Timeouts](#6-timeouts) · [Contra uma API de verdade](#contra-uma-api-de-verdade-jsonplaceholder) · [Combinando políticas](#combinando-políticas) · [Tetos globais](#tetos-globais) · [Auditoria](#auditoria) · [Problemas comuns](#problemas-comuns) · [Onde cada coisa roda](#onde-cada-coisa-roda)
 
 ---
 
@@ -70,7 +71,7 @@ No v1, mudar a rota é gerar a imagem de novo. Rota inválida não é servida: o
 | `rateLimit`                                      | `rate-limit`                                           |
 | `throttle.maxConcurrent`, `maxQueue`, `maxWait`  | `throttle.max-concurrent`, `max-queue`, `max-wait`     |
 | `filters[].name` e `filters[].args`              | iguais: `args` é um mapa repassado ao filtro, então é `maxSize`, não `max-size` |
-| `transform` e `aggregate`                        | iguais (os campos são de uma palavra só)               |
+| `transform`, `aggregate` e `timeouts`            | iguais (os campos são de uma palavra só)               |
 
 ### Conferir o que está ativo
 
@@ -97,6 +98,7 @@ access → rate limit → throttle → token do backend → filtros da rota → 
 - Quem o rate limit barra (429) não ocupa vaga de throttle.
 - O token do backend é o que a rota escolhe com `access.audience` ou `access.obo` ([`AUTENTICACAO_POR_ROTA.pdf`](AUTENTICACAO_POR_ROTA.pdf)): a troca no Keycloak, ou no Entra, só acontece para quem passou pelo rate limit e pelo throttling. `audience` e `obo` não valem em rota com `aggregate`, porque o mesmo token iria para todos os backends.
 - A transformação vale tanto para a resposta do backend quanto para a resposta montada pela agregação.
+- Os `timeouts` valem na chamada ao backend: a fila do throttle e a troca de token não entram na conta.
 
 ### Quando uma política recusa
 
@@ -113,7 +115,7 @@ As recusas das políticas (429 do rate limit, 503 do throttling, 502 e 504 da ag
 }
 ```
 
-O `path` é o que o cliente pediu, antes de qualquer `stripPrefix` ou filtro. O `requestId` é o mesmo `http.request.id` do evento de [auditoria](#auditoria), o que liga a resposta ao log. O 413 do filtro `RequestSize` é do Spring Cloud Gateway: vem sem corpo, com o motivo no header `errorMessage`.
+O `path` é o que o cliente pediu, antes de qualquer `stripPrefix` ou filtro. O `requestId` é o mesmo `http.request.id` do evento de [auditoria](#auditoria), o que liga a resposta ao log. O 504 dos [`timeouts`](#6-timeouts) vem no mesmo JSON, sem a `message`. O 413 do filtro `RequestSize` é do Spring Cloud Gateway: vem sem corpo, com o motivo no header `errorMessage`.
 
 ### Os limites contam por réplica
 
@@ -634,7 +636,79 @@ curl -s "$GW/pol/painel/42?origem=app" | jq '.pedido.url, .cliente.url'   # a qu
 ### Cuidados
 
 - **Tempo:** cada chamada tem o `timeout` inteiro, e todas correm em paralelo. A rota responde em até `timeout`, mais o tempo de montar a resposta.
-- **Cliente HTTP:** os backends são chamados pelo próprio gateway, com o mesmo cliente HTTP das rotas comuns (pool, timeouts e TLS).
+- **Cliente HTTP:** os backends são chamados pelo próprio gateway, com o mesmo cliente HTTP das rotas comuns (pool e TLS). O `connect-timeout` global vale para eles, e o `response-timeout` não: o limite de cada chamada é o `timeout` da agregação. Por isso rota com `aggregate` não aceita [`timeouts`](#6-timeouts).
+
+---
+
+## 6. Timeouts
+
+Dá à rota um tempo próprio para abrir a conexão com o backend e para a resposta começar a chegar. Estourar qualquer um dos dois responde 504. O que a rota não declara vem do [global](#o-global): 5s para conectar e 30s para a resposta.
+
+```yaml
+# v2 (GatewayRoute.spec)              # v1 (properties)
+timeouts:                             timeouts:
+  connect: 2s                           connect: 2s
+  response: 1m                          response: 1m
+```
+
+| Campo      | Obrigatório | Sem ele      | Aceita                                                                                 |
+|------------|-------------|--------------|----------------------------------------------------------------------------------------|
+| `connect`  | não         | global (5s)  | duração até `1m`: tempo para abrir a conexão                                           |
+| `response` | não         | global (30s) | duração: do começo da chamada, conexão incluída, até chegarem os headers da resposta   |
+
+O bloco declara pelo menos um dos dois. O `connect` não passa do `response`, que já conta o tempo de conectar. Rota com `aggregate` não aceita `timeouts`: o limite de cada chamada é o `timeout` da agregação.
+
+### O global
+
+Fica no `application.yaml` do gateway, nas chaves do Spring Cloud Gateway, e vale para cada timeout que a rota não declara: a rota que só declara `connect` fica com o `response` global.
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 5000   # em milissegundos, sem unidade
+            response-timeout: 30s
+```
+
+Por variável de ambiente: `SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_HTTPCLIENT_CONNECT_TIMEOUT=2000` e `SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_HTTPCLIENT_RESPONSE_TIMEOUT=10s`.
+
+### O que conta
+
+- O `response` começa quando o gateway chama o backend, depois do `access`, do rate limit, da fila do throttle e da troca de token, e para quando chegam os headers da resposta.
+- O corpo da resposta não tem limite: download grande e SSE (server-sent events) seguem o tempo que precisarem depois dos headers.
+- O envio do corpo da requisição entra na conta: um upload lento precisa de um `response` que caiba nele.
+- O `connect` só conta quando o gateway abre uma conexão nova. Com uma conexão livre no pool, a chamada não conecta.
+
+### O que o cliente recebe
+
+504, no JSON de erro do gateway, igual para o `connect` e para o `response`:
+
+```json
+{
+  "timestamp": "2026-11-27T13:07:10.799Z",
+  "path": "/pol/timeout/delay/3",
+  "status": 504,
+  "error": "Gateway Timeout",
+  "requestId": "26049cba-2"
+}
+```
+
+A auditoria registra o 504 em `http.response.status_code`, na rota que estourou.
+
+### Experimente
+
+```bash
+curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' "$GW/pol/timeout/delay/3"   # 504 em 1s: o response da rota
+curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' "$GW/pol/timeout/get"       # 200
+```
+
+### Cuidados
+
+- **A borda também corta:** o nginx-lb do lab responde 504 depois de 10s sem resposta (`proxy_read_timeout`). Rota com `response` maior que o da borda precisa que a borda acompanhe.
+- **Pool de conexões:** a rota com `connect` próprio usa um pool à parte para o backend dela, porque o Reactor Netty separa os pools pelas opções da conexão. Rotas que chamam o mesmo backend com valores diferentes de `connect` somam conexões.
 
 ---
 
@@ -807,6 +881,7 @@ gateway:
 - O rate limit global é conferido antes do da rota, então uma requisição que a rota recusa já gastou do global.
 - Valor global inválido impede o gateway de subir, com a mensagem `gateway.traffic: <problema>`.
 - Por variável de ambiente: `GATEWAY_TRAFFIC_RATE_LIMIT_REQUESTS=5000`, `GATEWAY_TRAFFIC_THROTTLE_MAX_CONCURRENT=2000`, `GATEWAY_TRAFFIC_TRUSTED_PROXIES=2`.
+- Os timeouts globais não ficam em `gateway.traffic`: veja [O global](#o-global).
 
 ---
 
@@ -850,6 +925,7 @@ O contrato completo do evento está em [`GATEWAY_DE_BORDA.md`](GATEWAY_DE_BORDA.
 | todos os clientes dividem o mesmo orçamento `ip`     | `trusted-proxies` menor que o número de proxies na frente | confira `gateway.client.forwarded_for` na auditoria e ajuste `gateway.traffic.trusted-proxies` |
 | a transformação não aconteceu                        | a resposta não é 2xx, não é JSON ou passa do limite      | confira o status e o `Content-Type` do backend, e `gateway.traffic.transform.max-body-size`     |
 | a agregação responde 502                             | todos os backends falharam                               | teste cada URL de dentro do cluster: endereço, status e se a resposta é JSON                    |
+| a rota responde 504 em 10s, com um `response` maior  | o nginx-lb cortou antes (`proxy_read_timeout`)           | o 504 do nginx vem em HTML, e o do gateway em JSON; suba o limite da borda                       |
 | no v1, o `RewritePath` monta o path com outro valor  | `${resto}` foi resolvido como placeholder do Spring      | escreva `$\{resto}`                                                                             |
 
 ---
@@ -860,7 +936,8 @@ O contrato completo do evento está em [`GATEWAY_DE_BORDA.md`](GATEWAY_DE_BORDA.
 |----------------------|----------------------------------------------------------------------------------------------|
 | Modelo e validação   | `shared/` (`RouteRateLimit`, ..., `RoutePolicyRules`), usado pelo operator e pelo gateway    |
 | Schema               | `k8s/crd/gatewayroutes.platform.yyy.xxx.yaml`, com regras CEL                              |
-| Filtros globais      | `gateway/.../traffic/`: `RateLimitFilter`, `ThrottleFilter`, `ResponseTransformFilter`, `AggregationFilter` |
+| Filtros globais      | `gateway/.../traffic/`: `RateLimitFilter`, `ThrottleFilter`, `ResponseTransformFilter`, `AggregationFilter` e `ConnectTimeoutFilter` (o 504 do connect) |
+| Timeouts             | o `NettyRoutingFilter` do Spring Cloud Gateway lê `connect-timeout` e `response-timeout` da metadata da rota, que o `RouteDefinitionMapper` preenche |
 | Exemplos e e2e       | `k8s/samples/routes-policies.yaml`, `properties/application-standalone.yaml` e `scripts/e2e/test-policies.sh` (`make policies-test`) |
 
 As políticas viajam como metadata da rota, como o `access`, e não como filtro por rota. Por isso as 60 mil rotas continuam no caminho rápido. Mudar só uma política dispara o reload, porque o hash do snapshot inclui as políticas, e um snapshot antigo, sem elas, continua carregando.

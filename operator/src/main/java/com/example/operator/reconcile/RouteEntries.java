@@ -28,7 +28,8 @@ final class RouteEntries {
                 spec.getThrottle(),
                 spec.getFilters(),
                 spec.getTransform(),
-                spec.getAggregate()
+                spec.getAggregate(),
+                spec.getTimeouts()
         );
     }
 

@@ -9,6 +9,7 @@ import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteObo;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import com.example.shared.routes.RouteTransform;
 import org.junit.jupiter.api.Test;
 import org.springframework.aot.hint.RuntimeHints;
@@ -31,7 +32,7 @@ class RouteRecordHintsTest {
 
         for (Class<?> type : List.of(RouteConfigSnapshot.class, RouteConfigEntry.class, RouteAccess.class,
                 RouteObo.class, RouteRateLimit.class, RouteThrottle.class, RouteFilter.class, RouteTransform.class,
-                RouteAggregate.class, RouteBackend.class)) {
+                RouteAggregate.class, RouteBackend.class, RouteTimeouts.class)) {
             assertThat(RuntimeHintsPredicates.reflection().onType(type).test(hints)).as(type.getSimpleName()).isTrue();
         }
     }

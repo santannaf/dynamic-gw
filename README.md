@@ -24,7 +24,7 @@ O backend de persistência neste POC é um `ConfigMap` do Kubernetes (com gzip +
 14. [Otimização: detectar snapshots iguais sem ocupar memória](#otimização-detectar-snapshots-iguais-sem-ocupar-memória)
 15. [Otimização: 60 mil rotas num `ConfigMap` de 1 MiB](#otimização-60-mil-rotas-num-configmap-de-1-mib)
 16. [SSO, autorização por rota e auditoria](#sso-autorização-por-rota-e-auditoria)
-17. [Políticas de rota: rate limit, throttling, filtros, transformação e agregação](#políticas-de-rota-rate-limit-throttling-filtros-transformação-e-agregação)
+17. [Políticas de rota: rate limit, throttling, filtros, transformação, agregação e timeouts](#políticas-de-rota-rate-limit-throttling-filtros-transformação-agregação-e-timeouts)
 18. [Limitações conhecidas](#limitações-conhecidas)
 19. [Próximos passos](#próximos-passos)
 20. [Licença](#licença)
@@ -911,7 +911,7 @@ O filtro `1.2.840.113556.1.4.1941` resolve grupos aninhados no AD. A base de gru
 
 ---
 
-## Políticas de rota: rate limit, throttling, filtros, transformação e agregação
+## Políticas de rota: rate limit, throttling, filtros, transformação, agregação e timeouts
 
 Cada rota declara, ao lado do `access`, as políticas que precisar. Os mesmos nomes valem no `GatewayRoute` (v2) e nas rotas do properties (v1). Os tetos de todas as rotas juntas ficam em `gateway.traffic.*`.
 
@@ -924,9 +924,10 @@ spec:
   filters:
     - {name: AddRequestHeader, args: {name: X-Source, value: gateway}}
   transform: {deny: [senha], mapping: {nome: name}}          # resposta JSON
+  timeouts: {connect: 2s, response: 10s}                     # 504 acima
 ```
 
-Uma rota com `aggregate` (no lugar de `targetUri`) chama vários backends em paralelo e devolve uma resposta só. Os limites contam **por réplica**, em memória, sem Redis. O guia de uso, com cada política passo a passo, as respostas que o cliente recebe e os problemas comuns, está em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md); o e2e é `make policies-test`.
+Uma rota com `aggregate` (no lugar de `targetUri`) chama vários backends em paralelo e devolve uma resposta só. O timeout que a rota não declara vem do global do Spring Cloud Gateway (`spring.cloud.gateway.server.webflux.httpclient.connect-timeout` e `response-timeout`: 5s e 30s no `application.yaml`). Os limites contam **por réplica**, em memória, sem Redis. O guia de uso, com cada política passo a passo, as respostas que o cliente recebe e os problemas comuns, está em [`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md); o e2e é `make policies-test`.
 
 ---
 
@@ -934,7 +935,7 @@ Uma rota com `aggregate` (no lugar de `targetUri`) chama vários backends em par
 
 Este POC **explicitamente não implementa**:
 
-- Circuit breakers, retries, timeout por rota e TLS. O rate limit e o throttling existem, mas contam por réplica, sem estado compartilhado ([`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md)).
+- Circuit breakers, retries e TLS. O rate limit e o throttling existem, mas contam por réplica, sem estado compartilhado ([`POLITICAS_DE_ROTA.md`](POLITICAS_DE_ROTA.md)).
 - Suporte multi-namespace ou multi-gateway.
 - CRD `status.conditions` (`Accepted`, `Invalid`, `Published`, `FailedToReload`). Feedback de validação fica só nos logs do operator.
 - Rollback de snapshot, assinatura/checksum.
@@ -948,7 +949,7 @@ O operator roda como **réplica única**. Com mais de uma, vale last-writer-wins
 ## Próximos passos
 
 1. CRD `status.conditions` pra `kubectl describe gatewayroute` refletir validação + publish state.
-2. Per-route timeout, retries, rate limit no CRD e no snapshot.
+2. Retries por rota, no CRD e no snapshot.
 3. Back-channel logout (revogação imediata) e bearer/basic para contas de serviço no modo `ldap`.
 4. Backend S3 real + versionamento de snapshot.
 5. Detecção de conflito de path entre rotas durante reconcile.

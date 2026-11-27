@@ -4,6 +4,7 @@ import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration;
@@ -44,6 +45,8 @@ class RouteStorePropertiesBindingTest {
                         "gateway.routes.store.properties.routes[0].filters[0].args.maxSize=5MB",
                         "gateway.routes.store.properties.routes[0].transform.deny[0]=senha",
                         "gateway.routes.store.properties.routes[0].transform.mapping.nomeCompleto=fullName",
+                        "gateway.routes.store.properties.routes[0].timeouts.connect=2s",
+                        "gateway.routes.store.properties.routes[0].timeouts.response=30s",
                         "gateway.routes.store.properties.routes[1].id=painel",
                         "gateway.routes.store.properties.routes[1].path=/painel/{id}",
                         "gateway.routes.store.properties.routes[1].aggregate.timeout=2s",
@@ -60,6 +63,7 @@ class RouteStorePropertiesBindingTest {
                     assertThat(pedidos.filters()).containsExactly(new RouteFilter("RequestSize", Map.of("maxSize", "5MB")));
                     assertThat(pedidos.transform().deny()).containsExactly("senha");
                     assertThat(pedidos.transform().mapping()).containsExactly(Map.entry("nomeCompleto", "fullName"));
+                    assertThat(pedidos.timeouts()).isEqualTo(new RouteTimeouts("2s", "30s"));
 
                     RouteConfigEntry painel = routes.get(1);
                     assertThat(painel.targetUri()).isNull();

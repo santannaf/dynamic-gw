@@ -9,6 +9,7 @@ import com.example.shared.routes.RouteFilter;
 import com.example.shared.routes.RouteObo;
 import com.example.shared.routes.RouteRateLimit;
 import com.example.shared.routes.RouteThrottle;
+import com.example.shared.routes.RouteTimeouts;
 import com.example.shared.routes.RouteTransform;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
@@ -65,7 +66,7 @@ public class GatewayRuntimeHints implements RuntimeHintsRegistrar {
         // Policies: read from the snapshot (Jackson), bound from properties in
         // v1 (Binder), and written by /internal/routes and the reload hash.
         for (Class<?> policy : new Class<?>[]{RouteRateLimit.class, RouteThrottle.class, RouteFilter.class,
-                RouteTransform.class, RouteAggregate.class, RouteBackend.class}) {
+                RouteTransform.class, RouteAggregate.class, RouteBackend.class, RouteTimeouts.class}) {
             hints.reflection().registerType(policy,
                     MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
                     MemberCategory.INVOKE_DECLARED_METHODS,

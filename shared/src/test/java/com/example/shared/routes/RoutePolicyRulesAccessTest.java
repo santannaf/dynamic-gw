@@ -171,11 +171,11 @@ class RoutePolicyRulesAccessTest {
 
     private static RouteConfigEntry proxied(RouteAccess access) {
         return new RouteConfigEntry("r", "/r/**", "http://r", 1, null, true, null, null, access,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     private static RouteConfigEntry aggregated(RouteAccess access, RouteAggregate aggregate) {
         return new RouteConfigEntry("r", "/r/**", null, 1, null, true, null, null, access,
-                null, null, null, null, aggregate);
+                null, null, null, null, aggregate, null);
     }
 }

@@ -57,6 +57,11 @@ public class TrafficConfiguration {
     }
 
     @Bean
+    public ConnectTimeoutFilter connectTimeoutFilter() {
+        return new ConnectTimeoutFilter();
+    }
+
+    @Bean
     public AggregationFilter aggregationFilter(TrafficProperties traffic, ObjectProvider<HttpClient> httpClient) {
         // The gateway's own HTTP client: same pool, timeouts and TLS settings as the proxied routes.
         WebClient client = WebClient.builder()

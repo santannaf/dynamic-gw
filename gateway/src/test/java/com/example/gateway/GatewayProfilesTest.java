@@ -3,6 +3,7 @@ package com.example.gateway;
 import com.example.gateway.routes.store.RouteStoreProperties;
 import com.example.gateway.security.GatewaySecurityProperties;
 import com.example.shared.routes.RoutePolicyRules;
+import com.example.shared.routes.RouteTimeouts;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -246,10 +247,12 @@ class GatewayProfilesTest {
         RouteStoreProperties routes = bindStrictly(environment(List.of("standalone"), Map.of()),
                 "gateway.routes.store", RouteStoreProperties.class);
 
-        assertThat(routes.getProperties().getRoutes()).hasSize(18).allSatisfy(route ->
+        assertThat(routes.getProperties().getRoutes()).hasSize(19).allSatisfy(route ->
                 assertThat(RoutePolicyRules.validate(route, RoutePolicyRules.DEFAULT_IDENTITY_HEADER_PREFIX))
                         .as(route.id()).isEmpty());
         assertThat(routes.getProperties().getRoutes()).filteredOn(route -> route.aggregate() != null).hasSize(4);
+        assertThat(routes.getProperties().getRoutes()).filteredOn(route -> route.timeouts() != null).singleElement()
+                .satisfies(route -> assertThat(route.timeouts()).isEqualTo(new RouteTimeouts("500ms", "1s")));
         assertThat(routes.getProperties().getRoutes()).filteredOn(route -> route.id().equals("jp-artigos")).singleElement()
                 .satisfies(route -> assertThat(route.transform().mapping()).as("map keys keep their case")
                         .containsEntry("userId", "autorId"));

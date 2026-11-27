@@ -38,6 +38,9 @@ public final class RoutePolicyRules {
     private static final Pattern DATA_SIZE = Pattern.compile("^[0-9]{1,12}(B|KB|MB)?$");
     private static final Pattern PATH_VARIABLE = Pattern.compile("\\{[^}/]+}");
     private static final int MAX_BACKENDS = 10;
+    // Netty takes the connect timeout as int milliseconds, and a backend that
+    // is up opens a connection far sooner than a minute.
+    private static final Duration MAX_CONNECT_TIMEOUT = Duration.ofMinutes(1);
     private static final List<String> ACCESS_MODES = List.of("public", "authenticated");
     private static final List<String> CHANNELS = List.of("keycloak", "ldap");
     // <type>:<name>. Each edge gateway defines its own types, so the type stays
@@ -105,7 +108,8 @@ public final class RoutePolicyRules {
                 throttle(route.throttle()),
                 filters(route.filters(), identityHeaderPrefix),
                 transform("transform", route.transform()),
-                aggregate(route.aggregate(), route.methods()));
+                aggregate(route.aggregate(), route.methods()),
+                timeouts(route.timeouts(), route.aggregate() != null));
     }
 
     @SafeVarargs
@@ -371,6 +375,34 @@ public final class RoutePolicyRules {
             if (problem.isPresent()) {
                 return problem;
             }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> timeouts(RouteTimeouts timeouts, boolean aggregated) {
+        if (timeouts == null) {
+            return Optional.empty();
+        }
+        if (aggregated) {
+            return problem("timeouts cannot be combined with aggregate: each call's limit is aggregate.timeout");
+        }
+        if (timeouts.connect() == null && timeouts.response() == null) {
+            return problem("timeouts must declare connect, response or both");
+        }
+        Duration connect = parseDuration(timeouts.connect());
+        if (timeouts.connect() != null
+                && (connect == null || connect.isZero() || connect.compareTo(MAX_CONNECT_TIMEOUT) > 0)) {
+            return problem("timeouts.connect must be a positive duration of up to 1m, such as 2s, but was '"
+                    + timeouts.connect() + "'");
+        }
+        Duration response = parseDuration(timeouts.response());
+        if (timeouts.response() != null && (response == null || response.isZero())) {
+            return problem("timeouts.response must be a positive duration such as 10s, but was '"
+                    + timeouts.response() + "'");
+        }
+        if (connect != null && response != null && connect.compareTo(response) > 0) {
+            return problem("timeouts.connect cannot exceed timeouts.response: the response limit already counts"
+                    + " opening the connection");
         }
         return Optional.empty();
     }

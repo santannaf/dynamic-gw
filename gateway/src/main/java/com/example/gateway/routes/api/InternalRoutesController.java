@@ -65,7 +65,8 @@ public class InternalRoutesController {
             RouteDefinitionMapper.RATE_LIMIT_METADATA_KEY,
             RouteDefinitionMapper.THROTTLE_METADATA_KEY,
             RouteDefinitionMapper.TRANSFORM_METADATA_KEY,
-            RouteDefinitionMapper.AGGREGATE_METADATA_KEY);
+            RouteDefinitionMapper.AGGREGATE_METADATA_KEY,
+            RouteDefinitionMapper.TIMEOUTS_METADATA_KEY);
 
     private static Map<String, Object> view(RouteDefinition rd) {
         Map<String, Object> map = new LinkedHashMap<>();

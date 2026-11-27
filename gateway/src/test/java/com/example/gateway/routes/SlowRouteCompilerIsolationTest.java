@@ -42,9 +42,9 @@ class SlowRouteCompilerIsolationTest {
     void aRouteThatDoesNotCompileIsLeftOutAlone() {
         RouteDefinition good = mapper.toDefinition(new RouteConfigEntry("good", "/g/**", "http://g", 1, null, true,
                 null, null, null, null, null,
-                List.of(new RouteFilter("AddRequestHeader", Map.of("name", "X-A", "value", "1"))), null, null));
+                List.of(new RouteFilter("AddRequestHeader", Map.of("name", "X-A", "value", "1"))), null, null, null));
         RouteDefinition broken = mapper.toDefinition(new RouteConfigEntry("broken", "/b/**", "http://b", 1, null,
-                true, null, null, null, null, null, null, null, null));
+                true, null, null, null, null, null, null, null, null, null));
         FilterDefinition unknown = new FilterDefinition();
         unknown.setName("NoSuchFilter");
         broken.getFilters().add(unknown);

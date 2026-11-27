@@ -2,14 +2,19 @@ package com.example.gateway.routing;
 
 import com.example.shared.routes.RouteConfigEntry;
 import com.example.shared.routes.RouteFilter;
+import com.example.shared.routes.RoutePolicyRules;
+import com.example.shared.routes.RouteTimeouts;
 import org.springframework.cloud.gateway.filter.FilterDefinition;
 import org.springframework.cloud.gateway.handler.predicate.PredicateDefinition;
 import org.springframework.cloud.gateway.route.RouteDefinition;
+import org.springframework.cloud.gateway.support.RouteMetadataUtils;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class RouteDefinitionMapper {
@@ -21,6 +26,7 @@ public class RouteDefinitionMapper {
     public static final String THROTTLE_METADATA_KEY = "throttle";
     public static final String TRANSFORM_METADATA_KEY = "transform";
     public static final String AGGREGATE_METADATA_KEY = "aggregate";
+    public static final String TIMEOUTS_METADATA_KEY = "timeouts";
 
     // An aggregated route has no single upstream: AggregationFilter answers it
     // and the routing filters skip the no://op scheme.
@@ -83,8 +89,26 @@ public class RouteDefinitionMapper {
         if (entry.aggregate() != null) {
             rd.getMetadata().put(AGGREGATE_METADATA_KEY, entry.aggregate());
         }
+        if (entry.timeouts() != null) {
+            rd.getMetadata().put(TIMEOUTS_METADATA_KEY, entry.timeouts());
+            putUpstreamTimeouts(rd.getMetadata(), entry.timeouts());
+        }
 
         return rd;
+    }
+
+    // NettyRoutingFilter reads these keys per route, in milliseconds. A timeout the
+    // route leaves out stays out of the metadata, so the global value of
+    // spring.cloud.gateway.server.webflux.httpclient applies to it.
+    private static void putUpstreamTimeouts(Map<String, Object> metadata, RouteTimeouts timeouts) {
+        Duration connect = RoutePolicyRules.parseDuration(timeouts.connect());
+        if (connect != null) {
+            metadata.put(RouteMetadataUtils.CONNECT_TIMEOUT_ATTR, Math.toIntExact(connect.toMillis()));
+        }
+        Duration response = RoutePolicyRules.parseDuration(timeouts.response());
+        if (response != null) {
+            metadata.put(RouteMetadataUtils.RESPONSE_TIMEOUT_ATTR, response.toMillis());
+        }
     }
 
     private static PredicateDefinition pathPredicate(String path) {

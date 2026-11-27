@@ -166,6 +166,14 @@ gateway:
               - name: RequestSize
                 args:
                   maxSize: 1KB
+          - id: policy-timeout
+            path: /pol/timeout/**
+            target-uri: http://go-httpbin.platform.svc.cluster.local:8080
+            strip-prefix: 2
+            description: Answer within 1 second and connect within 500ms, or 504 - /pol/timeout/delay/3 times out.
+            timeouts:
+              connect: 500ms
+              response: 1s
           # --- API de verdade: JSONPlaceholder (as mesmas rotas de
           # k8s/samples/routes-jsonplaceholder.yaml; make jsonplaceholder-test). Precisam
           # de saída para a internet; os limites contam por réplica.

@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Upstream for the policy tests. {@code /echo/**} answers with what it got;
  * {@code /pedido/{id}}, {@code /cliente/{id}} and {@code /extra} answer JSON;
  * {@code /slow?ms=} holds the request and counts how many run at once;
+ * {@code /drip?ms=} sends the headers at once and the rest of the body after ms;
  * {@code /status/{code}} answers that status; {@code /big}, {@code /big-chunked},
  * {@code /small-chunked} and {@code /text} feed the transformation limits.
  */
@@ -109,6 +110,8 @@ final class PolicyUpstream implements AutoCloseable {
                 exchange.sendResponseHeaders(Integer.parseInt(path.substring("/status/".length())), -1);
             } else if (path.equals("/slow")) {
                 slow(exchange);
+            } else if (path.equals("/drip")) {
+                drip(exchange);
             } else if (path.equals("/big")) {
                 json(exchange, "{\"x\":1,\"payload\":\"" + BIG_PAYLOAD + "\"}", false);
             } else if (path.equals("/big-chunked")) {
@@ -129,15 +132,35 @@ final class PolicyUpstream implements AutoCloseable {
     private void slow(HttpExchange exchange) throws IOException {
         peak.accumulateAndGet(running.incrementAndGet(), Math::max);
         try {
-            String query = exchange.getRequestURI().getQuery();
-            long millis = query == null ? 500 : Long.parseLong(query.replaceAll(".*ms=(\\d+).*", "$1"));
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            sleep(millisOf(exchange));
         } finally {
             running.decrementAndGet();
         }
         json(exchange, "{\"ok\":true}", false);
+    }
+
+    private static void drip(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, 0);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write("{\"parte\":1,".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            sleep(millisOf(exchange));
+            out.write("\"fim\":true}".getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private static long millisOf(HttpExchange exchange) {
+        String query = exchange.getRequestURI().getQuery();
+        return query == null ? 500 : Long.parseLong(query.replaceAll(".*ms=(\\d+).*", "$1"));
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void json(HttpExchange exchange, String body, boolean chunked) throws IOException {
