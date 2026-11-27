@@ -1,6 +1,6 @@
 # Autenticação por rota: exemplos por cenário
 
-Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implementado na ETT-1452. Cada pasta é um cenário de gateway em um store, com a configuração do gateway (`application.yaml`), as rotas (`rotas.yaml`, uma por estratégia que o cenário comporta) e um desenho por estratégia. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts: as rotas que o lab usa estão na seção [No lab](#no-lab).
+Exemplos de [AUTENTICACAO_POR_ROTA.pdf](../../AUTENTICACAO_POR_ROTA.pdf), implementado na ETT-1452. Cada pasta é um cenário de gateway em um store, com a configuração do gateway (`application.yaml`), as rotas (`rotas.yaml`: uma por estratégia que o cenário comporta e o [mostruário das políticas](#mostruário-das-políticas)) e um desenho por estratégia. Nada aqui é carregado pelo gateway, pelo operator ou pelos scripts: as rotas que o lab usa estão na seção [No lab](#no-lab).
 
 | Cenário | O gateway | Estratégias | Profiles do gateway (properties · crd · s3) | Campos da ETT-1452 |
 |---|---|---|---|---|
@@ -46,7 +46,33 @@ Uma pasta por store e, dentro dela, uma por cenário (`properties/cenario-3-keyc
 
 `crd/schema-access.yaml` é o schema do `access`, o mesmo do CRD em `k8s/crd/`.
 
-Do cenário 1 ao 5, os três `rotas.yaml` de um cenário têm as mesmas rotas, com os mesmos ids, o mesmo `access` e as mesmas políticas, e os três `application.yaml` só mudam em `gateway.routes.store`. As rotas também trazem rate limit (`ip` na pública e em todas as do cenário 0, `user` nas autenticadas) e throttling ([POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md)).
+Do cenário 1 ao 5, os três `rotas.yaml` de um cenário têm as mesmas rotas, com os mesmos ids, o mesmo `access` e as mesmas políticas, e os três `application.yaml` só mudam em `gateway.routes.store`. A exceção é a rota desligada do mostruário, que só existe em `crd/`. As rotas das estratégias também trazem rate limit (`ip` na pública e em todas as do cenário 0, `user` nas autenticadas) e throttling ([POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md)).
+
+## Mostruário das políticas
+
+Depois das rotas de cada estratégia, todo `rotas.yaml` traz as mesmas rotas de mostruário: backends de mentira, que não existem no lab, com as políticas do [POLITICAS_DE_ROTA.md](../../POLITICAS_DE_ROTA.md). Entre os cenários as políticas não mudam. Muda o `access` e, com ele, a `key` do rate limit que depende do login.
+
+| Rota | Path | O que mostra |
+|---|---|---|
+| `catalogo` | `/catalogo/**` | `methods` (GET e HEAD), rate limit por `ip` com `burst`, `AddResponseHeader`, `RemoveResponseHeader` e `transform.deny` |
+| `parceiros` | `/parceiros/**` | rate limit por `header:X-Api-Key`, throttling sem fila, `RemoveRequestParameter`, `AddRequestHeader`, `RequestSize` e `timeouts` (1s para conectar, 5s para responder) |
+| `produtos-leitura`, `produtos-escrita` | `/produtos/**` | a mesma URL com uma regra por método: `access`, limite e corpo diferentes para ler e para escrever |
+| `legado` | `/legado/**` | `RewritePath`, `SetRequestHeader`, `RemoveRequestHeader`, `SetResponseHeader` e o `transform` inteiro (`target`, `deny`, `mapping` e `group`) |
+| `cliente-resumo` | `/clientes/{id}/resumo` | variável no path, `SetPath`, `AddRequestParameter`, `transform.allow` com `mapping` e `mode: authenticated` |
+| `estoque` | `/estoque/**` | `PrefixPath` e, com o Keycloak, sistema a sistema: `scope:` no `anyOf`, `audience` e rate limit por `client-id` |
+| `relatorios` | `/relatorios/**` | `stripPrefix: 0`, rate limit da rota toda por hora (sem `key`), throttling com fila, `timeouts.response` maior que o global e, sem `access`, o `default-access` |
+| `painel-cliente` | `/painel/clientes/{id}` | `aggregate`: três backends, com e sem `group`, `transform` em cada um e na resposta montada, e `timeout` |
+| `campanha` | `/campanha/**` | `enabled: false`, só em `crd/` |
+
+| Cenário | O `access` do mostruário |
+|---|---|
+| 0 | Nenhum. A `key` é `ip`, a rota toda (`relatorios`) ou o header (`parceiros`) |
+| 1 | `group:` do AD. O `estoque` é de pessoas (`group:estoque-operadores`), porque no LDAP direto não há token |
+| 2 e 4 | `role:` do client, `group:` do AD e `scope:` do token. `produtos-escrita` e `estoque` trocam o token (`audience`), e o `legado` repassa o token A |
+| 3 | Como no 2, com `role:` no `legado`: o realm não tem o AD |
+| 5 | `produtos-*` e `cliente-resumo` pelo LDAP direto (`channel: ldap`); o resto pelo Keycloak, como no 3 |
+
+A `campanha` não está em `s3/`, porque o operator não publica rota desligada, nem em `properties/`, porque o v1 não olha o `enabled`: lá, uma rota com `enabled: false` continua no ar, e tirá-la do ar é apagá-la do arquivo.
 
 ## O application.yaml de cada cenário
 

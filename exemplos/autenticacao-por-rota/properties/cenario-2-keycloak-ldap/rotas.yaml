@@ -6,6 +6,12 @@
 # Campo da ETT-1452: audience.
 # Cada audience é um client do realm, com um client scope opcional de mesmo nome:
 # o gateway pede audience=<client> e scope=<client> na troca V2.
+#
+# Depois das rotas de cada estratégia vem o mostruário das políticas: rotas de
+# mentira, no access deste cenário, com methods, strip-prefix, rate limit com
+# burst e várias keys, throttling, os doze filtros do catálogo, transform,
+# aggregate e timeouts. O guia de cada política é o POLITICAS_DE_ROTA.md, na raiz
+# do repositório. O v1 não olha o enabled: rota fora do ar sai deste arquivo.
 
 gateway:
   routes:
@@ -47,3 +53,250 @@ gateway:
               max-concurrent: 5
               max-queue: 10
               max-wait: 2s
+
+          # Mostruário das políticas: backends de mentira, que não existem no lab. Os limites
+          # contam em cada réplica, como nas rotas acima.
+          #
+          # Catálogo só de leitura: GET e HEAD, 600 por minuto por endereço com picos de 50,
+          # cache de um minuto e os campos internos fora da resposta.
+          - id: catalogo
+            path: /catalogo/**
+            target-uri: http://catalogo-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            methods: [GET, HEAD]            # outro método: 404
+            team: loja-team
+            description: Catálogo de produtos, só leitura.
+            access:
+              mode: public
+            rate-limit:                     # 600 por minuto por endereço; até 50 de uma vez
+              requests: 600
+              period: 1m
+              burst: 50
+              key: ip
+            filters:
+              - name: AddResponseHeader
+                args:
+                  name: Cache-Control
+                  value: "public, max-age=60"
+              - name: RemoveResponseHeader
+                args:
+                  name: X-Powered-By
+            transform:                      # sai também de cada item de uma lista
+              deny: [custoInterno, fornecedorId]
+
+          # API de parceiros: o backend confere a X-Api-Key, e o gateway dá a cada chave o
+          # próprio orçamento. Até 20 chamadas ao mesmo tempo, sem fila, e corpo de até 256KB.
+          - id: parceiros
+            path: /parceiros/**
+            target-uri: http://parceiros-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: parcerias-team
+            description: API dos parceiros, com orçamento por chave.
+            access:
+              mode: public
+            rate-limit:                     # 100 por minuto por chave; sem o header, por endereço
+              requests: 100
+              period: 1m
+              key: header:X-Api-Key
+            throttle:                       # sem fila: a 21ª ao mesmo tempo recebe 503 na hora
+              max-concurrent: 20
+            timeouts:                       # 1s para conectar e 5s para responder; acima, 504
+              connect: 1s
+              response: 5s
+            filters:
+              - name: RemoveRequestParameter
+                args:
+                  name: debug
+              - name: AddRequestHeader
+                args:
+                  name: X-Origem
+                  value: borda
+              - name: RequestSize           # corpo maior: 413
+                args:
+                  maxSize: 256KB
+
+          # Mesma URL, regra por método: ler é das roles produtos-leitura e produtos-admin...
+          - id: produtos-leitura
+            path: /produtos/**
+            target-uri: http://produtos-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            methods: [GET, HEAD]
+            team: loja-team
+            description: Leitura de produtos.
+            access:
+              any-of:
+                - role:produtos-leitura
+                - role:produtos-admin
+            rate-limit:                     # 120 por minuto por usuário
+              requests: 120
+              period: 1m
+              key: user
+
+          # ...e escrever, só da produtos-admin, com corpo de até 1MB. O backend recebe um token
+          # com aud=produtos-api, que ele mesmo valida.
+          - id: produtos-escrita
+            path: /produtos/**
+            target-uri: http://produtos-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            methods: [POST, PUT, PATCH, DELETE]
+            team: loja-team
+            description: Cadastro e alteração de produtos.
+            access:
+              any-of:
+                - role:produtos-admin
+              forward-token: true           # o backend recebe um token
+              audience: produtos-api        # troca V2: aud=produtos-api
+            rate-limit:                     # 20 por minuto por usuário
+              requests: 20
+              period: 1m
+              key: user
+            filters:
+              - name: RequestSize
+                args:
+                  maxSize: 1MB
+
+          # Fachada de um sistema legado: o path ganha o prefixo dele, o X-Canal chega sempre
+          # como borda, o X-Debug do cliente não passa e a resposta muda de forma:
+          # {"retorno":{"cliente":{"nmCliente":"Ana","senha":"x"}}} vira {"cliente":{"nome":"Ana"}}.
+          # O backend recebe o token do login (token A), sem troca.
+          - id: legado
+            path: /legado/**
+            target-uri: http://erp-legado.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: erp-team
+            description: Clientes do ERP legado, com path e campos novos.
+            access:
+              any-of:
+                - group:erp-usuarios
+              forward-token: true           # sem audience nem obo: vai o token A
+            rate-limit:                     # 30 a cada 10s por usuário
+              requests: 30
+              period: 10s
+              key: user
+            filters:
+              - name: RewritePath           # /legado/clientes/42 → /servicos/v1/clientes/42
+                args:
+                  regexp: /(?<resto>.*)
+                  replacement: /servicos/v1/$\{resto}
+              - name: SetRequestHeader      # troca o valor que o cliente mandou
+                args:
+                  name: X-Canal
+                  value: borda
+              - name: RemoveRequestHeader
+                args:
+                  name: X-Debug
+              - name: SetResponseHeader
+                args:
+                  name: Cache-Control
+                  value: no-store
+            transform:                      # nesta ordem: target, deny, mapping, group
+              target: retorno.cliente
+              deny: [senha]
+              mapping:
+                nmCliente: nome
+                dtNascimento: nascimento
+              group: cliente
+
+          # Qualquer usuário logado. Variável no path, que o SetPath leva ao path do backend. A
+          # resposta fica com três campos, um deles renomeado.
+          - id: cliente-resumo
+            path: /clientes/{id}/resumo
+            target-uri: http://clientes-api.platform.svc.cluster.local:8080
+            team: clientes-team
+            description: Resumo do cliente.
+            access:
+              mode: authenticated           # login, sem permissão específica
+            rate-limit:                     # 60 por minuto por usuário
+              requests: 60
+              period: 1m
+              key: user
+            filters:
+              - name: SetPath               # /clientes/42/resumo → /api/customers/42/summary
+                args:
+                  template: /api/customers/{id}/summary
+              - name: AddRequestParameter   # ?campos=resumo
+                args:
+                  name: campos
+                  value: resumo
+            transform:
+              allow: [id, nome, limiteCredito]
+              mapping:
+                limiteCredito: limite
+
+          # Sistema a sistema: conta de serviço (client credentials) com o scope estoque.write
+          # no token. Cada aplicação tem o próprio orçamento, e o backend recebe um token com
+          # aud=estoque-api.
+          - id: estoque
+            path: /estoque/**
+            target-uri: http://estoque-api.platform.svc.cluster.local:8080
+            strip-prefix: 1
+            team: estoque-team
+            description: Movimentação de estoque pelos sistemas, com token.
+            access:
+              any-of:
+                - scope:estoque.write
+              forward-token: true           # o backend recebe um token
+              audience: estoque-api         # troca V2: aud=estoque-api
+            rate-limit:                     # 1000 por minuto por aplicação (o azp do token)
+              requests: 1000
+              period: 1m
+              key: client-id
+            filters:
+              - name: PrefixPath            # /estoque/itens/7 → /api/v2/inventory/itens/7
+                args:
+                  prefix: /api/v2/inventory
+
+          # Backend lento: até 2 relatórios ao mesmo tempo, e mais 20 esperam a vez por até 10s.
+          # O orçamento de 100 por hora é da rota toda, e o backend recebe o path inteiro. Sem
+          # access, vale o default-access do gateway: qualquer usuário logado.
+          - id: relatorios
+            path: /relatorios/**
+            target-uri: http://relatorios-api.platform.svc.cluster.local:8080
+            strip-prefix: 0                 # /relatorios/vendas chega como /relatorios/vendas
+            team: bi-team
+            description: Relatórios pesados, gerados na hora.
+            rate-limit:                     # 100 por hora para todos juntos (sem key: route)
+              requests: 100
+              period: 1h
+            throttle:                       # até 2 ao mesmo tempo; mais 20 esperam até 10s
+              max-concurrent: 2
+              max-queue: 20
+              max-wait: 10s
+            timeouts:                       # até 1m para o relatório começar a sair (o global é 30s)
+              response: 1m
+
+          # Agregação: três backends em paralelo viram uma resposta só, e só para GET. Cada
+          # chamada tem até 2s; quem falha fica de fora, e a resposta sai com
+          # X-Gateway-Completed: false.
+          - id: painel-cliente
+            path: /painel/clientes/{id}
+            team: atendimento-team
+            description: Cadastro, pedidos e pontos do cliente numa chamada só.
+            access:
+              any-of:
+                - role:atendimento
+            rate-limit:                     # 30 por minuto por usuário
+              requests: 30
+              period: 1m
+              key: user
+            throttle:                       # até 10 ao mesmo tempo; mais 10 esperam até 500ms
+              max-concurrent: 10
+              max-queue: 10
+              max-wait: 500ms
+            aggregate:                      # no lugar do targetUri; audience e obo não valem aqui
+              timeout: 2s                   # para cada chamada
+              backends:
+                - url: http://clientes-api.platform.svc.cluster.local:8080/api/customers/{id}
+                  group: cliente            # a resposta entra em "cliente"
+                  transform:
+                    allow: [id, nome, segmento]
+                - url: http://pedidos-api.platform.svc.cluster.local:8080/api/customers/{id}/orders/summary
+                  group: pedidos
+                  transform:
+                    target: resumo          # só o objeto em resumo
+                - url: http://fidelidade-api.platform.svc.cluster.local:8080/pontos/{id}
+                  transform:                # sem group: os campos entram direto na resposta
+                    mapping:
+                      saldo: pontos
+            transform:                      # na resposta montada: só estes campos saem
+              allow: [cliente, pedidos, pontos]

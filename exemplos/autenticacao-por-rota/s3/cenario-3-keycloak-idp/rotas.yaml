@@ -8,6 +8,9 @@
 #
 # Um gateway anterior à ETT-1452 lê este objeto, descarta esses campos e serve
 # as rotas sem as checagens: atualize o gateway antes do operator.
+#
+# O mostruário das políticas vem junto, menos a campanha: com enabled: false, o
+# operator a deixa fora do snapshot.
 version: "2026-11-18T21:00:00Z"
 generatedAt: "2026-11-18T21:00:00Z"
 routes:
@@ -37,6 +40,280 @@ routes:
   filters: null
   transform: null
   aggregate: null
+  timeouts: null
+- id: "catalogo"
+  path: "/catalogo/**"
+  targetUri: "http://catalogo-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods:
+  - "GET"
+  - "HEAD"
+  enabled: true
+  team: "loja-team"
+  description: "Catálogo de produtos, só leitura."
+  access:
+    mode: "public"
+    anyOf: null
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit:
+    requests: 600
+    period: "1m"
+    burst: 50
+    key: "ip"
+  throttle: null
+  filters:
+  - name: "AddResponseHeader"
+    args:
+      name: "Cache-Control"
+      value: "public, max-age=60"
+  - name: "RemoveResponseHeader"
+    args:
+      name: "X-Powered-By"
+  transform:
+    allow: null
+    deny:
+    - "custoInterno"
+    - "fornecedorId"
+    mapping: null
+    target: null
+    group: null
+  aggregate: null
+  timeouts: null
+- id: "cliente-resumo"
+  path: "/clientes/{id}/resumo"
+  targetUri: "http://clientes-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "clientes-team"
+  description: "Resumo do cliente."
+  access:
+    mode: "authenticated"
+    anyOf: null
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit:
+    requests: 60
+    period: "1m"
+    burst: null
+    key: "user"
+  throttle: null
+  filters:
+  - name: "SetPath"
+    args:
+      template: "/api/customers/{id}/summary"
+  - name: "AddRequestParameter"
+    args:
+      name: "campos"
+      value: "resumo"
+  transform:
+    allow:
+    - "id"
+    - "nome"
+    - "limiteCredito"
+    deny: null
+    mapping:
+      limiteCredito: "limite"
+    target: null
+    group: null
+  aggregate: null
+  timeouts: null
+- id: "estoque"
+  path: "/estoque/**"
+  targetUri: "http://estoque-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "estoque-team"
+  description: "Movimentação de estoque pelos sistemas, com token."
+  access:
+    mode: null
+    anyOf:
+    - "scope:estoque.write"
+    forwardToken: true
+    channel: null
+    identityProvider: null
+    audience: "estoque-api"
+    obo: null
+  rateLimit:
+    requests: 1000
+    period: "1m"
+    burst: null
+    key: "client-id"
+  throttle: null
+  filters:
+  - name: "PrefixPath"
+    args:
+      prefix: "/api/v2/inventory"
+  transform: null
+  aggregate: null
+  timeouts: null
+- id: "legado"
+  path: "/legado/**"
+  targetUri: "http://erp-legado.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "erp-team"
+  description: "Clientes do ERP legado, com path e campos novos."
+  access:
+    mode: null
+    anyOf:
+    - "role:erp-usuario"
+    forwardToken: true
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit:
+    requests: 30
+    period: "10s"
+    burst: null
+    key: "user"
+  throttle: null
+  filters:
+  - name: "RewritePath"
+    args:
+      regexp: "/(?<resto>.*)"
+      replacement: "/servicos/v1/$\\{resto}"
+  - name: "SetRequestHeader"
+    args:
+      name: "X-Canal"
+      value: "borda"
+  - name: "RemoveRequestHeader"
+    args:
+      name: "X-Debug"
+  - name: "SetResponseHeader"
+    args:
+      name: "Cache-Control"
+      value: "no-store"
+  transform:
+    allow: null
+    deny:
+    - "senha"
+    mapping:
+      dtNascimento: "nascimento"
+      nmCliente: "nome"
+    target: "retorno.cliente"
+    group: "cliente"
+  aggregate: null
+  timeouts: null
+- id: "painel-cliente"
+  path: "/painel/clientes/{id}"
+  targetUri: null
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "atendimento-team"
+  description: "Cadastro, pedidos e pontos do cliente numa chamada só."
+  access:
+    mode: null
+    anyOf:
+    - "role:atendimento"
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit:
+    requests: 30
+    period: "1m"
+    burst: null
+    key: "user"
+  throttle:
+    maxConcurrent: 10
+    maxQueue: 10
+    maxWait: "500ms"
+  filters: null
+  transform:
+    allow:
+    - "cliente"
+    - "pedidos"
+    - "pontos"
+    deny: null
+    mapping: null
+    target: null
+    group: null
+  aggregate:
+    backends:
+    - url: "http://clientes-api.platform.svc.cluster.local:8080/api/customers/{id}"
+      group: "cliente"
+      transform:
+        allow:
+        - "id"
+        - "nome"
+        - "segmento"
+        deny: null
+        mapping: null
+        target: null
+        group: null
+    - url: "http://pedidos-api.platform.svc.cluster.local:8080/api/customers/{id}/orders/summary"
+      group: "pedidos"
+      transform:
+        allow: null
+        deny: null
+        mapping: null
+        target: "resumo"
+        group: null
+    - url: "http://fidelidade-api.platform.svc.cluster.local:8080/pontos/{id}"
+      group: null
+      transform:
+        allow: null
+        deny: null
+        mapping:
+          saldo: "pontos"
+        target: null
+        group: null
+    timeout: "2s"
+  timeouts: null
+- id: "parceiros"
+  path: "/parceiros/**"
+  targetUri: "http://parceiros-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods: null
+  enabled: true
+  team: "parcerias-team"
+  description: "API dos parceiros, com orçamento por chave."
+  access:
+    mode: "public"
+    anyOf: null
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit:
+    requests: 100
+    period: "1m"
+    burst: null
+    key: "header:X-Api-Key"
+  throttle:
+    maxConcurrent: 20
+    maxQueue: null
+    maxWait: null
+  filters:
+  - name: "RemoveRequestParameter"
+    args:
+      name: "debug"
+  - name: "AddRequestHeader"
+    args:
+      name: "X-Origem"
+      value: "borda"
+  - name: "RequestSize"
+    args:
+      maxSize: "256KB"
+  transform: null
+  aggregate: null
+  timeouts:
+    connect: "1s"
+    response: "5s"
 - id: "pedidos"
   path: "/pedidos/**"
   targetUri: "http://backend-b.platform.svc.cluster.local:8080"
@@ -68,6 +345,71 @@ routes:
   filters: null
   transform: null
   aggregate: null
+  timeouts: null
+- id: "produtos-escrita"
+  path: "/produtos/**"
+  targetUri: "http://produtos-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods:
+  - "POST"
+  - "PUT"
+  - "PATCH"
+  - "DELETE"
+  enabled: true
+  team: "loja-team"
+  description: "Cadastro e alteração de produtos."
+  access:
+    mode: null
+    anyOf:
+    - "role:produtos-admin"
+    forwardToken: true
+    channel: null
+    identityProvider: null
+    audience: "produtos-api"
+    obo: null
+  rateLimit:
+    requests: 20
+    period: "1m"
+    burst: null
+    key: "user"
+  throttle: null
+  filters:
+  - name: "RequestSize"
+    args:
+      maxSize: "1MB"
+  transform: null
+  aggregate: null
+  timeouts: null
+- id: "produtos-leitura"
+  path: "/produtos/**"
+  targetUri: "http://produtos-api.platform.svc.cluster.local:8080"
+  stripPrefix: 1
+  methods:
+  - "GET"
+  - "HEAD"
+  enabled: true
+  team: "loja-team"
+  description: "Leitura de produtos."
+  access:
+    mode: null
+    anyOf:
+    - "role:produtos-leitura"
+    - "role:produtos-admin"
+    forwardToken: null
+    channel: null
+    identityProvider: null
+    audience: null
+    obo: null
+  rateLimit:
+    requests: 120
+    period: "1m"
+    burst: null
+    key: "user"
+  throttle: null
+  filters: null
+  transform: null
+  aggregate: null
+  timeouts: null
 - id: "public-api"
   path: "/public/**"
   targetUri: "http://public-api.platform.svc.cluster.local:8080"
@@ -93,3 +435,28 @@ routes:
   filters: null
   transform: null
   aggregate: null
+  timeouts: null
+- id: "relatorios"
+  path: "/relatorios/**"
+  targetUri: "http://relatorios-api.platform.svc.cluster.local:8080"
+  stripPrefix: 0
+  methods: null
+  enabled: true
+  team: "bi-team"
+  description: "Relatórios pesados, gerados na hora."
+  access: null
+  rateLimit:
+    requests: 100
+    period: "1h"
+    burst: null
+    key: null
+  throttle:
+    maxConcurrent: 2
+    maxQueue: 20
+    maxWait: "10s"
+  filters: null
+  transform: null
+  aggregate: null
+  timeouts:
+    connect: null
+    response: "1m"
